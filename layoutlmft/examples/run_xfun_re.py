@@ -25,7 +25,7 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
-
+from pprint import pformat
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,10 @@ def main():
         transformers.utils.logging.set_verbosity_info()
         transformers.utils.logging.enable_default_handler()
         transformers.utils.logging.enable_explicit_format()
-    logger.info(f"Training/evaluation parameters {training_args}")
+    logger.info(f"Training/evaluation parameters: {training_args}")
+    logger.info(f"Training/evaluation parameters: {pformat(training_args)}")
+    logger.info(f"Training/evaluation parameters: {str(training_args)}")
+
 
     # Set seed before initializing model.
     set_seed(training_args.seed)

@@ -23,14 +23,17 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from transformers.activations import ACT2FN
-from transformers.file_utils import add_start_docstrings, add_start_docstrings_to_model_forward, \
-    replace_return_docstrings
+from transformers.file_utils import (
+    add_start_docstrings,
+    add_start_docstrings_to_model_forward,
+    replace_return_docstrings,
+)
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithPoolingAndCrossAttentions,
     MaskedLMOutput,
     TokenClassifierOutput,
-    QuestionAnsweringModelOutput
+    QuestionAnsweringModelOutput,
 )
 from transformers.modeling_utils import (
     PreTrainedModel,
@@ -57,7 +60,7 @@ MarkupLMLayerNorm = torch.nn.LayerNorm
 
 
 class XPathEmbeddings(nn.Module):
-    """Construct the embddings from xpath -- tag and subscript"""
+    """Construct the embeddings from xpath -- tag and subscript"""
 
     # we drop tree-id in this version, as its info can be covered by xpath
 
@@ -65,26 +68,43 @@ class XPathEmbeddings(nn.Module):
         super(XPathEmbeddings, self).__init__()
         self.max_depth = config.max_depth
 
+        # TODO (aimore): THIS IS NEVER USED? IT IS DUPLICATED FROM BELOW BUT WITHOUT 4
         self.xpath_unitseq2_embeddings = nn.Linear(
-            config.xpath_unit_hidden_size * self.max_depth, config.hidden_size)
+            config.xpath_unit_hidden_size * self.max_depth, config.hidden_size
+        )
 
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         self.activation = nn.ReLU()
-        self.xpath_unitseq2_inner = nn.Linear(config.xpath_unit_hidden_size * self.max_depth, 4 * config.hidden_size)
+        # TODO (aimore): This 4 is strange
+        self.xpath_unitseq2_inner = nn.Linear(
+            config.xpath_unit_hidden_size * self.max_depth, 4 * config.hidden_size
+        )
+
+        # TODO (aimore): Check if this Linear can be replaced by a transformer architecture.
         self.inner2emb = nn.Linear(4 * config.hidden_size, config.hidden_size)
 
+        # TODO (aimore): Worth trying to simplify,
+        #  because there seems to be one embedding model per level
         self.xpath_tag_sub_embeddings = nn.ModuleList(
-            [nn.Embedding(config.max_xpath_tag_unit_embeddings, config.xpath_unit_hidden_size) for _ in
-             range(self.max_depth)])
+            [
+                nn.Embedding(config.max_xpath_tag_unit_embeddings, config.xpath_unit_hidden_size)
+                for _ in range(self.max_depth)
+            ]
+        )
 
         self.xpath_subs_sub_embeddings = nn.ModuleList(
-            [nn.Embedding(config.max_xpath_subs_unit_embeddings, config.xpath_unit_hidden_size) for _ in
-             range(self.max_depth)])
+            [
+                nn.Embedding(config.max_xpath_subs_unit_embeddings, config.xpath_unit_hidden_size)
+                for _ in range(self.max_depth)
+            ]
+        )
 
-    def forward(self,
-                xpath_tags_seq=None,
-                xpath_subs_seq=None):
+    def forward(
+        self,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
+    ):
         xpath_tags_embeddings = []
         xpath_subs_embeddings = []
 
@@ -98,7 +118,8 @@ class XPathEmbeddings(nn.Module):
         xpath_embeddings = xpath_tags_embeddings + xpath_subs_embeddings
 
         xpath_embeddings = self.inner2emb(
-            self.dropout(self.activation(self.xpath_unitseq2_inner(xpath_embeddings))))
+            self.dropout(self.activation(self.xpath_unitseq2_inner(xpath_embeddings)))
+        )
 
         return xpath_embeddings
 
@@ -109,19 +130,23 @@ class MarkupLMEmbeddings(nn.Module):
     def __init__(self, config):
         super(MarkupLMEmbeddings, self).__init__()
         self.config = config
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
+        self.word_embeddings = nn.Embedding(
+            config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id
+        )
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
 
         self.max_depth = config.max_depth
 
         self.xpath_embeddings = XPathEmbeddings(config)
-
+        # type_vocab_size = segment embedding
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
 
         self.LayerNorm = MarkupLMLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+        self.register_buffer(
+            "position_ids", torch.arange(config.max_position_embeddings).expand((1, -1))
+        )
 
         self.padding_idx = config.pad_token_id
         self.position_embeddings = nn.Embedding(
@@ -141,19 +166,22 @@ class MarkupLMEmbeddings(nn.Module):
         sequence_length = input_shape[1]
 
         position_ids = torch.arange(
-            self.padding_idx + 1, sequence_length + self.padding_idx + 1, dtype=torch.long, device=inputs_embeds.device
+            self.padding_idx + 1,
+            sequence_length + self.padding_idx + 1,
+            dtype=torch.long,
+            device=inputs_embeds.device,
         )
         return position_ids.unsqueeze(0).expand(input_shape)
 
     def forward(
-            self,
-            input_ids=None,
-            xpath_tags_seq=None,
-            xpath_subs_seq=None,
-            token_type_ids=None,
-            position_ids=None,
-            inputs_embeds=None,
-            past_key_values_length=0
+        self,
+        input_ids=None,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
+        token_type_ids=None,
+        position_ids=None,
+        inputs_embeds=None,
+        past_key_values_length=0,
     ):
         if input_ids is not None:
             input_shape = input_ids.size()
@@ -167,8 +195,9 @@ class MarkupLMEmbeddings(nn.Module):
         if position_ids is None:
             if input_ids is not None:
                 # Create the position ids from the input token ids. Any padded tokens remain padded.
-                position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx,
-                                                                  past_key_values_length)
+                position_ids = create_position_ids_from_input_ids(
+                    input_ids, self.padding_idx, past_key_values_length
+                )
             else:
                 position_ids = self.create_position_ids_from_inputs_embeds(inputs_embeds)
 
@@ -181,26 +210,30 @@ class MarkupLMEmbeddings(nn.Module):
         # xpath seq prepare
 
         if xpath_tags_seq is None:
-            xpath_tags_seq = 216 * torch.ones(tuple(list(input_shape) + [self.max_depth]), dtype=torch.long,
-                                              device=device)
+            xpath_tags_seq = 216 * torch.ones(
+                tuple(list(input_shape) + [self.max_depth]),
+                dtype=torch.long,
+                device=device,
+            )
 
         if xpath_subs_seq is None:
-            xpath_subs_seq = 1001 * torch.ones(tuple(list(input_shape) + [self.max_depth]), dtype=torch.long,
-                                               device=device)
+            xpath_subs_seq = 1001 * torch.ones(
+                tuple(list(input_shape) + [self.max_depth]),
+                dtype=torch.long,
+                device=device,
+            )
         # xpath seq prepare
 
         words_embeddings = inputs_embeds
+
         position_embeddings = self.position_embeddings(position_ids)
 
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
-        xpath_embeddings = self.xpath_embeddings(xpath_tags_seq,
-                                                 xpath_subs_seq)
+        xpath_embeddings = self.xpath_embeddings(xpath_tags_seq, xpath_subs_seq)
+
         embeddings = (
-                words_embeddings
-                + position_embeddings
-                + token_type_embeddings
-                + xpath_embeddings
+            words_embeddings + position_embeddings + token_type_embeddings + xpath_embeddings
         )
 
         embeddings = self.LayerNorm(embeddings)
@@ -323,7 +356,9 @@ class MarkupLMOnlyMLMHead(nn.Module):
 class MarkupLMSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
+        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(
+            config, "embedding_size"
+        ):
             raise ValueError(
                 f"The hidden size ({config.hidden_size}) is not a multiple of the number of attention "
                 f"heads ({config.num_attention_heads})"
@@ -339,9 +374,15 @@ class MarkupLMSelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
         self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
-        if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
+        if (
+            self.position_embedding_type == "relative_key"
+            or self.position_embedding_type == "relative_key_query"
+        ):
             self.max_position_embeddings = config.max_position_embeddings
-            self.distance_embedding = nn.Embedding(2 * config.max_position_embeddings - 1, self.attention_head_size)
+            self.distance_embedding = nn.Embedding(
+                2 * config.max_position_embeddings - 1,
+                self.attention_head_size,
+            )
 
         self.is_decoder = config.is_decoder
 
@@ -351,15 +392,14 @@ class MarkupLMSelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            head_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            past_key_value=None,
-            output_attentions=False,
-
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_value=None,
+        output_attentions=False,
     ):
         mixed_query_layer = self.query(hidden_states)
 
@@ -401,21 +441,40 @@ class MarkupLMSelfAttention(nn.Module):
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
-        if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
+        if (
+            self.position_embedding_type == "relative_key"
+            or self.position_embedding_type == "relative_key_query"
+        ):
             seq_length = hidden_states.size()[1]
-            position_ids_l = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
-            position_ids_r = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
+            position_ids_l = torch.arange(
+                seq_length, dtype=torch.long, device=hidden_states.device
+            ).view(-1, 1)
+            position_ids_r = torch.arange(
+                seq_length, dtype=torch.long, device=hidden_states.device
+            ).view(1, -1)
             distance = position_ids_l - position_ids_r
-            positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
-            positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+            positional_embedding = self.distance_embedding(
+                distance + self.max_position_embeddings - 1
+            )
+            positional_embedding = positional_embedding.to(
+                dtype=query_layer.dtype
+            )  # fp16 compatibility
 
             if self.position_embedding_type == "relative_key":
-                relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+                relative_position_scores = torch.einsum(
+                    "bhld,lrd->bhlr", query_layer, positional_embedding
+                )
                 attention_scores = attention_scores + relative_position_scores
             elif self.position_embedding_type == "relative_key_query":
-                relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
-                relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
-                attention_scores = attention_scores + relative_position_scores_query + relative_position_scores_key
+                relative_position_scores_query = torch.einsum(
+                    "bhld,lrd->bhlr", query_layer, positional_embedding
+                )
+                relative_position_scores_key = torch.einsum(
+                    "bhrd,lrd->bhlr", key_layer, positional_embedding
+                )
+                attention_scores = (
+                    attention_scores + relative_position_scores_query + relative_position_scores_key
+                )
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
@@ -473,14 +532,14 @@ class MarkupLMAttention(nn.Module):
         self.pruned_heads = self.pruned_heads.union(heads)
 
     def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            head_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            past_key_value=None,
-            output_attentions=False,
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_value=None,
+        output_attentions=False,
     ):
         self_outputs = self.self(
             hidden_states,
@@ -505,20 +564,22 @@ class MarkupLMLayer(nn.Module):
         self.is_decoder = config.is_decoder
         self.add_cross_attention = config.add_cross_attention
         if self.add_cross_attention:
-            assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
+            assert (
+                self.is_decoder
+            ), f"{self} should be used as a decoder model if cross attention is added"
             self.crossattention = MarkupLMAttention(config)
         self.intermediate = MarkupLMIntermediate(config)
         self.output = MarkupLMOutput(config)
 
     def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            head_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            past_key_value=None,
-            output_attentions=False,
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_value=None,
+        output_attentions=False,
     ):
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -536,7 +597,9 @@ class MarkupLMLayer(nn.Module):
             outputs = self_attention_outputs[1:-1]
             present_key_value = self_attention_outputs[-1]
         else:
-            outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+            outputs = self_attention_outputs[
+                1:
+            ]  # add self attentions if we output attention weights
 
         cross_attn_present_key_value = None
         if self.is_decoder and encoder_hidden_states is not None:
@@ -556,14 +619,19 @@ class MarkupLMLayer(nn.Module):
                 output_attentions,
             )
             attention_output = cross_attention_outputs[0]
-            outputs = outputs + cross_attention_outputs[1:-1]  # add cross attentions if we output attention weights
+            outputs = (
+                outputs + cross_attention_outputs[1:-1]
+            )  # add cross attentions if we output attention weights
 
             # add cross-attn cache to positions 3,4 of present_key_value tuple
             cross_attn_present_key_value = cross_attention_outputs[-1]
             present_key_value = present_key_value + cross_attn_present_key_value
 
         layer_output = apply_chunking_to_forward(
-            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+            self.feed_forward_chunk,
+            self.chunk_size_feed_forward,
+            self.seq_len_dim,
+            attention_output,
         )
         outputs = (layer_output,) + outputs
 
@@ -586,17 +654,17 @@ class MarkupLMEncoder(nn.Module):
         self.layer = nn.ModuleList([MarkupLMLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            head_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            past_key_values=None,
-            use_cache=None,
-            output_attentions=False,
-            output_hidden_states=False,
-            return_dict=True,
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_values=None,
+        use_cache=None,
+        output_attentions=False,
+        output_hidden_states=False,
+        return_dict=True,
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -705,7 +773,12 @@ class MarkupLMPreTrainedModel(PreTrainedModel):
             module.weight.data.fill_(1.0)
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], *model_args, **kwargs):
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]],
+        *model_args,
+        **kwargs,
+    ):
         return super(MarkupLMPreTrainedModel, cls).from_pretrained(
             pretrained_model_name_or_path, *model_args, **kwargs
         )
@@ -809,22 +882,25 @@ class MarkupLMModel(MarkupLMPreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    @add_start_docstrings_to_model_forward(MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=BaseModelOutputWithPoolingAndCrossAttentions, config_class=_CONFIG_FOR_DOC)
+    @add_start_docstrings_to_model_forward(
+        MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length")
+    )
+    @replace_return_docstrings(
+        output_type=BaseModelOutputWithPoolingAndCrossAttentions, config_class=_CONFIG_FOR_DOC
+    )
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
-
-            xpath_tags_seq=None,
-            xpath_subs_seq=None,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
     ):
         r"""
         Returns:
@@ -833,9 +909,13 @@ class MarkupLMModel(MarkupLMPreTrainedModel):
 
             No examples now !
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions if output_attentions is not None else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -921,24 +1001,27 @@ class MarkupLMForQuestionAnswering(MarkupLMPreTrainedModel):
 
         self.init_weights()
 
-    @add_start_docstrings_to_model_forward(MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=QuestionAnsweringModelOutput, config_class=_CONFIG_FOR_DOC)
+    @add_start_docstrings_to_model_forward(
+        MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length")
+    )
+    @replace_return_docstrings(
+        output_type=QuestionAnsweringModelOutput, config_class=_CONFIG_FOR_DOC
+    )
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            start_positions=None,
-            end_positions=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
-
-            xpath_tags_seq=None,
-            xpath_subs_seq=None,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        start_positions=None,
+        end_positions=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
     ):
         r"""
         start_positions (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -1031,7 +1114,9 @@ class MarkupLMOnlyTokenClassificationHead(nn.Module):
         return output_res
 
 
-@add_start_docstrings("""MarkupLM Model with a `token_classification` head on top. """, MARKUPLM_START_DOCSTRING)
+@add_start_docstrings(
+    """MarkupLM Model with a `token_classification` head on top. """, MARKUPLM_START_DOCSTRING
+)
 class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1040,23 +1125,24 @@ class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
         self.token_cls = MarkupLMOnlyTokenClassificationHead(config)
         self.init_weights()
 
-    @add_start_docstrings_to_model_forward(MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(
+        MARKUPLM_INPUTS_DOCSTRING.format("batch_size, sequence_length")
+    )
     @replace_return_docstrings(output_type=MaskedLMOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            labels=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
-
-            xpath_tags_seq=None,
-            xpath_subs_seq=None,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):

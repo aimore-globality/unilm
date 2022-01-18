@@ -41,6 +41,8 @@ FLAGS = flags.FLAGS
 random.seed(42)
 
 flags.DEFINE_integer("n_pages", 2000, "The maximum number of pages to read.")
+# flags.DEFINE_integer("n_pages", 3, "The maximum number of pages to read.")
+
 flags.DEFINE_string(
     "input_groundtruth_path", "",
     "The root path to parent folder of all ground truth files.")
@@ -69,8 +71,15 @@ def clean_spaces(text):
 
 def clean_format_str(text):
     """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
-    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "C")
-    text = "".join([c if ord(c) < 128 else "" for c in text])
+    text = "".join(
+        ch
+        for ch in text
+        if unicodedata.category(ch)[0] != "C"
+    )
+    text = "".join([
+        c if ord(c) < 128 else ""
+        for c in text
+    ])
     text = clean_spaces(text)
     return text
 
@@ -106,12 +115,27 @@ def non_ascii_equal(website, field, value, node_text):
     # E.g. truth value in files, "Roy Hill" and real value: "Geogre Roy Hill".
     if website == "amctv" and field == "director":
         return node_text.strip().endswith(value.strip())
-    return value.strip() == node_text.strip()
+
+    # TODO (aimore): If I change here to in instead of == I will mark the xpaths which contain the
+    #  ground-truth
+    # return value.strip() == node_text.strip()
+    return value.strip() in node_text.strip()
 
 
-def match_value_node(node, node_text, current_xpath_data, overall_xpath_dict,
-                     text_part_flag, groundtruth_value, matched_xpaths, website,
-                     field, dom_tree, current_page_nodes_in_order, is_truth_value_list):
+def match_value_node(
+    node,
+    node_text,
+    current_xpath_data,
+    overall_xpath_dict,
+    text_part_flag,
+    groundtruth_value,
+    matched_xpaths,
+    website,
+    field,
+    dom_tree,
+    current_page_nodes_in_order,
+    is_truth_value_list,
+):
     """Matches the ground truth value with a specific node in the domtree.
 
     In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths
@@ -140,6 +164,9 @@ def match_value_node(node, node_text, current_xpath_data, overall_xpath_dict,
         if text_part_flag == "node_text":
             xpath = dom_tree.getpath(node)
         elif text_part_flag == "node_tail_text":
+            # TODO (aimore): I am not sure why they make the distinction of the
+            #  xpath being the text or tail. That increases complexity of xpath and
+            #  might not help during generalization.
             xpath = dom_tree.getpath(node) + "/tail"
         if len_brs >= 2:
             xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
@@ -155,10 +182,15 @@ def match_value_node(node, node_text, current_xpath_data, overall_xpath_dict,
             matched_xpaths.append(xpath)
             is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
 
-        # 这里我们更新三样东西
-        # 如果当前节点与truth_value一致，则将当前xpath加入matched_xpaths
+        # 这里我们更新三样东西 (Here we update three things)
+        # 如果当前节点与truth_value一致 (If the current node is consistent with truth_value)，
+        # 则将当前xpath加入matched_xpaths (Add the current xpath to matched_xpaths)
         # 此外，还需要 current_xpath_data[xpath] = clean_etext,即记录当前页面 该xpath对应的文字
+        # (In addition, current_xpath_data[xpath] = clean_etext is also required,
+        # that is, the text corresponding to the xpath of the current page is recorded)
         # 以及 overall_xpath_dict[xpath].add(clean_etext)，即记录当前网址上该xpath对应的文字，以add加入集合
+        # (And overall_xpath_dict[xpath].add(clean_etext), that is,
+        # record the text corresponding to the xpath on the current URL, and add it to the set)
 
 
 def get_value_xpaths(dom_tree,
@@ -179,6 +211,11 @@ def get_value_xpaths(dom_tree,
       xpaths: a list of xpaths containing the truth_value exactly as inner texts.
       current_xpath_data: the xpaths and corresponding values in this DOMTree.
     """
+    f = False
+    if website == 'willmeng.com':
+        breakpoint()
+        f = True
+
     if not truth_value:
         #  Some values are empty strings, that are not in the DOMTree.
         return []
@@ -197,6 +234,15 @@ def get_value_xpaths(dom_tree,
 
     # Iterate all the nodes in the given DOMTree.
     for e in dom_tree.iter():
+        if f:
+            print(e.text_content())
+            print(e.tag)
+            print(e.attrib)
+            for k, v in e.items():
+                print(k, v)
+            print(e.text)
+            print(e.tail)
+            print()
         # The value can only be matched in the text of the node or the tail.
         if e.text:
             match_value_node(
@@ -211,7 +257,7 @@ def get_value_xpaths(dom_tree,
                 field=field,
                 dom_tree=dom_tree,
                 current_page_nodes_in_order=current_page_nodes_in_order,
-                is_truth_value_list=is_truth_value_list
+                is_truth_value_list=is_truth_value_list,
             )
         if e.tail:
             match_value_node(
@@ -226,7 +272,7 @@ def get_value_xpaths(dom_tree,
                 field=field,
                 dom_tree=dom_tree,
                 current_page_nodes_in_order=current_page_nodes_in_order,
-                is_truth_value_list=is_truth_value_list
+                is_truth_value_list=is_truth_value_list,
             )
 
     return xpaths, current_xpath_data, current_page_nodes_in_order, is_truth_value_list
@@ -245,7 +291,11 @@ def get_dom_tree(html, website):
       A parsed DOMTree object using lxml library.
     """
     cleaner = Cleaner()
-    cleaner.javascript = True
+    # cleaner.javascript = True
+    cleaner.javascript = False
+    # cleaner.scripts = True
+    cleaner.scripts = False
+
     cleaner.style = True
     cleaner.page_structure = False
     html = html.replace("\0", "")  # Delete NULL bytes.
@@ -277,7 +327,7 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
     DONE READ!
     """
     # example is `book` and `abebooks`
-    """Loads and returns the html sting and ground turth data as a dictionary."""
+    """Loads and returns the html string and ground truth data as a dictionary."""
     all_data_dict = collections.defaultdict(dict)
     vertical_to_websites_map = constants.VERTICAL_WEBSITES
     gt_path = FLAGS.input_groundtruth_path
@@ -285,8 +335,12 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
     """
     First build groudtruth dict
     """
+
+    # if website_to_load == 'monotype.com':
+    #     breakpoint()
     for v in vertical_to_websites_map:
-        if v != vertical_to_load: continue
+        if v != vertical_to_load:
+            continue
         for truthfile in os.listdir(os.path.join(gt_path, v)):
             # For example, a groundtruth file name can be "auto-yahoo-price.txt".
             vertical, website, field = truthfile.replace(".txt", "").split("-")
@@ -303,7 +357,10 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
                     item = line.strip().split("\t")
                     index = item[0]  # like 0123
                     num_values = int(item[1])  # Can be 0 (when item[2] is "<NULL>").
-                    all_data_dict[index]["field-" + field] = dict(values=item[2:2 + num_values])
+                    # all_data_dict[index]["field-" + field] = dict(values=item[2: 2 + num_values])
+                    items = [x for x in item[2:] if len(x) > 0]
+                    all_data_dict[index]["field-" + field] = dict(values=items)
+
             # {"0123":
             #   {"field-engine":
             #       {"values":["engine A","engine B"]},
@@ -332,7 +389,7 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
     for page in tqdm(swde_html_data, desc="Loading HTML data"):
         vertical = page["vertical"]
         website = page["website"]
-        website = website[website.find("-") + 1:website.find("(")]
+        website = website[website.find("-") + 1 : website.find("(")]
 
         if vertical != vertical_to_load or website != website_to_load:
             continue
@@ -365,11 +422,13 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
     return all_data_dict
 
 
-def get_field_xpaths(all_data_dict,
-                     vertical_to_process,
-                     website_to_process,
-                     n_pages,
-                     max_variable_nodes_per_website):
+def get_field_xpaths(
+    all_data_dict,
+    vertical_to_process,
+    website_to_process,
+    n_pages,
+    max_variable_nodes_per_website,
+):
     """Gets xpaths data for each page in the data dictionary.
 
     Args:
@@ -383,6 +442,7 @@ def get_field_xpaths(all_data_dict,
     #  - Key is a xpath.
     #  - Value is a set of text appeared before inside the node.
     overall_xpath_dict = collections.defaultdict(set)
+
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
     for index in tqdm(all_data_dict, desc="Processing %s" % website_to_process, total=n_pages):
         if int(index) >= n_pages:
@@ -403,20 +463,31 @@ def get_field_xpaths(all_data_dict,
             page_data[field]["is_truth_value_list"] = set()
 
             for value in page_data[field]["values"]:
-                xpaths, current_xpath_data, current_page_nodes_in_order, is_truth_value_list = \
-                    get_value_xpaths(dom_tree,
-                                     value,
-                                     overall_xpath_dict,
-                                     website_to_process,
-                                     field[6:])
+                if len(value) != 0:
+                    (
+                        xpaths,
+                        current_xpath_data,
+                        current_page_nodes_in_order,
+                        is_truth_value_list,
+                    ) = get_value_xpaths(
+                        dom_tree,
+                        value,
+                        overall_xpath_dict,
+                        website_to_process,
+                        field[6:],
+                    )
 
-                # Assert each truth value can be founded in >=1 nodes.
-                assert len(xpaths) >= 1, \
-                    "%s;\t%s;\t%s;\t%s; is not found" % (website_to_process, field, index, value)
+                    # Assert each truth value can be founded in >=1 nodes.
+                    assert len(xpaths) >= 1, "%s;\t%s;\t%s;\t%s; is not found" % (
+                        website_to_process,
+                        field,
+                        index,
+                        value,
+                    )
 
-                # Update the page-level xpath information.
-                page_data[field]["groundtruth_xpaths"].update(xpaths)
-                page_data[field]["is_truth_value_list"].update(is_truth_value_list)
+                    # Update the page-level xpath information.
+                    page_data[field]["groundtruth_xpaths"].update(xpaths)
+                    page_data[field]["is_truth_value_list"].update(is_truth_value_list)
 
             # now for each page_data
             # an example
@@ -430,7 +501,7 @@ def get_field_xpaths(all_data_dict,
             #        '/html/body/div[2]/div[2]/div[3]/div[3]/p/a'}
             # }
 
-        page_data["xpath_data"] = current_xpath_data  #
+        page_data["xpath_data"] = current_xpath_data  # {xpath1: text1, xpath2: text2}
         page_data["doc_strings"] = current_page_nodes_in_order  # [(text, xpath)*N]
         # page_data["reversed_doc_strings_ids"] = {v[0]: i for i, v in enumerate(current_page_nodes_in_order)}
 
@@ -439,41 +510,49 @@ def get_field_xpaths(all_data_dict,
     # Define the fixed-text nodes and variable nodes.
     fixed_nodes = set()
     variable_nodes = set()
-    # 这里对这个网址上的所有xpath进行排序
-    # 以对应的不同文本数目倒序排列
+    # 这里对这个网址上的所有xpath进行排序 (Here all xpaths on this url are sorted)
+    # 以对应的不同文本数目倒序排列 (Arrange in reverse order according to the number of different texts)
     node_variability = sorted(
-        [(xpath, len(text_set)) for xpath, text_set in overall_xpath_dict.items()],
+        [
+            (xpath, len(text_set))
+            for xpath, text_set in overall_xpath_dict.items()
+        ],
         key=lambda x: x[1],
-        reverse=True
+        reverse=True,
     )
 
     for xpath, variability in node_variability:
-        # variability 为xpath的可变性
+        # variability 为xpath的可变性 (variability is the variability of xpath)
         if variability > 5 and len(variable_nodes) < max_variable_nodes_per_website:
             variable_nodes.add(xpath)
         else:
             fixed_nodes.add(xpath)
 
-    print("Vertical: %s; Website: %s; fixed_nodes: %d; variable_nodes: %d" %
-          (
-              vertical_to_process, website_to_process, len(fixed_nodes), len(variable_nodes)
-          )
-          )
+    print(
+        "Vertical: %s; Website: %s; fixed_nodes: %d; variable_nodes: %d"
+        % (
+            vertical_to_process,
+            website_to_process,
+            len(fixed_nodes),
+            len(variable_nodes),
+        )
+    )
 
     assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages)
     all_data_dict["fixed_nodes"] = list(fixed_nodes)
     all_data_dict["variable_nodes"] = list(variable_nodes)
 
-    # 总之到这为止
-    # fixed_nodes包含的就是固定的node
-    # variable_nodes包含的就是值会变化的node
+    # 总之到这为止 (Anyway so far)
+    # fixed_nodes包含的就是固定的node (fixed_nodes contains fixed nodes)
+    # variable_nodes包含的就是值会变化的node (variable_nodes contains nodes whose values will change)
     # 并且我们保证truth_value必定在variable nodes中
+    # (and we guarantee that truth_value must be in variable nodes)
 
     # now page_data has the `doc_strings` attributes
     # and each field has the `is_truth_value_list` attributes
 
     # all_data_dict has the following attributes
-    # "0000" ~ "1999" is the infomation for each page
+    # "0000" ~ "1999" is the information for each page
     # "fixed_nodes" are the xpaths for nodes that cannot have truth-value
     # "variable_nodes" are the xpaths for nodes that might have truth-value
 
@@ -511,7 +590,6 @@ def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages):
 
 def generate_nodes_seq_and_write_to_file(compressed_args):
     """Extracts all the xpaths and labels the nodes for all the pages."""
-
     vertical, website = compressed_args
 
     all_data_dict = load_html_and_groundtruth(vertical, website)
@@ -520,7 +598,8 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
         vertical_to_process=vertical,
         website_to_process=website,
         n_pages=2000,
-        max_variable_nodes_per_website=300
+        # n_pages=3,
+        max_variable_nodes_per_website=300,
     )
     """
     keys to the following example --->
@@ -532,11 +611,12 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
         'field-title', 
         'field-publisher', 
         'field-isbn_13', 
-        'html_str', 
-        'path', 
+        'path', > E.g. "auto/auto-msn(2000)/0000.htm"
+        'html_str', > The html         
         'dom_tree', 
-        'xpath_data'
-        ])
+        'xpath_data', > {xpath: text}  
+        'doc_strings' > [(text, xpath)*N] (I think they forgot to include this one so I included)
+        ])  
     """
 
     variable_nodes = all_data_dict["variable_nodes"]
@@ -575,8 +655,12 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
 
         cleaned_features_for_this_website[index] = new_doc_strings
 
-    output_file_path = os.path.join(FLAGS.output_data_path, f"{vertical}-{website}-{FLAGS.n_pages}.pickle")
-    print(f"Writing the processed first {FLAGS.n_pages} pages of {vertical}-{website} into {output_file_path}")
+    output_file_path = os.path.join(
+        FLAGS.output_data_path, f"{vertical}-{website}-{FLAGS.n_pages}.pickle"
+    )
+    print(
+        f"Writing the processed first {FLAGS.n_pages} pages of {vertical}-{website} into {output_file_path}"
+    )
     with open(output_file_path, "wb") as f:
         pickle.dump(cleaned_features_for_this_website, f)
 
@@ -589,16 +673,19 @@ def main(_):
 
     vertical_to_websites_map = constants.VERTICAL_WEBSITES
     verticals = vertical_to_websites_map.keys()
+
     for vertical in verticals:
         websites = vertical_to_websites_map[vertical]
         for website in websites:
             args_list.append((vertical, website))
 
-    num_cores = int(mp.cpu_count()/2)
+    num_cores = int(mp.cpu_count() / 2)
 
-    with mp.Pool(num_cores) as pool, tqdm(total=len(args_list), desc="Processing swde-data") as t:
-        for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, args_list):
-            t.update()
+    for x in args_list[:]:
+        generate_nodes_seq_and_write_to_file(x)
+    # with mp.Pool(num_cores) as pool, tqdm(total=len(args_list), desc="Processing swde-data") as t:
+    #     for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, args_list):
+    #         t.update()
 
 
 if __name__ == "__main__":

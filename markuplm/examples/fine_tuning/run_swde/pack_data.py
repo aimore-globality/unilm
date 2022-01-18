@@ -17,7 +17,6 @@
 #
 
 
-
 r"""To pack all the swde html page files into a single pickle file.
 
 This script is to generate a single file to pack up all the content of htmls.
@@ -39,12 +38,9 @@ import constants
 FLAGS = flags.FLAGS
 
 # Flags related to input data.
-flags.DEFINE_string("input_swde_path", "",
-                    "The root path to swde html page files.")
-flags.DEFINE_string("output_pack_path", "",
-                    "The file path to save the packed data.")
-flags.DEFINE_integer("first_n_pages", -1,
-                     "The cut-off number to shorten the number of pages.")
+flags.DEFINE_string("input_swde_path", "", "The root path to swde html page files.")
+flags.DEFINE_string("output_pack_path", "", "The file path to save the packed data.")
+flags.DEFINE_integer("first_n_pages", -1, "The cut-off number to shorten the number of pages.")
 
 
 def pack_swde_data(swde_path, pack_path, cut_off):
@@ -103,7 +99,6 @@ def pack_swde_data(swde_path, pack_path, cut_off):
     # we have it as
     # {"vertical":'book',"website":'book-amazon(2000)',"path:'book/book-amazon(2000)/0000.htm',"html_str":xx}
 
-
     # and finally these info are dumped into the swde.pickle file
 
     # Save the html_str data.
@@ -115,7 +110,8 @@ def main(_):
     pack_swde_data(
         swde_path=FLAGS.input_swde_path,
         pack_path=FLAGS.output_pack_path,
-        cut_off=FLAGS.first_n_pages)
+        cut_off=FLAGS.first_n_pages,
+    )
 
 
 if __name__ == "__main__":

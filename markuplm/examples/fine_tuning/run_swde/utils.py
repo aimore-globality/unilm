@@ -7,19 +7,20 @@ import constants
 
 
 class SwdeFeature(object):
-    def __init__(self,
-                 html_path,
-                 input_ids,
-                 token_type_ids,
-                 attention_mask,
-                 xpath_tags_seq,
-                 xpath_subs_seq,
-                 labels,
-                 involved_first_tokens_pos,
-                 involved_first_tokens_xpaths,
-                 involved_first_tokens_types,
-                 involved_first_tokens_text,
-                 ):
+    def __init__(
+        self,
+        html_path,
+        input_ids,
+        token_type_ids,
+        attention_mask,
+        xpath_tags_seq,
+        xpath_subs_seq,
+        labels,
+        involved_first_tokens_pos,
+        involved_first_tokens_xpaths,
+        involved_first_tokens_types,
+        involved_first_tokens_text,
+    ):
         """
         html_path: indicate which page the feature belongs to
         input_ids: RT
@@ -50,15 +51,16 @@ class SwdeFeature(object):
 
 
 class SwdeDataset(Dataset):
-    def __init__(self,
-                 all_input_ids,
-                 all_attention_mask,
-                 all_token_type_ids,
-                 all_xpath_tags_seq,
-                 all_xpath_subs_seq,
-                 all_labels=None,
-                 ):
-        '''
+    def __init__(
+        self,
+        all_input_ids,
+        all_attention_mask,
+        all_token_type_ids,
+        all_xpath_tags_seq,
+        all_xpath_subs_seq,
+        all_labels=None,
+    ):
+        """
         print(type(all_input_ids))
         print(type(all_attention_mask))
         print(type(all_token_type_ids))
@@ -66,9 +68,14 @@ class SwdeDataset(Dataset):
         print(type(all_xpath_subs_seq))
         print(type(all_labels))
         raise ValueError
-        '''
-        self.tensors = [all_input_ids, all_attention_mask, all_token_type_ids,
-                        all_xpath_tags_seq, all_xpath_subs_seq]
+        """
+        self.tensors = [
+            all_input_ids,
+            all_attention_mask,
+            all_token_type_ids,
+            all_xpath_tags_seq,
+            all_xpath_subs_seq,
+        ]
 
         if not all_labels is None:
             self.tensors.append(all_labels)
@@ -90,11 +97,11 @@ def process_xpath(xpath: str):
     for unit in units:
         if not unit:
             continue
-        if '[' not in unit:
+        if "[" not in unit:
             xpath_tags_seq.append(tags_dict.get(unit, 215))
             xpath_subs_seq.append(0)
         else:
-            xx = unit.split('[')
+            xx = unit.split("[")
             name = xx[0]
             id = int(xx[1][:-1])
             xpath_tags_seq.append(tags_dict.get(name, 215))
@@ -112,8 +119,16 @@ def process_xpath(xpath: str):
     return xpath_tags_seq, xpath_subs_seq
 
 
-def get_swde_features(root_dir, vertical, website, tokenizer,
-                      doc_stride, max_length, prev_nodes, n_pages):
+def get_swde_features(
+    root_dir,
+    vertical,
+    website,
+    tokenizer,
+    doc_stride,
+    max_length,
+    prev_nodes,
+    n_pages,
+):
     real_max_token_num = max_length - 2  # for cls and sep
     padded_xpath_tags_seq = [216] * 50
     padded_xpath_subs_seq = [1001] * 50
@@ -124,7 +139,9 @@ def get_swde_features(root_dir, vertical, website, tokenizer,
 
     features = []
 
-    for index in tqdm.tqdm(raw_data, desc=f"Processing {vertical}-{website}-{n_pages} features ..."):
+    for index in tqdm.tqdm(
+        raw_data, desc=f"Processing {vertical}-{website}-{n_pages} features ..."
+    ):
         html_path = f"{vertical}-{website}-{index}.htm"
         needed_docstrings_id_set = set()
         for i in range(len(raw_data[index])):
@@ -179,7 +196,9 @@ def get_swde_features(root_dir, vertical, website, tokenizer,
                 first_token_xpaths.append(xpath)
                 first_token_text.append(text)
 
-                all_labels_seq += [constants.ATTRIBUTES_PLUS_NONE[vertical].index(type)] * len(token_ids)
+                all_labels_seq += [constants.ATTRIBUTES_PLUS_NONE[vertical].index(type)] * len(
+                    token_ids
+                )
 
         assert len(all_token_ids_seq) == len(all_xpath_tags_seq)
         assert len(all_token_ids_seq) == len(all_xpath_subs_seq)
@@ -201,12 +220,21 @@ def get_swde_features(root_dir, vertical, website, tokenizer,
 
             end_pos = start_pos + real_max_token_num
             # add start_pos ~ end_pos as a feature
-            splited_token_ids_seq = [tokenizer.cls_token_id] + all_token_ids_seq[start_pos:end_pos] + [
-                tokenizer.sep_token_id]
-            splited_xpath_tags_seq = [padded_xpath_tags_seq] + all_xpath_tags_seq[start_pos:end_pos] + [
-                padded_xpath_tags_seq]
-            splited_xpath_subs_seq = [padded_xpath_subs_seq] + all_xpath_subs_seq[start_pos:end_pos] + [
-                padded_xpath_subs_seq]
+            splited_token_ids_seq = (
+                [tokenizer.cls_token_id]
+                + all_token_ids_seq[start_pos:end_pos]
+                + [tokenizer.sep_token_id]
+            )
+            splited_xpath_tags_seq = (
+                [padded_xpath_tags_seq]
+                + all_xpath_tags_seq[start_pos:end_pos]
+                + [padded_xpath_tags_seq]
+            )
+            splited_xpath_subs_seq = (
+                [padded_xpath_subs_seq]
+                + all_xpath_subs_seq[start_pos:end_pos]
+                + [padded_xpath_subs_seq]
+            )
             splited_labels_seq = [-100] + all_labels_seq[start_pos:end_pos] + [-100]
 
             # locate first-tokens in them
@@ -215,10 +243,13 @@ def get_swde_features(root_dir, vertical, website, tokenizer,
             involved_first_tokens_types = []
             involved_first_tokens_text = []
 
-            while curr_first_token_index < len(first_token_pos) \
-                    and end_pos > first_token_pos[curr_first_token_index] >= start_pos:
+            while (
+                curr_first_token_index < len(first_token_pos)
+                and end_pos > first_token_pos[curr_first_token_index] >= start_pos
+            ):
                 involved_first_tokens_pos.append(
-                    first_token_pos[curr_first_token_index] - start_pos + 1)  # +1 for [cls]
+                    first_token_pos[curr_first_token_index] - start_pos + 1
+                )  # +1 for [cls]
                 involved_first_tokens_xpaths.append(first_token_xpaths[curr_first_token_index])
                 involved_first_tokens_types.append(first_token_type[curr_first_token_index])
                 involved_first_tokens_text.append(first_token_text[curr_first_token_index])

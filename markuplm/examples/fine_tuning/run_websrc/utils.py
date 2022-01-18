@@ -64,22 +64,23 @@ class SRCExample(object):
 
     # the difference between T-PLM and H-PLM is just add <xx> and </xx> into the
     # original tokens and further-tokenized tokens
-    def __init__(self,
-                 doc_tokens,
-                 qas_id,
-                 tag_num,  # <xx> ?? </xx> is counted as one tag
-                 question_text=None,
-                 html_code=None,
-                 orig_answer_text=None,
-                 start_position=None,  # in all_doc_tokens
-                 end_position=None,  # in all_doc_tokens
-                 tok_to_orig_index=None,
-                 orig_to_tok_index=None,
-                 all_doc_tokens=None,
-                 tok_to_tags_index=None,
-                 xpath_tag_map=None,
-                 xpath_subs_map=None,
-                 ):
+    def __init__(
+        self,
+        doc_tokens,
+        qas_id,
+        tag_num,  # <xx> ?? </xx> is counted as one tag
+        question_text=None,
+        html_code=None,
+        orig_answer_text=None,
+        start_position=None,  # in all_doc_tokens
+        end_position=None,  # in all_doc_tokens
+        tok_to_orig_index=None,
+        orig_to_tok_index=None,
+        all_doc_tokens=None,
+        tok_to_tags_index=None,
+        xpath_tag_map=None,
+        xpath_subs_map=None,
+    ):
         self.doc_tokens = doc_tokens
         self.qas_id = qas_id
         self.tag_num = tag_num
@@ -158,25 +159,26 @@ class InputFeatures(object):
         is_impossible (bool): whether the answer is fully in the doc span.
     """
 
-    def __init__(self,
-                 unique_id,
-                 example_index,
-                 page_id,
-                 doc_span_index,
-                 tokens,
-                 token_to_orig_map,
-                 token_is_max_context,
-                 input_ids,
-                 input_mask,
-                 segment_ids,
-                 paragraph_len,
-                 start_position=None,
-                 end_position=None,
-                 token_to_tag_index=None,
-                 is_impossible=None,
-                 xpath_tags_seq=None,
-                 xpath_subs_seq=None
-                 ):
+    def __init__(
+        self,
+        unique_id,
+        example_index,
+        page_id,
+        doc_span_index,
+        tokens,
+        token_to_orig_map,
+        token_is_max_context,
+        input_ids,
+        input_mask,
+        segment_ids,
+        paragraph_len,
+        start_position=None,
+        end_position=None,
+        token_to_tag_index=None,
+        is_impossible=None,
+        xpath_tags_seq=None,
+        xpath_subs_seq=None,
+    ):
         self.unique_id = unique_id
         self.example_index = example_index
         self.page_id = page_id
@@ -200,18 +202,18 @@ def html_escape(html):
     r"""
     replace the special expressions in the html file for specific punctuation.
     """
-    html = html.replace('&quot;', '"')
-    html = html.replace('&amp;', '&')
-    html = html.replace('&lt;', '<')
-    html = html.replace('&gt;', '>')
-    html = html.replace('&nbsp;', ' ')
+    html = html.replace("&quot;", '"')
+    html = html.replace("&amp;", "&")
+    html = html.replace("&lt;", "<")
+    html = html.replace("&gt;", ">")
+    html = html.replace("&nbsp;", " ")
     return html
 
 
 def get_xpath4tokens(html_fn: str, unique_tids: set):
     xpath_map = {}
     tree = etree.parse(html_fn, etree.HTMLParser())
-    nodes = tree.xpath('//*')
+    nodes = tree.xpath("//*")
     for node in nodes:
         tid = node.attrib.get("tid")
         if int(tid) in unique_tids:
@@ -241,9 +243,20 @@ def get_xpath_and_treeid4tokens(html_code, unique_tids, max_depth):
             para_siblings = parent.find_all(True, recursive=False)
             xpath_tags.append(child.name)
             xpath_subscripts.append(
-                0 if 1 == len(siblings) else next(i for i, s in enumerate(siblings, 1) if s is child))
+                0
+                if 1 == len(siblings)
+                else next(
+                    i
+                    for i, s in enumerate(siblings, 1)
+                    if s is child
+                )
+            )
 
-            tree_index.append(next(i for i, s in enumerate(para_siblings, 0) if s is child))
+            tree_index.append(next(
+                i
+                for i, s in enumerate(para_siblings, 0)
+                if s is child
+            ))
             child = parent
         xpath_tags.reverse()
         xpath_subscripts.reverse()
@@ -254,7 +267,7 @@ def get_xpath_and_treeid4tokens(html_code, unique_tids, max_depth):
     xpath_subs_map = {}
 
     for tid in unique_tids:
-        element = html_code.find(attrs={'tid': tid})
+        element = html_code.find(attrs={"tid": tid})
         if element is None:
             xpath_tags = pad_x_tag_seq
             xpath_subscripts = pad_x_subs_seq
@@ -305,7 +318,7 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                            process, except when the argument simplify is setting to True;
         set[str]: all the tag names appeared in the processed dataset, e.g. <div>, <img/>, </p>, etc..
     """
-    with open(input_file, "r", encoding='utf-8') as reader:
+    with open(input_file, "r", encoding="utf-8") as reader:
         input_data = json.load(reader)["data"]
 
     def is_whitespace(c):
@@ -320,7 +333,10 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                 text_list.append(element.strip())
             if type(element) == bs4.element.Tag:
                 tag_num += 1
-        return text_list, tag_num + 2  # + 2 because we treat the additional 'yes' and 'no' as two special tags.
+        return (
+            text_list,
+            tag_num + 2,
+        )  # + 2 because we treat the additional 'yes' and 'no' as two special tags.
 
     def e_id_to_t_id(e_id, html):
         t_id = 0
@@ -328,7 +344,7 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
             if type(element) == bs4.element.NavigableString and element.strip():
                 t_id += 1
             if type(element) == bs4.element.Tag:
-                if int(element.attrs['tid']) == e_id:
+                if int(element.attrs["tid"]) == e_id:
                     break
         return t_id
 
@@ -342,13 +358,13 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
         cnt, w_t, t_w, tags, tags_tids = 0, [], [], [], []
         for element in html.descendants:
             if type(element) == bs4.element.Tag:
-                content = ' '.join(list(element.strings)).split()
-                t_w.append({'start': cnt, 'len': len(content)})
-                tags.append('<' + element.name + '>')
-                tags_tids.append(element['tid'])
+                content = " ".join(list(element.strings)).split()
+                t_w.append({"start": cnt, "len": len(content)})
+                tags.append("<" + element.name + ">")
+                tags_tids.append(element["tid"])
             elif type(element) == bs4.element.NavigableString and element.strip():
                 text = element.split()
-                tid = element.parent['tid']
+                tid = element.parent["tid"]
                 ind = tags_tids.index(tid)
                 for _ in text:
                     w_t.append(ind)
@@ -377,8 +393,8 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
 
                 # Generate Doc Tokens
                 page_id = website["page_id"]
-                curr_dir = osp.join(root_dir, domain, page_id[0:2], 'processed_data')
-                html_fn = osp.join(curr_dir, page_id + '.html')
+                curr_dir = osp.join(root_dir, domain, page_id[0:2], "processed_data")
+                html_fn = osp.join(curr_dir, page_id + ".html")
 
                 html_file = open(html_fn).read()
                 html_code = bs(html_file, "html.parser")
@@ -387,7 +403,7 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                 doc_tokens = []
                 char_to_word_offset = []
 
-                page_text = ' '.join(raw_text_list)
+                page_text = " ".join(raw_text_list)
                 prev_is_whitespace = True
                 for c in page_text:
                     if is_whitespace(c):
@@ -400,14 +416,17 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                         prev_is_whitespace = False
                     char_to_word_offset.append(len(doc_tokens) - 1)
 
-                doc_tokens.append('no')
+                doc_tokens.append("no")
                 char_to_word_offset.append(len(doc_tokens) - 1)
-                doc_tokens.append('yes')
+                doc_tokens.append("yes")
                 char_to_word_offset.append(len(doc_tokens) - 1)
 
                 tag_list = []
 
-                assert len(doc_tokens) == char_to_word_offset[-1] + 1, (len(doc_tokens), char_to_word_offset[-1])
+                assert len(doc_tokens) == char_to_word_offset[-1] + 1, (
+                    len(doc_tokens),
+                    char_to_word_offset[-1],
+                )
 
                 if simplify:
                     for qa in website["qas"]:
@@ -432,13 +451,18 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                             all_doc_tokens.append(sub_token)
 
                     # Generate extra information for features
-                    tok_to_tags_index, unique_tids = subtoken_tag_offset(html_code, tok_to_orig_index)
+                    tok_to_tags_index, unique_tids = subtoken_tag_offset(
+                        html_code, tok_to_orig_index
+                    )
 
-                    xpath_tag_map, xpath_subs_map = get_xpath_and_treeid4tokens(html_code,
-                                                                                unique_tids,
-                                                                                max_depth=max_depth)
+                    xpath_tag_map, xpath_subs_map = get_xpath_and_treeid4tokens(
+                        html_code, unique_tids, max_depth=max_depth
+                    )
 
-                    assert tok_to_tags_index[-1] == tag_num - 1, (tok_to_tags_index[-1], tag_num - 1)
+                    assert tok_to_tags_index[-1] == tag_num - 1, (
+                        tok_to_tags_index[-1],
+                        tag_num - 1,
+                    )
 
                     # Process each qas, which is mainly calculate the answer position
                     for qa in website["qas"]:
@@ -451,16 +475,20 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                         if is_training:
                             if len(qa["answers"]) != 1:
                                 raise ValueError(
-                                    "For training, each question should have exactly 1 answer.")
+                                    "For training, each question should have exactly 1 answer."
+                                )
                             answer = qa["answers"][0]
                             orig_answer_text = answer["text"]
                             if answer["element_id"] == -1:
                                 num_char = len(char_to_word_offset) - 2
                             else:
-                                num_char = calc_num_from_raw_text_list(e_id_to_t_id(answer["element_id"], html_code),
-                                                                       raw_text_list)
+                                num_char = calc_num_from_raw_text_list(
+                                    e_id_to_t_id(answer["element_id"], html_code), raw_text_list
+                                )
                             answer_offset = num_char + answer["answer_start"]
-                            answer_length = len(orig_answer_text) if answer["element_id"] != -1 else 1
+                            answer_length = (
+                                len(orig_answer_text) if answer["element_id"] != -1 else 1
+                            )
                             start_position = char_to_word_offset[answer_offset]
                             end_position = char_to_word_offset[answer_offset + answer_length - 1]
                             # Only add answers where the text can be exactly recovered from the
@@ -469,12 +497,21 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
                             #
                             # Note that this means for training mode, every example is NOT
                             # guaranteed to be preserved.
-                            actual_text = " ".join([w for w in doc_tokens[start_position:(end_position + 1)]
-                                                    if (w[0] != '<' or w[-1] != '>')])
+                            actual_text = " ".join(
+                                [
+                                    w
+                                    for w in doc_tokens[start_position : (end_position + 1)]
+                                    if (w[0] != "<" or w[-1] != ">")
+                                ]
+                            )
                             cleaned_answer_text = " ".join(whitespace_tokenize(orig_answer_text))
                             if actual_text.find(cleaned_answer_text) == -1:
-                                logger.warning("Could not find answer of question %s: '%s' vs. '%s'",
-                                               qa['id'], actual_text, cleaned_answer_text)
+                                logger.warning(
+                                    "Could not find answer of question %s: '%s' vs. '%s'",
+                                    qa["id"],
+                                    actual_text,
+                                    cleaned_answer_text,
+                                )
                                 continue
 
                         example = SRCExample(
@@ -500,11 +537,23 @@ def read_squad_examples(input_file, root_dir, is_training, tokenizer, simplify=F
     return examples, all_tag_list
 
 
-def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride, max_query_length, is_training,
-                                 cls_token='[CLS]', sep_token='[SEP]', pad_token=0,
-                                 sequence_a_segment_id=0, sequence_b_segment_id=1,
-                                 cls_token_segment_id=0, pad_token_segment_id=0,
-                                 mask_padding_with_zero=True, max_depth=50):
+def convert_examples_to_features(
+    examples,
+    tokenizer,
+    max_seq_length,
+    doc_stride,
+    max_query_length,
+    is_training,
+    cls_token="[CLS]",
+    sep_token="[SEP]",
+    pad_token=0,
+    sequence_a_segment_id=0,
+    sequence_b_segment_id=1,
+    cls_token_segment_id=0,
+    pad_token_segment_id=0,
+    mask_padding_with_zero=True,
+    max_depth=50,
+):
     r"""
     Converting the SRC Examples further into the features for all the input doc spans.
 
@@ -537,7 +586,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
 
     unique_id = 1000000000
     features = []
-    for (example_index, example) in enumerate(tqdm(examples, desc="Converting examples to features")):
+    for (example_index, example) in enumerate(
+        tqdm(examples, desc="Converting examples to features")
+    ):
 
         xpath_tag_map = example.xpath_tag_map
         xpath_subs_map = example.xpath_subs_map
@@ -555,8 +606,12 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
             else:
                 tok_end_position = len(example.all_doc_tokens) - 1
             (tok_start_position, tok_end_position) = _improve_answer_span(
-                example.all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
-                example.orig_answer_text)
+                example.all_doc_tokens,
+                tok_start_position,
+                tok_end_position,
+                tokenizer,
+                example.orig_answer_text,
+            )
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
         max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
@@ -565,7 +620,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
         # To deal with this we do a sliding window approach, where we take chunks
         # of the up to our max length with a stride of `doc_stride`.
         _DocSpan = collections.namedtuple(  # pylint: disable=invalid-name
-            "DocSpan", ["start", "length"])
+            "DocSpan", ["start", "length"]
+        )
         doc_spans = []
         start_offset = 0
         while start_offset < len(example.all_doc_tokens):
@@ -605,8 +661,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
                 token_to_orig_map[len(tokens)] = example.tok_to_orig_index[split_token_index]
                 token_to_tag_index.append(example.tok_to_tags_index[split_token_index])
 
-                is_max_context = _check_is_max_context(doc_spans, doc_span_index,
-                                                       split_token_index)
+                is_max_context = _check_is_max_context(doc_spans, doc_span_index, split_token_index)
                 token_is_max_context[len(tokens)] = is_max_context
                 tokens.append(example.all_doc_tokens[split_token_index])
                 segment_ids.append(sequence_b_segment_id)
@@ -643,8 +698,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
                 doc_start = doc_span.start
                 doc_end = doc_span.start + doc_span.length - 1
                 out_of_span = False
-                if not (tok_start_position >= doc_start and
-                        tok_end_position <= doc_end):
+                if not (tok_start_position >= doc_start and tok_end_position <= doc_end):
                     out_of_span = True
                 if out_of_span:
                     span_is_impossible = True
@@ -655,9 +709,12 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
 
-
-            xpath_tags_seq = [xpath_tag_map.get(tid, pad_x_tag_seq) for tid in token_to_tag_index]  # ok
-            xpath_subs_seq = [xpath_subs_map.get(tid, pad_x_subs_seq) for tid in token_to_tag_index]  # ok
+            xpath_tags_seq = [
+                xpath_tag_map.get(tid, pad_x_tag_seq) for tid in token_to_tag_index
+            ]  # ok
+            xpath_subs_seq = [
+                xpath_subs_map.get(tid, pad_x_subs_seq) for tid in token_to_tag_index
+            ]  # ok
 
             # we need to get extended_attention_mask
 
@@ -680,7 +737,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length, doc_stride
                     is_impossible=span_is_impossible,
                     xpath_tags_seq=xpath_tags_seq,
                     xpath_subs_seq=xpath_subs_seq,
-                ))
+                )
+            )
             unique_id += 1
 
     return features
@@ -692,8 +750,13 @@ def _improve_answer_span(doc_tokens, input_start, input_end, tokenizer, orig_ans
 
     for new_start in range(input_start, input_end + 1):
         for new_end in range(input_end, new_start - 1, -1):
-            text_span = " ".join([w for w in doc_tokens[new_start:(new_end + 1)]
-                                  if w[0] != '<' or w[-1] != '>'])
+            text_span = " ".join(
+                [
+                    w
+                    for w in doc_tokens[new_start : (new_end + 1)]
+                    if w[0] != "<" or w[-1] != ">"
+                ]
+            )
             if text_span == tok_answer_text:
                 return new_start, new_end
 
@@ -720,13 +783,22 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
     return cur_span_index == best_span_index
 
 
-RawResult = collections.namedtuple("RawResult",
-                                   ["unique_id", "start_logits", "end_logits"])
+RawResult = collections.namedtuple("RawResult", ["unique_id", "start_logits", "end_logits"])
 
 
-def write_predictions(all_examples, all_features, all_results, n_best_size, max_answer_length, do_lower_case,
-                      output_prediction_file, output_tag_prediction_file,
-                      output_nbest_file, verbose_logging, tokenizer):
+def write_predictions(
+    all_examples,
+    all_features,
+    all_results,
+    n_best_size,
+    max_answer_length,
+    do_lower_case,
+    output_prediction_file,
+    output_tag_prediction_file,
+    output_nbest_file,
+    verbose_logging,
+    tokenizer,
+):
     r"""
     Compute and write down the final results, including the n best results.
 
@@ -757,7 +829,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
 
     _PrelimPrediction = collections.namedtuple(  # pylint: disable=invalid-name
         "PrelimPrediction",
-        ["feature_index", "start_index", "end_index", "start_logit", "end_logit", "tag_ids"])
+        ["feature_index", "start_index", "end_index", "start_logit", "end_logit", "tag_ids"],
+    )
 
     all_predictions = collections.OrderedDict()
     all_tag_predictions = collections.OrderedDict()
@@ -794,7 +867,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
                     length = end_index - start_index + 1
                     if length > max_answer_length:
                         continue
-                    tag_ids = set(feature.token_to_tag_index[start_index: end_index + 1])
+                    tag_ids = set(feature.token_to_tag_index[start_index : end_index + 1])
                     prelim_predictions.append(
                         _PrelimPrediction(
                             feature_index=feature_index,
@@ -802,14 +875,16 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
                             end_index=end_index,
                             start_logit=result.start_logits[start_index],
                             end_logit=result.end_logits[end_index],
-                            tag_ids=list(tag_ids)))
+                            tag_ids=list(tag_ids),
+                        )
+                    )
         prelim_predictions = sorted(
-            prelim_predictions,
-            key=lambda x: (x.start_logit + x.end_logit),
-            reverse=True)
+            prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True
+        )
 
         _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
-            "NbestPrediction", ["text", "start_logit", "end_logit", "tag_ids"])
+            "NbestPrediction", ["text", "start_logit", "end_logit", "tag_ids"]
+        )
 
         seen_predictions = {}
         nbest = []
@@ -818,10 +893,10 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
                 break
             feature = features[pred.feature_index]
             if pred.start_index > 0:  # this is a non-null prediction
-                tok_tokens = feature.tokens[pred.start_index:(pred.end_index + 1)]
+                tok_tokens = feature.tokens[pred.start_index : (pred.end_index + 1)]
                 orig_doc_start = feature.token_to_orig_map[pred.start_index]
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
-                orig_tokens = example.doc_tokens[orig_doc_start:(orig_doc_end + 1)]
+                orig_tokens = example.doc_tokens[orig_doc_start : (orig_doc_end + 1)]
                 tok_text = " ".join(tok_tokens)
 
                 # De-tokenize WordPieces that have been split off.
@@ -847,13 +922,16 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
                     text=final_text,
                     start_logit=pred.start_logit,
                     end_logit=pred.end_logit,
-                    tag_ids=pred.tag_ids))
+                    tag_ids=pred.tag_ids,
+                )
+            )
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
             nbest.append(
-                _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0, tag_ids=[-1]))
+                _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0, tag_ids=[-1])
+            )
 
         assert len(nbest) >= 1
 
@@ -880,11 +958,16 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
         assert len(nbest_json) >= 1
 
         best = nbest_json[0]["text"].split()
-        best = ' '.join([w for w in best
-                         if (w[0] != '<' or w[-1] != '>')
-                         and w != "<end-of-node>"
-                         and w != tokenizer.sep_token
-                         and w != tokenizer.cls_token])
+        best = " ".join(
+            [
+                w
+                for w in best
+                if (w[0] != "<" or w[-1] != ">")
+                and w != "<end-of-node>"
+                and w != tokenizer.sep_token
+                and w != tokenizer.cls_token
+            ]
+        )
         all_predictions[example.qas_id] = best
         all_tag_predictions[example.qas_id] = nbest_json[0]["tag_ids"]
         all_nbest_json[example.qas_id] = nbest_json
@@ -895,8 +978,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size, max_
     with open(output_nbest_file, "w") as writer:
         writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
 
-    with open(output_tag_prediction_file, 'w') as writer:
-        writer.write(json.dumps(all_tag_predictions, indent=4) + '\n')
+    with open(output_tag_prediction_file, "w") as writer:
+        writer.write(json.dumps(all_tag_predictions, indent=4) + "\n")
     return
 
 
@@ -923,8 +1006,7 @@ def _get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
     start_position = tok_text.find(pred_text)
     if start_position == -1:
         if verbose_logging:
-            logger.info(
-                "Unable to find text: '%s' in '%s'" % (pred_text, orig_text))
+            logger.info("Unable to find text: '%s' in '%s'" % (pred_text, orig_text))
         return orig_text
     end_position = start_position + len(pred_text) - 1
 
@@ -933,8 +1015,9 @@ def _get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
 
     if len(orig_ns_text) != len(tok_ns_text):
         if verbose_logging:
-            logger.info("Length not equal after stripping spaces: '%s' vs '%s'",
-                        orig_ns_text, tok_ns_text)
+            logger.info(
+                "Length not equal after stripping spaces: '%s' vs '%s'", orig_ns_text, tok_ns_text
+            )
         return orig_text
 
     # We then project the characters in `pred_text` back to `orig_text` using
@@ -965,7 +1048,7 @@ def _get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
             logger.info("Couldn't map end position")
         return orig_text
 
-    output_text = orig_text[orig_start_position:(orig_end_position + 1)]
+    output_text = orig_text[orig_start_position : (orig_end_position + 1)]
     return output_text
 
 

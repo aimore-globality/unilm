@@ -49,17 +49,20 @@ def page_hits_level_metric(
                 num_html_pages_with_truth += 1
             if result["pred"]:
                 num_html_pages_with_pred += 1
-            if result["truth"] & result["pred"]: # 似乎这里是个交集...不能随便乱搞
+            if result["truth"] & result["pred"]:  # 似乎这里是个交集...不能随便乱搞
                 num_html_pages_with_correct += 1
-
-        precision = num_html_pages_with_correct / (
-                num_html_pages_with_pred + 0.000001)
-        recall = num_html_pages_with_correct / (
-                num_html_pages_with_truth + 0.000001)
+        # TODO(aimore): To avoid division by zero they add a very small number, but check if this cannot bias the result if num_html_pages_with_pred = 0
+        precision = num_html_pages_with_correct / (num_html_pages_with_pred + 0.000001)
+        recall = num_html_pages_with_correct / (num_html_pages_with_truth + 0.000001)
         f1 = 2 * (precision * recall) / (precision + recall + 0.000001)
         metric_str += "%s, %d, %d, %.2f, %.2f, %.2f\n" % (
-            tag, num_html_pages_with_truth, num_html_pages_with_pred, precision,
-            recall, f1)
+            tag,
+            num_html_pages_with_truth,
+            num_html_pages_with_pred,
+            precision,
+            recall,
+            f1,
+        )
         all_precisions.append(precision)
         all_recall.append(recall)
         all_f1.append(f1)
@@ -73,7 +76,11 @@ def page_hits_level_metric(
         f.write(metric_str)
         print(f.name, file=sys.stderr)
     print(metric_str, file=sys.stderr)
-    return sum(all_precisions) / len(all_precisions), sum(all_recall) / len(all_recall), sum(all_f1) / len(all_f1)
+    return (
+        sum(all_precisions) / len(all_precisions),
+        sum(all_recall) / len(all_recall),
+        sum(all_f1) / len(all_f1),
+    )
 
 
 def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines):

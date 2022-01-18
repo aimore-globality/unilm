@@ -22,7 +22,11 @@ from .tokenization_markuplm import MarkupLMTokenizer
 
 logger = logging.get_logger(__name__)
 
-VOCAB_FILES_NAMES = {"vocab_file": "vocab.json", "merges_file": "merges.txt", "tokenizer_file": "tokenizer.json"}
+VOCAB_FILES_NAMES = {
+    "vocab_file": "vocab.json",
+    "merges_file": "merges.txt",
+    "tokenizer_file": "tokenizer.json",
+}
 
 PRETRAINED_VOCAB_FILES_MAP = {
     "vocab_file": {
