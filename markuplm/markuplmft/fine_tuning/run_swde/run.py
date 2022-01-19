@@ -25,7 +25,7 @@ from markuplmft.models.markuplm import (
 
 from utils import get_swde_features, SwdeDataset
 from eval_utils import page_level_constraint
-from markuplm.markuplmft.fine_tuning.run_swde import constants
+from markuplmft.fine_tuning.run_swde import constants
 import torch
 
 import copy

@@ -1,6 +1,6 @@
 import os
 import sys
-from markuplm.markuplmft.fine_tuning.run_swde import constants
+from markuplmft.fine_tuning.run_swde import constants
 
 
 def page_hits_level_metric(
