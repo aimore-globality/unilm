@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from markuplmft.data.tag_utils import tags_dict
 import pickle
 import os
-import constants
+from markuplm.markuplmft.fine_tuning.run_swde import constants
 
 
 class SwdeFeature(object):

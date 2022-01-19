@@ -34,7 +34,7 @@ from lxml import etree
 from lxml.html.clean import Cleaner
 from tqdm import tqdm
 
-import constants
+from markuplm.markuplmft.fine_tuning.run_swde import constants
 import multiprocessing as mp
 
 FLAGS = flags.FLAGS

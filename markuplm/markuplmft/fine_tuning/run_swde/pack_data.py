@@ -33,7 +33,7 @@ import sys
 from absl import app
 from absl import flags
 import tqdm
-import constants
+from markuplm.markuplmft.fine_tuning.run_swde import constants
 
 FLAGS = flags.FLAGS
 
