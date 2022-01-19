@@ -150,13 +150,13 @@
 # }
 
 from pathlib import Path
-p = Path('/Users/aimoredutra/GIT/swde/my_CF_sourceCode/WAE/')
 
-websites = [x.parts[-1].split('-')[-1].split('(')[0] for x in list(p.iterdir())]
+p = Path.cwd().parents[4] / "swde/my_CF_sourceCode/WAE/"
+print(p)
 
-VERTICAL_WEBSITES = {
-    "WAE": websites
-}
+websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+
+VERTICAL_WEBSITES = {"WAE": websites}
 
 ATTRIBUTES = {
     "WAE": ["PAST_CLIENT"],
@@ -167,5 +167,5 @@ ATTRIBUTES_PAD = {
 }
 
 ATTRIBUTES_PLUS_NONE = {
-    "WAE": ["PAST_CLIENT",  "none"],
+    "WAE": ["PAST_CLIENT", "none"],
 }
