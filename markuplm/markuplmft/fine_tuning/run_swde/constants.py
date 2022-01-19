@@ -151,7 +151,7 @@
 
 from pathlib import Path
 
-p = str(Path.cwd()).split('GIT')[0] / "GIT/swde/my_CF_sourceCode/WAE/"
+p = Path(str(Path.cwd()).split("GIT")[0]) / "GIT/swde/my_CF_sourceCode/WAE/"
 print(p)
 
 websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
