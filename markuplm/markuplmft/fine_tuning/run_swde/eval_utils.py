@@ -44,14 +44,19 @@ def page_hits_level_metric(
         num_html_pages_with_pred = 0
         num_html_pages_with_correct = 0
         for html_path in evaluation_dict[tag]:
+            # For each page check if there is at least one correct xpath prediction
             result = evaluation_dict[tag][html_path]
             if result["truth"]:
                 num_html_pages_with_truth += 1
             if result["pred"]:
                 num_html_pages_with_pred += 1
-            if result["truth"] & result["pred"]:  # 似乎这里是个交集...不能随便乱搞
+            if result["truth"] & result["pred"]:  # 似乎这里是个交集...不能随便乱搞 # Seems like an intersection here... can't just mess around
+                # Here is where it considers at least one correct prediction because it takes the intersection of sets
                 num_html_pages_with_correct += 1
-        # TODO(aimore): To avoid division by zero they add a very small number, but check if this cannot bias the result if num_html_pages_with_pred = 0
+        # Metrics are computed over the number of pages in a domain.
+        # The metrics are optimistic because they don't consider the number of FP from each page.
+        # Precision and Recall will be zero if there is no ground_truth in a domain.
+        # TODO (Aimore): Change the way these metrics are computed.
         precision = num_html_pages_with_correct / (num_html_pages_with_pred + 0.000001)
         recall = num_html_pages_with_correct / (num_html_pages_with_truth + 0.000001)
         f1 = 2 * (precision * recall) / (precision + recall + 0.000001)
@@ -63,6 +68,7 @@ def page_hits_level_metric(
             recall,
             f1,
         )
+        # All metrics are then averaged over the number of tags
         all_precisions.append(precision)
         all_recall.append(recall)
         all_f1.append(f1)
@@ -76,6 +82,7 @@ def page_hits_level_metric(
         f.write(metric_str)
         print(f.name, file=sys.stderr)
     print(metric_str, file=sys.stderr)
+    # TODO (aimore): Why not take the mean
     return (
         sum(all_precisions) / len(all_precisions),
         sum(all_recall) / len(all_recall),
@@ -90,7 +97,7 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
 
     field_xpath_freq_dict = dict()
 
-    for line in lines:
+    for line in lines:  # This counts the xpaths across the domain which have the most predictions (If there is no prediction this line this for is skipped)
         items = line.split("\t")
         assert len(items) >= 5, items
         xpath = items[1]
@@ -102,7 +109,7 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
         if xpath not in field_xpath_freq_dict[pred]:
             field_xpath_freq_dict[pred][xpath] = 0
         field_xpath_freq_dict[pred][xpath] += 1
-
+    # The bit below: gets the most frequent xpath, that was voted containing a Past Client
     most_frequent_xpaths = dict()  # Site level voting.
     for field, xpth_freq in field_xpath_freq_dict.items():
         frequent_xpath = sorted(
@@ -167,9 +174,10 @@ def page_level_constraint(vertical, target_website,
         for index, score in enumerate(raw_scores):
             if html_path not in page_field_max:
                 page_field_max[html_path] = {}
-            if tags[index] not in page_field_max[
-                html_path] or score >= page_field_max[html_path][tags[index]]:
+            if tags[index] not in page_field_max[html_path] or \
+                    score >= page_field_max[html_path][tags[index]]:
                 page_field_max[html_path][tags[index]] = score
+    # E.g. page_field_max = {'page_id':{'tag': max_pred}} Gets the max predictions of each tag per page
     print(page_field_pred_count, file=sys.stderr)
     voted_lines = []
     for line in lines:
@@ -183,8 +191,8 @@ def page_level_constraint(vertical, target_website,
                 if pred != "none":
                     continue
                 if raw_scores[index] >= page_field_max[html_path][tags[index]] - (1e-3):
-                    items[4] = tag
+                    items[4] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
         voted_lines.append("\t".join(items))
-
+    # What happens if there is no prediction and that hack above doesn't pass?
     return site_level_voting(
         vertical, target_website, sub_output_dir, voted_lines)

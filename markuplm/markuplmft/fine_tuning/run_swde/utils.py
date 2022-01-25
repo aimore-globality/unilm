@@ -138,15 +138,16 @@ def get_swde_features(
         raw_data = pickle.load(f)
 
     features = []
-
+    if website == 'intralinks.com':
+        print('Check')
     for index in tqdm.tqdm(
         raw_data, desc=f"Processing {vertical}-{website}-{n_pages} features ..."
     ):
         html_path = f"{vertical}-{website}-{index}.htm"
         needed_docstrings_id_set = set()
-        for i in range(len(raw_data[index])):
+        for i in range(len(raw_data[index])): # This for loop constrains the amount of xpath that are used to create the input features and predict the page.
             doc_string_type = raw_data[index][i][2]
-            if doc_string_type == "fixed-node":
+            if doc_string_type == "fixed-node": # TODO (aimore): It seems that here they ignore all nodes that are fixed-node, and only consider nodes that are none or tag.
                 continue
             # we take i-3, i-2, i-1 into account
 
@@ -177,9 +178,12 @@ def get_swde_features(
             text = raw_data[index][needed_id][0]
             xpath = raw_data[index][needed_id][1]
             type = raw_data[index][needed_id][2]
-            token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+            token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) # Here is where the text get converted into tokens ids
 
             xpath_tags_seq, xpath_subs_seq = process_xpath(xpath)
+            # E.g. xpath = '/html/body/div[2]/div[1]/ol/li[1]/a/span'
+            # E.g. xpath_tags_seq = [109, 25, 50, 50, 144, 120, 0, 178, 216, 216, 216, 216, 216, 216...]
+            # E.g. xpath_subs_seq = [0, 0, 2, 1, 0, 1, 0, 0, 1001, 1001, 1001, 1001, 1001, 1001, 1001...]
 
             all_token_ids_seq += token_ids
             all_xpath_tags_seq += [xpath_tags_seq] * len(token_ids)
@@ -187,7 +191,7 @@ def get_swde_features(
 
             token_to_ori_map_seq += [i] * len(token_ids)
 
-            if type == "fixed-node":
+            if type == "fixed-node": # Create a sequence of labels = -100
                 all_labels_seq += [-100] * len(token_ids)
             else:
                 # we always use the first token to predict
@@ -246,7 +250,7 @@ def get_swde_features(
             while (
                 curr_first_token_index < len(first_token_pos)
                 and end_pos > first_token_pos[curr_first_token_index] >= start_pos
-            ):
+            ): # This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
                 involved_first_tokens_pos.append(
                     first_token_pos[curr_first_token_index] - start_pos + 1
                 )  # +1 for [cls]

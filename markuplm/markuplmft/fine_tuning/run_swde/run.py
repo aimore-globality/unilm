@@ -17,7 +17,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from markuplmft.models.markuplm import (
+from markuplm.markuplmft.models.markuplm import (
     MarkupLMConfig,
     MarkupLMTokenizer,
     MarkupLMForTokenClassification,
@@ -25,7 +25,7 @@ from markuplmft.models.markuplm import (
 
 from utils import get_swde_features, SwdeDataset
 from eval_utils import page_level_constraint
-from markuplmft.fine_tuning.run_swde import constants
+from markuplm.markuplmft.fine_tuning.run_swde import constants
 import torch
 
 import copy
@@ -231,6 +231,8 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
 
 
 def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
+    if website == 'intralinks.com':
+        print('Check')
     dataset, info = get_dataset_and_info_for_websites([website], evaluate=True)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
@@ -247,7 +249,7 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
 
     # Eval!
     logger.info("***** Running evaluation {} *****".format(prefix))
-    logger.info("  Num examples = %d", len(dataset))
+    logger.info(f"  Num examples for {website} = {len(dataset)}")
     logger.info("  Batch size = %d", args.eval_batch_size)
     all_logits = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
@@ -351,6 +353,7 @@ def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
         all_recall.append(res_on_one_website[1])
         all_f1.append(res_on_one_website[2])
 
+    # Results averaged per tag and now they will be averaged by all the domains
     return {
         "precision": sum(all_precision) / len(all_precision),
         "recall": sum(all_recall) / len(all_recall),
@@ -891,7 +894,7 @@ def main():
     all_recall = []
     all_f1 = []
 
-    for i in range(10):
+    for i in range(1):
         wid_start = i
         wid_end = i + args.n_seed
 

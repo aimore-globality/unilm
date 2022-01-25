@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.7.1
+#       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: markuplmft
 #     language: python
@@ -90,16 +90,37 @@ pd.DataFrame(df[page_index], columns=['text', 'xpath', 'node-type'])
 # %% tags=[]
 pd.set_option('max_colwidth', 2000)
 
-website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-blackbaud.com-2000.pickle'
+website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-intralinks.com-2000.pickle'
 
-all_data = pd.read_pickle(website_data_path)
+website_data = pd.read_pickle(website_data_path)
 
 # %% tags=[]
-page_index = '0001'
-df = pd.DataFrame(all_data[page_index], columns=['text', 'xpath', 'node-type'])
+len(website_data)
+
+# %% tags=[]
+page_index = '0022'
+df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
 df
 
-# %%
+# %% tags=[]
+df['node-type'].value_counts()
+
+# %% [markdown]
+# ## Check if all websites have at least one tag
+
+# %% tags=[]
+pd.set_option('max_colwidth', 2000)
+
+websites_root_path = Path.cwd().parents[2] / 'swde/my_CF_processed/'
+websites_data_path = list(websites_root_path.glob('[!cached]*'))
+
+# %% tags=[]
+for webiste_path in websites_data_path:
+    website_data = pd.read_pickle(webiste_path)
+    print(f"{webiste_path} {len(website_data)}")
+    for page_index in website_data.keys():
+        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
+        assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"    
 
 # %% [markdown]
 # ---
