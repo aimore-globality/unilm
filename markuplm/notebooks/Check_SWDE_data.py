@@ -114,13 +114,23 @@ pd.set_option('max_colwidth', 2000)
 websites_root_path = Path.cwd().parents[2] / 'swde/my_CF_processed/'
 websites_data_path = list(websites_root_path.glob('[!cached]*'))
 
+# %%
+len(all_data)
+
+# %% tags=[]
+page_index = '0001'
+df = pd.DataFrame(all_data[page_index], columns=['text', 'xpath', 'node-type'])
+df
+
+# %%
 # %% tags=[]
 for webiste_path in websites_data_path:
     website_data = pd.read_pickle(webiste_path)
     print(f"{webiste_path} {len(website_data)}")
     for page_index in website_data.keys():
         df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
-        assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"    
+        assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
 
+# %% [markdown]
 # %% [markdown]
 # ---
