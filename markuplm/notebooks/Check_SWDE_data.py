@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.7.1
+#       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: markuplmft
 #     language: python
@@ -90,12 +90,15 @@ pd.DataFrame(df[page_index], columns=['text', 'xpath', 'node-type'])
 # %% tags=[]
 pd.set_option('max_colwidth', 2000)
 
-website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-blackbaud.com-2000.pickle'
+website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-intralinks.com-2000.pickle'
 
 all_data = pd.read_pickle(website_data_path)
 
+# %%
+len(all_data)
+
 # %% tags=[]
-page_index = '0001'
+page_index = '0000'
 df = pd.DataFrame(all_data[page_index], columns=['text', 'xpath', 'node-type'])
 df
 
