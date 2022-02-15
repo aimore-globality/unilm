@@ -129,6 +129,15 @@ def get_swde_features(
     prev_nodes,
     n_pages,
 ):
+    """
+    This function creates a list of features that goes into the model.
+    The data already comes divided by nodes.
+    Here, most of the fixed nodes are filtered out.
+    From the remaining nodes, features are created.
+    Each feature has 384 tokens. The sum of the
+    Each feature represents a
+
+    """
     real_max_token_num = max_length - 2  # for cls and sep
     padded_xpath_tags_seq = [216] * 50
     padded_xpath_subs_seq = [1001] * 50
@@ -140,28 +149,37 @@ def get_swde_features(
     features = []
     if website == 'intralinks.com':
         print('Check')
-    for index in tqdm.tqdm(
+
+    # This loops goes over all the pages in a website
+    for page_id in tqdm.tqdm(
         raw_data, desc=f"Processing {vertical}-{website}-{n_pages} features ..."
     ):
-        html_path = f"{vertical}-{website}-{index}.htm"
+        html_path = f"{vertical}-{website}-{page_id}.htm"
         needed_docstrings_id_set = set()
-        for i in range(len(raw_data[index])): # This for loop constrains the amount of xpath that are used to create the input features and predict the page.
-            doc_string_type = raw_data[index][i][2]
-            if doc_string_type == "fixed-node": # TODO (aimore): It seems that here they ignore all nodes that are fixed-node, and only consider nodes that are none or tag.
-                continue
-            # we take i-3, i-2, i-1 into account
 
-            needed_docstrings_id_set.add(i)
+        # This for loop constrains the amount of xpath that are used to create the input features and predict the page.
+        # This for loop goes over all the nodes indices and gets any node that is not fixed-node.
+        # However, it gets up to 3 nodes before of a node that is not 'fixed-node' even if they are 'fixed-nodes'.
+        for index_node in range(len(raw_data[page_id])):
+            doc_string_type = raw_data[page_id][index_node][2]
+            # E.g. doc_string_type = 'fixed-node'
+            if doc_string_type == "fixed-node":
+                continue
+            # we take index_node-3, index_node-2, index_node-1 into account
+
+            needed_docstrings_id_set.add(index_node)
 
             used_prev = 0
-            prev_id = i - 1
+            prev_id = index_node - 1
             while prev_id >= 0 and used_prev < prev_nodes:
-                if raw_data[index][prev_id][0].strip():
+                if raw_data[page_id][prev_id][0].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
                     needed_docstrings_id_set.add(prev_id)
                     used_prev += 1
                 prev_id -= 1
 
         needed_docstrings_id_list = sorted(list(needed_docstrings_id_set))
+        # E. g. needed_docstrings_id_list = [3, 5, 518, 522, 526, 659, 663, 667, 672, 675, 561, 570, 574, 578, 588, 593, 594, 595, 596, 597, 598, 509]
+        # This is going to be a set of nodes in which the model will use.
 
         all_token_ids_seq = []
         all_xpath_tags_seq = []
@@ -174,35 +192,52 @@ def get_swde_features(
         first_token_type = []
         first_token_text = []
 
+        # This for loop goes over the selected nodes and append the tokens and xpaths from each node
         for i, needed_id in enumerate(needed_docstrings_id_list):
-            text = raw_data[index][needed_id][0]
-            xpath = raw_data[index][needed_id][1]
-            type = raw_data[index][needed_id][2]
+            text = raw_data[page_id][needed_id][0]
+            # E.g. text [str] = 'HITT FUTURES'
+            xpath = raw_data[page_id][needed_id][1]
+            # E.g. xpath [str] = '/html/body/div/div/div[2]/div[1]/div[2]/div/div/ul/li[3]/a'
+            type = raw_data[page_id][needed_id][2]
+            # E.g. type [str] = 'fixed-node'
             token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) # Here is where the text get converted into tokens ids
+            # E.g. tokenizer.tokenize breaks the text into smaller pieces, and the tokenizer.convert_tokens_to_ids applied a map key-value
+            # There seems to be no cutdown of size/text.
+            # E.g. token_ids = [725, 23728, 274, 6972, 28714]
 
             xpath_tags_seq, xpath_subs_seq = process_xpath(xpath)
-            # E.g. xpath = '/html/body/div[2]/div[1]/ol/li[1]/a/span'
-            # E.g. xpath_tags_seq = [109, 25, 50, 50, 144, 120, 0, 178, 216, 216, 216, 216, 216, 216...]
-            # E.g. xpath_subs_seq = [0, 0, 2, 1, 0, 1, 0, 0, 1001, 1001, 1001, 1001, 1001, 1001, 1001...]
+            # E.g. xpath_tags_seq [len(50)] = [109, 25, 50, 50, 50, 50, 50, 50, 50, 207, 120, 0, 216, 216, 216, ...]
+            # E.g. xpath_subs_seq [len(50)] = [0, 0, 0, 0, 2, 1, 2, 0, 0, 0, 3, 0, 1001, 1001, 1001, 1001, ...]
 
             all_token_ids_seq += token_ids
+            # all_token_ids_seq is the sequence of tokens from all the selected nodes (fixed, variable and fround truth)
+            # E. g. all_token_ids_seq = [42996, 4, 23687, 48159, 5457, 2931, ... 43163, 1297, 22, 29766, 12, 698, 34414]
             all_xpath_tags_seq += [xpath_tags_seq] * len(token_ids)
+            # E. g. all_xpath_tags_seq len(95)[len(50)] max 1001 = [[0, 0, 2, 1001, 1001, 1001, 1001,...], [...], [...], ...]
             all_xpath_subs_seq += [xpath_subs_seq] * len(token_ids)
+            # E. g. all_xpath_subs_seq len(95)[len(50)] max 216 = [[109, 104, 169, 216, 216, 216, 216, ,...], [...], [...], ...]
 
             token_to_ori_map_seq += [i] * len(token_ids)
 
-            if type == "fixed-node": # Create a sequence of labels = -100
+            if type == "fixed-node":  # Create a sequence of labels = -100
                 all_labels_seq += [-100] * len(token_ids)
             else:
                 # we always use the first token to predict
-                first_token_pos.append(len(all_labels_seq))
-                first_token_type.append(type)
-                first_token_xpaths.append(xpath)
-                first_token_text.append(text)
+                first_token_pos.append(len(all_labels_seq))  # E.g. len(all_labels_seq) = 71
+                # E.g. first_token_pos = [71, 95, 100, 104, 184, 192, 198, 212]
+                first_token_type.append(type)  # E.g. type = 'none'
+                # E.g. first_token_type = ['none', 'none', 'none', 'none', 'PAST_CLIENT', 'none', 'none', 'none']
+                first_token_xpaths.append(xpath)  # E.g. xpath = '/html/body/div/div/div[2]/div[1]/div[2]/div/div/ul/li[3]/a'
+                first_token_text.append(text)  # E.g. text = 'HITT FUTURES'
+                # ['1730 Pennsylvania Avenue NW | HITT', '1730 Pennsylvania Avenue NW', 'Washington, DC', "HITT completed an occupied building renovation of the main lobby, elevator cabsand typical tenant lobbies on four of the floors in this commercial office building loca
 
                 all_labels_seq += [constants.ATTRIBUTES_PLUS_NONE[vertical].index(type)] * len(
                     token_ids
                 )
+                # E. g. all_labels_seq = [-100, -100, ..., 1, 1, 1, 1, 1, -100, ..., -100, -100]
+                # The numbers in each token_ids indicates the label index in constants.ATTRIBUTES_PLUS_NONE
+                # This means that all tokens_ids for the text in the xpath
+                # will get labelled as something differently than -100 in case it is positive.
 
         assert len(all_token_ids_seq) == len(all_xpath_tags_seq)
         assert len(all_token_ids_seq) == len(all_xpath_subs_seq)
@@ -217,7 +252,8 @@ def get_swde_features(
         curr_first_token_index = 0
 
         while True:
-
+            # This loop goes over all_token_ids_seq in a stride manner.
+            # The first step is to get the features for the window.
             # invloved is [ start_pos , end_pos )
 
             token_type_ids = [0] * max_length  # that is always this
@@ -229,6 +265,12 @@ def get_swde_features(
                 + all_token_ids_seq[start_pos:end_pos]
                 + [tokenizer.sep_token_id]
             )
+            # tokenizer.cls_token_id = 0
+            # tokenizer.sep_token_id = 2
+            # Gets a subset of the all_token_ids_seq and appends cls_token_id(0) to beginning and cls_token_id(2) to end.
+            # The length of the subset is given by the real_max_token_num 382.
+            # E.g. splited_token_ids_seq [len(382)] = [42996, 4, 23687, 48159, 5457, 2931, ...]
+
             splited_xpath_tags_seq = (
                 [padded_xpath_tags_seq]
                 + all_xpath_tags_seq[start_pos:end_pos]
@@ -251,6 +293,7 @@ def get_swde_features(
                 curr_first_token_index < len(first_token_pos)
                 and end_pos > first_token_pos[curr_first_token_index] >= start_pos
             ): # This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
+                # This while loops over the first_token_pos and breaks if first_token_pos is higher than the end_pos
                 involved_first_tokens_pos.append(
                     first_token_pos[curr_first_token_index] - start_pos + 1
                 )  # +1 for [cls]
@@ -259,11 +302,12 @@ def get_swde_features(
                 involved_first_tokens_text.append(first_token_text[curr_first_token_index])
                 curr_first_token_index += 1
 
-            # we abort this feature if no useful node in it
+            # we abort this feature if no useful node in it.
             if len(involved_first_tokens_pos) == 0:
                 break
 
             if end_pos >= len(all_token_ids_seq):
+                # This will be the last time of this loop.
                 flag = True
                 # which means we need to pad in this feature
                 current_len = len(splited_token_ids_seq)
@@ -293,6 +337,10 @@ def get_swde_features(
                     involved_first_tokens_text=involved_first_tokens_text,
                 )
             )
+            # TODO (aimore): It seems that the stride is implemented wrong here.
+            #  Instead of doing start_pos += doc_stride.
+            #  In this way the stride will be 254, instead of 128.
+            #  So the first time is from 0 to 386, Then 508
 
             start_pos = end_pos - doc_stride
 
@@ -300,3 +348,4 @@ def get_swde_features(
                 break
 
     return features
+    # features = [swde_feature_1, swde_feature_2, ...]

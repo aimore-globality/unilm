@@ -650,6 +650,7 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
                 new_doc_strings.append((text, xpath, "fixed-node"))
             else:
                 # for variable nodes,we need to give them labels
+                # TODO (aimore): Understand what is this id? That will help understand why variable nodes are called like this or 'none'
                 gt_field = field_info.get(id, "none")
                 new_doc_strings.append((text, xpath, gt_field))
 

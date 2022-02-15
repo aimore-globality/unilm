@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""All the constant varaibales that can be reused in many files.
+"""All the constant variables that can be reused in many files.
 """
 
 
