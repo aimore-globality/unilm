@@ -302,7 +302,7 @@ def get_swde_features(
                 involved_first_tokens_text.append(first_token_text[curr_first_token_index])
                 curr_first_token_index += 1
 
-            # we abort this feature if no useful node in it.
+            # we abort this feature if no useful node in it. intralinks.com # TODO (aimore): That is strange why would this get removed, if there is no PastClient in the first window.
             if len(involved_first_tokens_pos) == 0:
                 break
 

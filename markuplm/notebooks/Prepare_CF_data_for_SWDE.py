@@ -35,10 +35,10 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # ## Full Data
 
 # %% tags=[]
-# data_path = "../../../web-annotation-extractor/data/processed/develop/dataset.avro"
-# df = pdx.read_avro(data_path)
-# df.annotations = df.annotations.apply(literal_eval)
-# len(df)
+data_path = "../../../web-annotation-extractor/data/processed/develop/dataset.avro"
+df = pdx.read_avro(data_path)
+df.annotations = df.annotations.apply(literal_eval)
+len(df)
 
 # %% [markdown]
 # ## Positive Data (containing at least one annotation)
@@ -103,7 +103,7 @@ df = df[df['html'] != 'PLACEHOLDER_HTML']
 # %% [markdown]
 # # Remove annotations that cannot be found in the xpaths of the html
 
-# %% tags=[]
+# %% tags=[] jupyter={"outputs_hidden": true}
 initial_amount_of_label = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
 print(f"Initial amount of labels: {initial_amount_of_label}")
 
@@ -281,3 +281,15 @@ for e, domain in enumerate(domains):
 
 # %% [markdown]
 # ---
+
+# %% tags=[]
+[x.get('PAST_CLIENT') for x in df[df['domain'] == 'progress.com']['annotations'].values]
+
+# %% tags=[]
+[x.get('PAST_CLIENT') for x in df[df['domain'] == 'progress.com']['annotations'].values]
+
+# %% tags=[]
+df[df['domain'] == 'progress.com']['url']
+
+# %% tags=[]
+df[df['domain'] == 'progress.com']['source_excel'].values

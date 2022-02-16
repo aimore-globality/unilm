@@ -59,7 +59,7 @@ len(data_packed)
 # %% [markdown]
 # ### Ground Truth
 
-# %% tags=[]
+# %% tags=[] jupyter={"outputs_hidden": true}
 gt_path = Path.cwd().parents[2] / 'swde/my_CF_sourceCode/groundtruth/WAE/'
 
 for gt_file in list(gt_path.iterdir())[:]:
@@ -132,5 +132,24 @@ for webiste_path in websites_data_path:
         assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
 
 # %% [markdown]
+# # Check how much text there are in the text of the xpaths with Past Clients
+
+# %% tags=[]
+webiste_path, page_index
+
+# %% tags=[]
+df[df['node-type'] == 'PAST_CLIENT']
+
+# %%
+for webiste_path in websites_data_path:
+    website_data = pd.read_pickle(webiste_path)
+    print(f"{webiste_path} {len(website_data)}")
+    for page_index in website_data.keys():
+        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
+
+# %%
+
+# %% [markdown]
+#
 # %% [markdown]
 # ---

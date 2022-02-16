@@ -232,7 +232,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
 
 def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
     if website == 'intralinks.com':
-        print('Check')
+        print('Check', website)
     dataset, info = get_dataset_and_info_for_websites([website], evaluate=True)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
@@ -251,6 +251,11 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
     logger.info("***** Running evaluation {} *****".format(prefix))
     logger.info(f"  Num examples for {website} = {len(dataset)}")
     logger.info("  Batch size = %d", args.eval_batch_size)
+    if len(dataset) == 0:
+        print("WILL ERROR")
+        default_res = (1, 1, 1)
+        return default_res
+
     all_logits = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         model.eval()
@@ -347,7 +352,7 @@ def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
     all_recall = []
     all_f1 = []
 
-    for website in test_websites:
+    for website in tqdm(test_websites):
         res_on_one_website = eval_on_one_website(args, model, website, sub_output_dir, prefix)
         all_precision.append(res_on_one_website[0])
         all_recall.append(res_on_one_website[1])
@@ -880,7 +885,6 @@ def main():
     tokenizer = MarkupLMTokenizer.from_pretrained(args.model_name_or_path)
 
     # first we load the features
-
     feature_dicts = load_and_cache_examples(
         args=args,
         tokenizer=tokenizer,
