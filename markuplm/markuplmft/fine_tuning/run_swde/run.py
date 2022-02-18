@@ -251,10 +251,10 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
     logger.info("***** Running evaluation {} *****".format(prefix))
     logger.info(f"  Num examples for {website} = {len(dataset)}")
     logger.info("  Batch size = %d", args.eval_batch_size)
-    if len(dataset) == 0:
-        print("WILL ERROR")
-        default_res = (1, 1, 1)
-        return default_res
+    # if len(dataset) == 0:
+    #     print("WILL ERROR")
+    #     default_res = (1, 1, 1)
+    #     return default_res
 
     all_logits = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):

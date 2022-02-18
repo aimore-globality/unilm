@@ -35,7 +35,7 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # ## Full Data
 
 # %% tags=[]
-data_path = "../../../web-annotation-extractor/data/processed/develop/dataset.avro"
+data_path = "../../../web-annotation-extractor/data/processed/train/dataset.avro"
 df = pdx.read_avro(data_path)
 df.annotations = df.annotations.apply(literal_eval)
 len(df)
@@ -282,10 +282,10 @@ for e, domain in enumerate(domains):
 # %% [markdown]
 # ---
 
-# %% tags=[]
+# %% tags=[] jupyter={"outputs_hidden": true}
 [x.get('PAST_CLIENT') for x in df[df['domain'] == 'progress.com']['annotations'].values]
 
-# %% tags=[]
+# %% tags=[] jupyter={"outputs_hidden": true}
 [x.get('PAST_CLIENT') for x in df[df['domain'] == 'progress.com']['annotations'].values]
 
 # %% tags=[]
@@ -293,3 +293,6 @@ df[df['domain'] == 'progress.com']['url']
 
 # %% tags=[]
 df[df['domain'] == 'progress.com']['source_excel'].values
+
+# %% tags=[]
+df

@@ -44,14 +44,20 @@ flags.DEFINE_integer("n_pages", 2000, "The maximum number of pages to read.")
 # flags.DEFINE_integer("n_pages", 3, "The maximum number of pages to read.")
 
 flags.DEFINE_string(
-    "input_groundtruth_path", "",
-    "The root path to parent folder of all ground truth files.")
-flags.DEFINE_string("input_pickle_path", "",
-                    "The root path to pickle file of swde html content.")
+    "input_groundtruth_path", "", "The root path to parent folder of all ground truth files.")
+
+flags.DEFINE_string("input_pickle_path", "", "The root path to pickle file of swde html content.")
+
 flags.DEFINE_string(
-    "output_data_path", "",
-    "The path of the output file containing both the input sequences and "
+    "output_data_path", "", "The path of the output file containing both the input sequences and "
     "output sequences of the sequence tagging version of swde dataset.")
+
+flags.DEFINE_integer(
+    "max_variable_nodes_per_website", 300, "The max of variable nodes per website.")
+
+flags.DEFINE_integer(
+    "min_node_variability", 5, "The amount of variations in a node to be considered variable.")
+
 
 
 def clean_spaces(text):
@@ -428,6 +434,7 @@ def get_field_xpaths(
     website_to_process,
     n_pages,
     max_variable_nodes_per_website,
+    min_node_variability
 ):
     """Gets xpaths data for each page in the data dictionary.
 
@@ -523,7 +530,7 @@ def get_field_xpaths(
 
     for xpath, variability in node_variability:
         # variability 为xpath的可变性 (variability is the variability of xpath)
-        if variability > 5 and len(variable_nodes) < max_variable_nodes_per_website:
+        if variability > min_node_variability and len(variable_nodes) < max_variable_nodes_per_website:
             variable_nodes.add(xpath)
         else:
             fixed_nodes.add(xpath)
@@ -597,9 +604,9 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
         all_data_dict,
         vertical_to_process=vertical,
         website_to_process=website,
-        n_pages=2000,
-        # n_pages=3,
-        max_variable_nodes_per_website=300,
+        n_pages=FLAGS.n_pages,
+        max_variable_nodes_per_website=FLAGS.max_variable_nodes_per_website,
+        min_node_variability=FLAGS.min_node_variability,
     )
     """
     keys to the following example --->
