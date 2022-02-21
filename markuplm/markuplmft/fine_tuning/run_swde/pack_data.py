@@ -25,7 +25,8 @@ This script is to generate a single file to pack up all the content of htmls.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
+from pathlib import Path
+import glob
 import os
 import pickle
 import sys
@@ -60,7 +61,11 @@ def pack_swde_data(swde_path, pack_path, cut_off):
     #         - swde/auto/auto-aol(2000)/            # A certain website.
     #           - swde/auto/auto-aol(2000)/0000.htm  # A page.
     # Get all vertical names.
-    vertical_to_websites_map = constants.VERTICAL_WEBSITES
+
+    p = os.path.join(swde_path, 'WAE')
+    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+
+    vertical_to_websites_map = {"WAE": websites}
     """
     for `auto`, that is --->
     [

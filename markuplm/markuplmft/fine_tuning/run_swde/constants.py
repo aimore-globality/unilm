@@ -149,46 +149,46 @@
 #     "university": ["name", "none", "phone", "type", "website"],
 # }
 
-from pathlib import Path
-
-p = Path(str(Path.cwd()).split("GIT")[0]) / "GIT/swde/my_CF_sourceCode/WAE/"
-print(p)
-
-websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
-avoid_websites = ["intralinks.com",
-                  "hybridcollective.tv",  # this and above are division by zero
-                  "progress.com",
-                    # "solarwinds.com",  # this and below are Num of examples for = 0
-                    # "customerthermometer.com",
-                    # "riverbed.com",
-                    # "redstor.com",
-                    # "docusign.com",
-                    # "techtarget.com",
-                    # "walsworth.com",
-                    # "applause.com",
-                    # "ostarasystems.com",
-                    # "opensesame.com",
-                    # "dowitcherdesigns.com",
-                    # "lightspeedsystems.com",
-                    # "monotype.com",
-                    # "w2ogroup.com",
-                    # "interiorarchitects.com",
-                    # "w2ogroup.com",
-                    # "interiorarchitects.com",
-                  ]
-websites = [website for website in websites if website not in avoid_websites]
-print(f"Total number of websites:{len(websites)}")
-print(websites)
+# from pathlib import Path
+#
+# p = Path(str(Path.cwd()).split("GIT")[0]) / "GIT/swde/my_CF_sourceCode/WAE/"
+# print(p)
+#
+# websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+# avoid_websites = ["intralinks.com",
+#                   "hybridcollective.tv",  # this and above are division by zero
+#                   "progress.com",
+#                     # "solarwinds.com",  # this and below are Num of examples for = 0
+#                     # "customerthermometer.com",
+#                     # "riverbed.com",
+#                     # "redstor.com",
+#                     # "docusign.com",
+#                     # "techtarget.com",
+#                     # "walsworth.com",
+#                     # "applause.com",
+#                     # "ostarasystems.com",
+#                     # "opensesame.com",
+#                     # "dowitcherdesigns.com",
+#                     # "lightspeedsystems.com",
+#                     # "monotype.com",
+#                     # "w2ogroup.com",
+#                     # "interiorarchitects.com",
+#                     # "w2ogroup.com",
+#                     # "interiorarchitects.com",
+#                   ]
+# websites = [website for website in websites if website not in avoid_websites]
+# print(f"Total number of websites:{len(websites)}")
+# print(websites)
 
 VERTICAL_WEBSITES = {"WAE": websites}
 
-ATTRIBUTES = {
-    "WAE": ["PAST_CLIENT"],
-}
-
-ATTRIBUTES_PAD = {
-    "WAE": ["PAST_CLIENT", "<PAD>"],
-}
+# ATTRIBUTES = {
+#     "WAE": ["PAST_CLIENT"],
+# }
+#
+# ATTRIBUTES_PAD = {
+#     "WAE": ["PAST_CLIENT", "<PAD>"],
+# }
 
 ATTRIBUTES_PLUS_NONE = {
     "WAE": ["PAST_CLIENT", "none"],

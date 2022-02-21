@@ -687,7 +687,11 @@ def main(_):
 
     args_list = []
 
-    vertical_to_websites_map = constants.VERTICAL_WEBSITES
+    
+    p = os.path.join(swde_path, 'WAE')
+    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+
+    vertical_to_websites_map = {"WAE": websites}
     verticals = vertical_to_websites_map.keys()
 
     for vertical in verticals:

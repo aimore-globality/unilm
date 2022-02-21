@@ -8,9 +8,9 @@ def aimore_metrics(evaluation_dict):
     all_precision = []
     all_recall = []
     for html_path in evaluation_dict:
-        result = evaluation_dict[html_path]
-        truth = result["truth"]
-        pred = result["pred"]
+        page_result = evaluation_dict[html_path]
+        truth = page_result["truth"]
+        pred = page_result["pred"]
         # print(f"# truth: {len(truth)} | # pred: {len(pred)}")
 
         precision = len(truth & pred) / (len(pred) + 1)
@@ -39,7 +39,7 @@ def page_hits_level_metric(
 
     lines = prev_voted_lines
 
-    evaluation_dict = dict()
+    prediction_groundtruth_dict = dict()
     # TODO (aimore): These lines are ugly, why not use pandas here?
     for line in lines:
         items = line.split("\t")
@@ -49,34 +49,34 @@ def page_hits_level_metric(
         truth = items[3]  # gt for this node
         pred = items[4]  # pred-value for this node
         # TODO (aimore):  These ifs initializing the dictionary are terrible
-        if truth not in evaluation_dict and truth != "none":
-            evaluation_dict[truth] = dict()
-        if pred not in evaluation_dict and pred != "none":
-            evaluation_dict[pred] = dict()
+        if truth not in prediction_groundtruth_dict and truth != "none":
+            prediction_groundtruth_dict[truth] = dict()
+        if pred not in prediction_groundtruth_dict and pred != "none":
+            prediction_groundtruth_dict[pred] = dict()
         if truth != "none":
-            if html_path not in evaluation_dict[truth]:
-                evaluation_dict[truth][html_path] = {"truth": set(), "pred": set()}
-            evaluation_dict[truth][html_path]["truth"].add(text)
+            if html_path not in prediction_groundtruth_dict[truth]:
+                prediction_groundtruth_dict[truth][html_path] = {"truth": set(), "pred": set()}
+            prediction_groundtruth_dict[truth][html_path]["truth"].add(text)
         if pred != "none":
-            if html_path not in evaluation_dict[pred]:
-                evaluation_dict[pred][html_path] = {"truth": set(), "pred": set()}
-            evaluation_dict[pred][html_path]["pred"].add(text)
+            if html_path not in prediction_groundtruth_dict[pred]:
+                prediction_groundtruth_dict[pred][html_path] = {"truth": set(), "pred": set()}
+            prediction_groundtruth_dict[pred][html_path]["pred"].add(text)
     metric_str = "tag, num_truth, num_pred, precision, recall, f1\n"
 
-    # evaluation_dict = {PAST_CLIENT: {0000: {truth: {text1, text2, ...}, {pred: {text1, text2, ...}}, 0001}}
+    # prediction_groundtruth_dict = {PAST_CLIENT: {0000: {truth: {text1, text2, ...}, {pred: {text1, text2, ...}}, 0001}}
 
     all_avg_precision, all_avg_recall = [], []
-    for tag in evaluation_dict:
-        avg_precision, avg_recall = aimore_metrics(evaluation_dict[tag])
+    for tag in prediction_groundtruth_dict:
+        avg_precision, avg_recall = aimore_metrics(prediction_groundtruth_dict[tag])
         all_avg_precision.append(avg_precision)
         all_avg_recall.append(avg_recall)
 
         num_html_pages_with_truth = 0
         num_html_pages_with_pred = 0
         num_html_pages_with_correct = 0
-        for html_path in evaluation_dict[tag]:
+        for html_path in prediction_groundtruth_dict[tag]:
             # For each page check if there is at least one correct xpath prediction
-            result = evaluation_dict[tag][html_path]
+            result = prediction_groundtruth_dict[tag][html_path]
             if result["truth"]:
                 num_html_pages_with_truth += 1
             if result["pred"]:
