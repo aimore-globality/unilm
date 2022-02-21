@@ -892,11 +892,16 @@ def main():
 
     tokenizer = MarkupLMTokenizer.from_pretrained(args.model_name_or_path)
 
+    swde_path = args.root_dir
+    p = os.path.join(swde_path, 'WAE')
+    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+    vertical_to_websites_map = {"WAE": websites}
+
     # first we load the features
     feature_dicts = load_and_cache_examples(
         args=args,
         tokenizer=tokenizer,
-        websites=constants.VERTICAL_WEBSITES[args.vertical],
+        websites=vertical_to_websites_map[args.vertical],
     )
 
     global global_feature_dicts
@@ -905,19 +910,21 @@ def main():
     all_precision = []
     all_recall = []
     all_f1 = []
+
     # This for loop goes over the different verticals. Since we have only one in WAE, I changed it from 10 to 1.
     for i in range(1):
-        wid_start = i
-        wid_end = i + args.n_seed
-
-        train_websites = []
-        test_websites = []
+        train_websites = websites
+        test_websites = websites
 
         # I changed the code here, to specify the websites I want to train and evaluate.
-        half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
-        train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
-        test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
+        # half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
+        # train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
+        # test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
 
+        # wid_start = i
+        # wid_end = i + args.n_seed
+        # train_websites = []
+        # test_websites = []
         # for wid in range(wid_start, wid_end):
         #     wwid = wid % 10
         #     train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])

@@ -329,14 +329,14 @@ def get_dom_tree(html, website):
     return dom_tree
 
 
-def load_html_and_groundtruth(vertical_to_load, website_to_load):
+def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_websites_map):
     """
     DONE READ!
     """
     # example is `book` and `abebooks`
     """Loads and returns the html string and ground truth data as a dictionary."""
     all_data_dict = collections.defaultdict(dict)
-    vertical_to_websites_map = constants.VERTICAL_WEBSITES
+    vertical_to_websites_map = vertical_to_websites_map
     gt_path = FLAGS.input_groundtruth_path
 
     """
@@ -605,9 +605,9 @@ def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages):
 
 def generate_nodes_seq_and_write_to_file(compressed_args):
     """Extracts all the xpaths and labels the nodes for all the pages."""
-    vertical, website = compressed_args
+    vertical, website, vertical_to_websites_map = compressed_args
 
-    all_data_dict = load_html_and_groundtruth(vertical, website)
+    all_data_dict = load_html_and_groundtruth(vertical, website, vertical_to_websites_map)
     get_field_xpaths(
         all_data_dict,
         vertical_to_process=vertical,
@@ -687,7 +687,7 @@ def main(_):
 
     args_list = []
 
-    
+    swde_path = FLAGS.input_groundtruth_path.split('groundtruth')[0]
     p = os.path.join(swde_path, 'WAE')
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
@@ -697,7 +697,7 @@ def main(_):
     for vertical in verticals:
         websites = vertical_to_websites_map[vertical]
         for website in websites:
-            args_list.append((vertical, website))
+            args_list.append((vertical, website, vertical_to_websites_map))
 
     num_cores = int(mp.cpu_count() / 2)
 
