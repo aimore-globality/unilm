@@ -180,7 +180,7 @@
 # print(f"Total number of websites:{len(websites)}")
 # print(websites)
 
-VERTICAL_WEBSITES = {"WAE": websites}
+# VERTICAL_WEBSITES = {"WAE": websites}
 
 # ATTRIBUTES = {
 #     "WAE": ["PAST_CLIENT"],
