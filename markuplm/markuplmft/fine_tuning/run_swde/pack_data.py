@@ -62,7 +62,7 @@ def pack_swde_data(swde_path, pack_path, cut_off):
     #           - swde/auto/auto-aol(2000)/0000.htm  # A page.
     # Get all vertical names.
 
-    p = os.path.join(swde_path, 'WAE')
+    p = Path(swde_path) / 'WAE'
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
     vertical_to_websites_map = {"WAE": websites}

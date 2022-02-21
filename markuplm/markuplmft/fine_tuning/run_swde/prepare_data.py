@@ -36,6 +36,7 @@ from tqdm import tqdm
 
 from markuplmft.fine_tuning.run_swde import constants
 import multiprocessing as mp
+from pathlib import Path
 
 FLAGS = flags.FLAGS
 random.seed(42)
@@ -688,7 +689,7 @@ def main(_):
     args_list = []
 
     swde_path = FLAGS.input_groundtruth_path.split('groundtruth')[0]
-    p = os.path.join(swde_path, 'WAE')
+    p = Path(swde_path) / 'WAE'
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
     vertical_to_websites_map = {"WAE": websites}
