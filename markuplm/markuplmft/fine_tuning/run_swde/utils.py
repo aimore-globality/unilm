@@ -147,8 +147,8 @@ def get_swde_features(
         raw_data = pickle.load(f)
 
     features = []
-    if website == 'intralinks.com':
-        print('Check')
+    if website == "intralinks.com":
+        print("Check")
 
     # This loops goes over all the pages in a website
     for page_id in tqdm.tqdm(
@@ -172,7 +172,9 @@ def get_swde_features(
             used_prev = 0
             prev_id = index_node - 1
             while prev_id >= 0 and used_prev < prev_nodes:
-                if raw_data[page_id][prev_id][0].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
+                if raw_data[page_id][prev_id][
+                    0
+                ].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
                     needed_docstrings_id_set.add(prev_id)
                     used_prev += 1
                 prev_id -= 1
@@ -200,7 +202,9 @@ def get_swde_features(
             # E.g. xpath [str] = '/html/body/div/div/div[2]/div[1]/div[2]/div/div/ul/li[3]/a'
             type = raw_data[page_id][needed_id][2]
             # E.g. type [str] = 'fixed-node'
-            token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) # Here is where the text get converted into tokens ids
+            token_ids = tokenizer.convert_tokens_to_ids(
+                tokenizer.tokenize(text)
+            )  # Here is where the text get converted into tokens ids
             # E.g. tokenizer.tokenize breaks the text into smaller pieces, and the tokenizer.convert_tokens_to_ids applied a map key-value
             # There seems to be no cutdown of size/text.
             # E.g. token_ids = [725, 23728, 274, 6972, 28714]
@@ -227,7 +231,9 @@ def get_swde_features(
                 # E.g. first_token_pos = [71, 95, 100, 104, 184, 192, 198, 212]
                 first_token_type.append(type)  # E.g. type = 'none'
                 # E.g. first_token_type = ['none', 'none', 'none', 'none', 'PAST_CLIENT', 'none', 'none', 'none']
-                first_token_xpaths.append(xpath)  # E.g. xpath = '/html/body/div/div/div[2]/div[1]/div[2]/div/div/ul/li[3]/a'
+                first_token_xpaths.append(
+                    xpath
+                )  # E.g. xpath = '/html/body/div/div/div[2]/div[1]/div[2]/div/div/ul/li[3]/a'
                 first_token_text.append(text)  # E.g. text = 'HITT FUTURES'
                 # ['1730 Pennsylvania Avenue NW | HITT', '1730 Pennsylvania Avenue NW', 'Washington, DC', "HITT completed an occupied building renovation of the main lobby, elevator cabsand typical tenant lobbies on four of the floors in this commercial office building loca
 
@@ -292,7 +298,7 @@ def get_swde_features(
             while (
                 curr_first_token_index < len(first_token_pos)
                 and end_pos > first_token_pos[curr_first_token_index] >= start_pos
-            ): # This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
+            ):  # This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
                 # This while loops over the first_token_pos and breaks if first_token_pos is higher than the end_pos
                 involved_first_tokens_pos.append(
                     first_token_pos[curr_first_token_index] - start_pos + 1

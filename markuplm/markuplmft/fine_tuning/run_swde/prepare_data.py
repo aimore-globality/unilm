@@ -44,20 +44,25 @@ flags.DEFINE_integer("n_pages", 2000, "The maximum number of pages to read.")
 # flags.DEFINE_integer("n_pages", 3, "The maximum number of pages to read.")
 
 flags.DEFINE_string(
-    "input_groundtruth_path", "", "The root path to parent folder of all ground truth files.")
+    "input_groundtruth_path", "", "The root path to parent folder of all ground truth files."
+)
 
 flags.DEFINE_string("input_pickle_path", "", "The root path to pickle file of swde html content.")
 
 flags.DEFINE_string(
-    "output_data_path", "", "The path of the output file containing both the input sequences and "
-    "output sequences of the sequence tagging version of swde dataset.")
+    "output_data_path",
+    "",
+    "The path of the output file containing both the input sequences and "
+    "output sequences of the sequence tagging version of swde dataset.",
+)
 
 flags.DEFINE_integer(
-    "max_variable_nodes_per_website", 300, "The max of variable nodes per website.")
+    "max_variable_nodes_per_website", 300, "The max of variable nodes per website."
+)
 
 flags.DEFINE_integer(
-    "min_node_variability", 5, "The amount of variations in a node to be considered variable.")
-
+    "min_node_variability", 5, "The amount of variations in a node to be considered variable."
+)
 
 
 def clean_spaces(text):
@@ -199,11 +204,7 @@ def match_value_node(
         # record the text corresponding to the xpath on the current URL, and add it to the set)
 
 
-def get_value_xpaths(dom_tree,
-                     truth_value,
-                     overall_xpath_dict,
-                     website="",
-                     field=""):
+def get_value_xpaths(dom_tree, truth_value, overall_xpath_dict, website="", field=""):
     """Gets a list of xpaths that contain a text truth_value in DOMTree objects.
 
     Args:
@@ -218,7 +219,7 @@ def get_value_xpaths(dom_tree,
       current_xpath_data: the xpaths and corresponding values in this DOMTree.
     """
     f = False
-    if website == 'willmeng.com':
+    if website == "willmeng.com":
         breakpoint()
         f = True
 
@@ -364,7 +365,11 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load):
                     index = item[0]  # like 0123
                     num_values = int(item[1])  # Can be 0 (when item[2] is "<NULL>").
                     # all_data_dict[index]["field-" + field] = dict(values=item[2: 2 + num_values])
-                    items = [x for x in item[2:] if len(x) > 0]
+                    items = [
+                        x
+                        for x in item[2:]
+                        if len(x) > 0
+                    ]
                     all_data_dict[index]["field-" + field] = dict(values=items)
 
             # {"0123":
@@ -434,7 +439,7 @@ def get_field_xpaths(
     website_to_process,
     n_pages,
     max_variable_nodes_per_website,
-    min_node_variability
+    min_node_variability,
 ):
     """Gets xpaths data for each page in the data dictionary.
 
@@ -530,7 +535,10 @@ def get_field_xpaths(
 
     for xpath, variability in node_variability:
         # variability 为xpath的可变性 (variability is the variability of xpath)
-        if variability > min_node_variability and len(variable_nodes) < max_variable_nodes_per_website:
+        if (
+            variability > min_node_variability
+            and len(variable_nodes) < max_variable_nodes_per_website
+        ):
             variable_nodes.add(xpath)
         else:
             fixed_nodes.add(xpath)

@@ -231,8 +231,8 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
 
 
 def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
-    if website == 'intralinks.com':
-        print('Check', website)
+    if website == "intralinks.com":
+        print("Check", website)
     dataset, info = get_dataset_and_info_for_websites([website], evaluate=True)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
