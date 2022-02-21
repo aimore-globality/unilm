@@ -80,7 +80,7 @@ for gt_file in list(gt_path.iterdir())[:]:
 # website_data_path = Path.cwd().parents[2] / 'swde/swde_processed/auto-msn-3.pickle'
 # df = pd.read_pickle(website_data_path)
 
-# %% tags=[]
+# %% tags=[] jupyter={"outputs_hidden": true}
 page_index = '0000'
 pd.DataFrame(df[page_index], columns=['text', 'xpath', 'node-type'])
 
@@ -90,7 +90,8 @@ pd.DataFrame(df[page_index], columns=['text', 'xpath', 'node-type'])
 # %% tags=[]
 pd.set_option('max_colwidth', 2000)
 
-website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-intralinks.com-2000.pickle'
+# website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-intralinks.com-2000.pickle'
+website_data_path = Path.cwd().parents[2] / 'swde/my_CF_processed/WAE-docusign.com-9999.pickle'
 
 website_data = pd.read_pickle(website_data_path)
 
@@ -112,9 +113,12 @@ df['node-type'].value_counts()
 pd.set_option('max_colwidth', 2000)
 
 websites_root_path = Path.cwd().parents[2] / 'swde/my_CF_processed/'
-websites_data_path = list(websites_root_path.glob('[!cached]*'))
+websites_data_path = list(websites_root_path.glob('[!cached]*-*9999*'))
 
-# %%
+# %% tags=[]
+websites_data_path
+
+# %% tags=[]
 len(all_data)
 
 # %% tags=[]

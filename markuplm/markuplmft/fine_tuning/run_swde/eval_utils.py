@@ -1,7 +1,29 @@
 import os
 import sys
 from markuplmft.fine_tuning.run_swde import constants
+import numpy as np
 
+
+def aimore_metrics(evaluation_dict):
+    all_precision = []
+    all_recall = []
+    for html_path in evaluation_dict:
+        result = evaluation_dict[html_path]
+        truth = result["truth"]
+        pred = result["pred"]
+        # print(f"# truth: {len(truth)} | # pred: {len(pred)}")
+
+        precision = len(truth & pred) / (len(pred) + 1)
+        recall = len(truth & pred) / (len(truth) + 1)
+        all_precision.append(precision)
+        all_recall.append(recall)
+
+    avg_precision = np.mean(all_precision)
+    avg_recall = np.mean(all_recall)
+
+    print(f"Avg. Precision: {avg_precision}")
+    print(f"Avg. Recall: {avg_recall}")
+    return avg_precision, avg_recall
 
 def page_hits_level_metric(
         vertical,
@@ -18,7 +40,7 @@ def page_hits_level_metric(
     lines = prev_voted_lines
 
     evaluation_dict = dict()
-
+    # TODO (aimore): These lines are ugly, why not use pandas here?
     for line in lines:
         items = line.split("\t")
         assert len(items) >= 5, items
@@ -26,6 +48,7 @@ def page_hits_level_metric(
         text = items[2]
         truth = items[3]  # gt for this node
         pred = items[4]  # pred-value for this node
+        # TODO (aimore):  These ifs initializing the dictionary are terrible
         if truth not in evaluation_dict and truth != "none":
             evaluation_dict[truth] = dict()
         if pred not in evaluation_dict and pred != "none":
@@ -39,7 +62,15 @@ def page_hits_level_metric(
                 evaluation_dict[pred][html_path] = {"truth": set(), "pred": set()}
             evaluation_dict[pred][html_path]["pred"].add(text)
     metric_str = "tag, num_truth, num_pred, precision, recall, f1\n"
+
+    # evaluation_dict = {PAST_CLIENT: {0000: {truth: {text1, text2, ...}, {pred: {text1, text2, ...}}, 0001}}
+
+    all_avg_precision, all_avg_recall = [], []
     for tag in evaluation_dict:
+        avg_precision, avg_recall = aimore_metrics(evaluation_dict[tag])
+        all_avg_precision.append(avg_precision)
+        all_avg_recall.append(avg_recall)
+
         num_html_pages_with_truth = 0
         num_html_pages_with_pred = 0
         num_html_pages_with_correct = 0
@@ -82,12 +113,22 @@ def page_hits_level_metric(
         f.write(metric_str)
         print(f.name, file=sys.stderr)
     print(metric_str, file=sys.stderr)
-    # TODO (aimore): Why not take the mean
+
+    # Aimore version
+    all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
     return (
-        sum(all_precisions) / len(all_precisions),
-        sum(all_recall) / len(all_recall),
-        sum(all_f1) / len(all_f1),
+        np.mean(all_avg_precision),
+        np.mean(all_avg_recall),
+        np.mean(all_avg_f1)
     )
+
+    # TODO (aimore): Why not take the mean
+    # Original
+    # return (
+    #     sum(all_precisions) / len(all_precisions),
+    #     sum(all_recall) / len(all_recall),
+    #     sum(all_f1) / len(all_f1),
+    # )
 
 
 def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines):
@@ -111,6 +152,7 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
         field_xpath_freq_dict[pred][xpath] += 1
     # The bit below: gets the most frequent xpath, that was voted containing a Past Client
     most_frequent_xpaths = dict()  # Site level voting.
+    # field_xpath_freq_dict = {xpath1:count1, xpath2:count2, ...}
     for field, xpth_freq in field_xpath_freq_dict.items():
         frequent_xpath = sorted(
             xpth_freq.items(), key=lambda kv: kv[1], reverse=True)[0][0]  # Top 1.
@@ -128,7 +170,7 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
         if items[4] == "none" and flag != "none":
             items[4] = flag
         voted_lines.append("\t".join(items))
-
+    print(f"lines: {len(lines)} | voted_lines: {len(voted_lines)}")
     output_path = os.path.join(sub_output_dir, "preds", f"{target_website}-final-preds.txt")
 
     if not os.path.exists(os.path.dirname(output_path)):
@@ -171,7 +213,7 @@ def page_level_constraint(vertical, target_website,
         raw_scores = [float(x) for x in items[5].split(",")]
         assert len(raw_scores) == len(tags)
         site_field_truth_exist[truth] = True
-        for index, score in enumerate(raw_scores):
+        for index, score in enumerate(raw_scores): # The raw_scores is a tuple logits [0.17, 0.83] this for loop gets the first one (0.17)
             if html_path not in page_field_max:
                 page_field_max[html_path] = {}
             if tags[index] not in page_field_max[html_path] or \
@@ -193,6 +235,7 @@ def page_level_constraint(vertical, target_website,
                 if raw_scores[index] >= page_field_max[html_path][tags[index]] - (1e-3):
                     items[4] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
         voted_lines.append("\t".join(items))
+    print(f"lines: {len(lines)} | voted_lines: {len(voted_lines)}")
     # What happens if there is no prediction and that hack above doesn't pass?
     return site_level_voting(
         vertical, target_website, sub_output_dir, voted_lines)

@@ -176,7 +176,7 @@ avoid_websites = ["intralinks.com",
                     # "w2ogroup.com",
                     # "interiorarchitects.com",
                   ]
-websites = [website for website in websites if website not in avoid_websites]
+websites = [website for website in websites if website not in avoid_websites][:]
 print(f"Total number of websites:{len(websites)}")
 print(websites)
 
