@@ -23,6 +23,9 @@ from pathlib import Path
 # %% tags=[]
 # vertical / website / page
 
+# %%
+dataset = 'train'
+
 # %% [markdown]
 # # Packed Data (Data after pack_data.py)
 
@@ -52,7 +55,7 @@ with open(gt_file) as text:
 # ## My data
 
 # %% tags=[]
-data_path = '../../../swde/my_CF_sourceCode/wae.pickle'
+data_path = f'../../../swde/{dataset}/my_CF_sourceCode/wae.pickle'
 data_packed = pd.read_pickle(data_path)
 len(data_packed)
 
