@@ -486,12 +486,20 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     model = MarkupLMForTokenClassification.from_pretrained(args.model_name_or_path, config=config)
     model.resize_token_embeddings(len(tokenizer))
 
+    # My modification
     sub_output_dir = os.path.join(
         args.output_dir,
         args.vertical,
         f"seed-{args.n_seed}_pages-{args.n_pages}",
-        "-".join(train_websites),
+        "-".join(str(len(train_websites))),
     )
+    # Original
+    # sub_output_dir = os.path.join(
+    #     args.output_dir,
+    #     args.vertical,
+    #     f"seed-{args.n_seed}_pages-{args.n_pages}",
+    #     "-".join(train_websites),
+    # )
 
     # if args.local_rank == 0:
     #     torch.distributed.barrier()
@@ -897,7 +905,7 @@ def main():
     all_precision = []
     all_recall = []
     all_f1 = []
-
+    # This for loop goes over the different verticals. Since we have only one in WAE, I changed it from 10 to 1.
     for i in range(1):
         wid_start = i
         wid_end = i + args.n_seed
@@ -905,13 +913,18 @@ def main():
         train_websites = []
         test_websites = []
 
-        for wid in range(wid_start, wid_end):
-            wwid = wid % 10
-            train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])
+        # I changed the code here, to specify the websites I want to train and evaluate.
+        half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
+        train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
+        test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
 
-        for website in constants.VERTICAL_WEBSITES[args.vertical]:
-            if website not in train_websites:
-                test_websites.append(website)
+        # for wid in range(wid_start, wid_end):
+        #     wwid = wid % 10
+        #     train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])
+        #
+        # for website in constants.VERTICAL_WEBSITES[args.vertical]:
+        #     if website not in train_websites:
+        #         test_websites.append(website)
 
         ori_config = copy.deepcopy(config)
         ori_tokenizer = copy.deepcopy(tokenizer)

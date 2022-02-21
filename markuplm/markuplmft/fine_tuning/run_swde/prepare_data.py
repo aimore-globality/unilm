@@ -697,11 +697,11 @@ def main(_):
 
     num_cores = int(mp.cpu_count() / 2)
 
-    for x in args_list[:]:
-        generate_nodes_seq_and_write_to_file(x)
-    # with mp.Pool(num_cores) as pool, tqdm(total=len(args_list), desc="Processing swde-data") as t:
-    #     for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, args_list):
-    #         t.update()
+    # for x in args_list[:]:
+    #     generate_nodes_seq_and_write_to_file(x)
+    with mp.Pool(num_cores) as pool, tqdm(total=len(args_list), desc="Processing swde-data") as t:
+        for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, args_list):
+            t.update()
 
 
 if __name__ == "__main__":
