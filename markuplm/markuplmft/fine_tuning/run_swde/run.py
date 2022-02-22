@@ -29,6 +29,7 @@ from markuplm.markuplmft.fine_tuning.run_swde import constants
 import torch
 
 import copy
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -548,7 +549,11 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     # Evaluation - we can ask to evaluate all the checkpoints (sub-directories) in a directory
     results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
-        checkpoints = [sub_output_dir]
+        # I had to force here to specify the model
+        checkpoints = [args.model_path]
+        sub_output_dir = checkpoints[0]
+        # checkpoints = [sub_output_dir] # The original
+
         if args.eval_all_checkpoints:
             checkpoints = list(
                 os.path.dirname(c)
@@ -837,6 +842,12 @@ def main():
         default="",
         help="Can be used for distant debugging.",
     )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="NO MODEL",
+        help="The path of the model to be used for evaluation.",
+    )
     args = parser.parse_args()
 
     if (
@@ -893,8 +904,9 @@ def main():
     tokenizer = MarkupLMTokenizer.from_pretrained(args.model_name_or_path)
 
     swde_path = args.root_dir
-    p = os.path.join(swde_path, 'WAE')
-    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+    p = Path(swde_path)
+    websites = [x.parts[-1].split("-")[1] for x in list(p.iterdir()) if 'cached' not in str(x)]
+    print(f"\nWebsites ({len(websites)}):\n{websites}\n")
     vertical_to_websites_map = {"WAE": websites}
 
     # first we load the features

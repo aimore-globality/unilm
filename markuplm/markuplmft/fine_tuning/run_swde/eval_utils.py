@@ -115,20 +115,20 @@ def page_hits_level_metric(
     print(metric_str, file=sys.stderr)
 
     # Aimore version
-    all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
-    return (
-        np.mean(all_avg_precision),
-        np.mean(all_avg_recall),
-        np.mean(all_avg_f1)
-    )
+    # all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
+    # return (
+    #     np.mean(all_avg_precision),
+    #     np.mean(all_avg_recall),
+    #     np.mean(all_avg_f1)
+    # )
 
     # TODO (aimore): Why not take the mean
     # Original
-    # return (
-    #     sum(all_precisions) / len(all_precisions),
-    #     sum(all_recall) / len(all_recall),
-    #     sum(all_f1) / len(all_f1),
-    # )
+    return (
+        sum(all_precisions) / len(all_precisions),
+        sum(all_recall) / len(all_recall),
+        sum(all_f1) / len(all_f1),
+    )
 
 
 def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines):
@@ -199,6 +199,7 @@ def page_level_constraint(vertical, target_website,
     site_field_truth_exist = dict()
     page_field_max = dict()
     page_field_pred_count = dict()
+    # This for loop on the lines is to find the max probability in each node per field
     for line in lines:
         items = line.split("\t")
         assert len(items) >= 5, items
@@ -222,16 +223,23 @@ def page_level_constraint(vertical, target_website,
     # E.g. page_field_max = {'page_id':{'tag': max_pred}} Gets the max predictions of each tag per page
     print(page_field_pred_count, file=sys.stderr)
     voted_lines = []
+    # This for loop on the lines is to get
     for line in lines:
         items = line.split("\t")
+        # E.g. items =
         assert len(items) >= 5, items
         html_path = items[0]
+        # E.g. html_path =
         raw_scores = [float(x) for x in items[5].split(",")]
+        # E.g. raw_scores =
         pred = items[4]
+        # E.g. pred =
         for index, tag in enumerate(tags):
             if tag in site_field_truth_exist and tag not in page_field_pred_count:
                 if pred != "none":
                     continue
+                # This if is responsible for filtering out all the 'none' nodes that don't have a probability higher than the max probability - 0.001.
+                # So this should be expected to drastically reduce the amount of predicted nodes.
                 if raw_scores[index] >= page_field_max[html_path][tags[index]] - (1e-3):
                     items[4] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
         voted_lines.append("\t".join(items))
