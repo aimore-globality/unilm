@@ -115,20 +115,20 @@ def page_hits_level_metric(
     print(metric_str, file=sys.stderr)
 
     # Aimore version
-    # all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
-    # return (
-    #     np.mean(all_avg_precision),
-    #     np.mean(all_avg_recall),
-    #     np.mean(all_avg_f1)
-    # )
+    all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
+    return (
+        np.mean(all_avg_precision),
+        np.mean(all_avg_recall),
+        np.mean(all_avg_f1)
+    )
 
     # TODO (aimore): Why not take the mean
     # Original
-    return (
-        sum(all_precisions) / len(all_precisions),
-        sum(all_recall) / len(all_recall),
-        sum(all_f1) / len(all_f1),
-    )
+    # return (
+    #     sum(all_precisions) / len(all_precisions),
+    #     sum(all_recall) / len(all_recall),
+    #     sum(all_f1) / len(all_f1),
+    # )
 
 
 def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines):
@@ -222,21 +222,27 @@ def page_level_constraint(vertical, target_website,
                 page_field_max[html_path][tags[index]] = score
     # E.g. page_field_max = {'page_id':{'tag': max_pred}} Gets the max predictions of each tag per page
     print(page_field_pred_count, file=sys.stderr)
+    # E.g. page_field_pred_count = {'PAST_CLIENT': 155}
     voted_lines = []
-    # This for loop on the lines is to get
+    # This for loop on the lines is to get the voted lines (the voted nodes)
+
     for line in lines:
+        # E.g. line = 'WAE-berrydunn.com-0000.htm	/html/head/title	A healthcare client gains control of their ACA processes | BerryDunn	PAST_CLIENT	none	0.41807821393013,0.5819217562675476'
         items = line.split("\t")
-        # E.g. items =
+        # E.g. items = ['WAE-berrydunn.com-0000.htm', '/html/head/title', 'A healthcare client gains control of their ACA processes | BerryDunn', 'PAST_CLIENT', 'none', '0.41807821393013,0.5819217562675476']
+        # Notice, the first one is groundtruth (index = 3)
         assert len(items) >= 5, items
         html_path = items[0]
-        # E.g. html_path =
+        # E.g. html_path [str] = WAE-berrydunn.com-0000.htm
         raw_scores = [float(x) for x in items[5].split(",")]
-        # E.g. raw_scores =
+        # E.g. raw_scores [str] = '0.41807821393013,0.5819217562675476'
         pred = items[4]
-        # E.g. pred =
+        # E.g. pred = 'none'
         for index, tag in enumerate(tags):
             if tag in site_field_truth_exist and tag not in page_field_pred_count:
-                if pred != "none":
+                # site_field_truth_exist = {'PAST_CLIENT': True, 'none': True}
+                # page_field_pred_count = {'PAST_CLIENT': 155}
+                if pred != "none": # This makes all nodes that are not variable skip the if below.
                     continue
                 # This if is responsible for filtering out all the 'none' nodes that don't have a probability higher than the max probability - 0.001.
                 # So this should be expected to drastically reduce the amount of predicted nodes.

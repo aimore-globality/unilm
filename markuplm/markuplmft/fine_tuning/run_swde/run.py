@@ -317,20 +317,22 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
     lines = []
 
     for html_path in all_res:
+        # E.g. all_res [dict] = {html_path = {xpath = {'pred': tensor([0.4181, 0.5819]), 'truth': 'PAST_CLIENT', 'text': 'A healthcare client gains control of their ACA processes | BerryDunn'},...}, ...}
         for xpath in all_res[html_path]:
             final_probs = all_res[html_path][xpath]["pred"] / torch.sum(
                 all_res[html_path][xpath]["pred"]
-            )
+            ) # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then?
             pred_id = torch.argmax(final_probs).item()
             pred_type = constants.ATTRIBUTES_PLUS_NONE[args.vertical][pred_id]
             final_probs = final_probs.numpy().tolist()
 
+            # TODO (aimore): Convert this to pandas
             s = "\t".join(
                 [
                     html_path,
                     xpath,
                     all_res[html_path][xpath]["text"],
-                    all_res[html_path][xpath]["truth"],
+                    all_res[html_path][xpath]["truth"], # TODO (aimore): Convert these to variables
                     pred_type,
                     ",".join([str(score) for score in final_probs]),
                 ]
