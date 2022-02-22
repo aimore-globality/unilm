@@ -26,7 +26,7 @@ from pathlib import Path
 # vertical / website / page
 
 # %% tags=[]
-dataset = 'develop'
+dataset = 'train'
 
 # %% [markdown]
 # # Packed Data (Data after pack_data.py)
@@ -67,12 +67,25 @@ len(data_packed)
 # %% tags=[]
 gt_path = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceCode/groundtruth/WAE/'
 
-for gt_file in list(gt_path.iterdir())[:]:
-    print(gt_file)
+df_gt = pd.DataFrame()
+websites_annotations = {}
+
+for enum, gt_file in enumerate(list(gt_path.iterdir())):
+    print(f"{enum} - {gt_file}")
+    df_gt = pd.read_csv(gt_file, sep='\t')
     with open(gt_file) as text:
         lines = text.readlines()
-        for l in lines:
-            print(l)
+        
+        # for l in lines:
+        #     print(l)
+        
+        df_gt = df_gt.drop(['index', 'number of values'], axis=1).drop(0, axis=0).T.reset_index().drop('index',axis=1).sort_index(ascending=False)
+        df_gt.columns = [str(x).zfill(4) for x in df_gt.columns]
+        
+        website = str(gt_file).split('groundtruth')[1].split('-')[1]
+        websites_annotations[website] = df_gt
+        
+    display(df_gt)    
 
 # %% [markdown]
 # # Prepare Data (Data after prepare_data.py)
