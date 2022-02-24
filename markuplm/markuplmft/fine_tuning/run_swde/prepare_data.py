@@ -34,21 +34,29 @@ from lxml import etree
 from lxml.html.clean import Cleaner
 from tqdm import tqdm
 
-from markuplmft.fine_tuning.run_swde import constants
 import multiprocessing as mp
 from pathlib import Path
 
 FLAGS = flags.FLAGS
 random.seed(42)
 
-flags.DEFINE_integer("n_pages", 2000, "The maximum number of pages to read.")
-# flags.DEFINE_integer("n_pages", 3, "The maximum number of pages to read.")
-
-flags.DEFINE_string(
-    "input_groundtruth_path", "", "The root path to parent folder of all ground truth files."
+flags.DEFINE_integer(
+    "n_pages",
+    2000,
+    "The maximum number of pages to read.",
 )
 
-flags.DEFINE_string("input_pickle_path", "", "The root path to pickle file of swde html content.")
+flags.DEFINE_string(
+    "input_groundtruth_path",
+    "",
+    "The root path to parent folder of all ground truth files.",
+)
+
+flags.DEFINE_string(
+    "input_pickle_path",
+    "",
+    "The root path to pickle file of swde html content.",
+)
 
 flags.DEFINE_string(
     "output_data_path",
@@ -58,11 +66,15 @@ flags.DEFINE_string(
 )
 
 flags.DEFINE_integer(
-    "max_variable_nodes_per_website", 300, "The max of variable nodes per website."
+    "max_variable_nodes_per_website",
+    300,
+    "The max of variable nodes per website.",
 )
 
 flags.DEFINE_integer(
-    "min_node_variability", 5, "The amount of variations in a node to be considered variable."
+    "min_node_variability",
+    5,
+    "The amount of variations in a node to be considered variable.",
 )
 
 
@@ -96,7 +108,12 @@ def clean_format_str(text):
     return text
 
 
-def non_ascii_equal(website, field, value, node_text):
+def non_ascii_equal(
+    website,
+    field,
+    value,
+    node_text,
+):
     """Compares value and node_text by their non-ascii texts.
 
     Website/field are used for handling special cases.
@@ -205,7 +222,13 @@ def match_value_node(
         # record the text corresponding to the xpath on the current URL, and add it to the set)
 
 
-def get_value_xpaths(dom_tree, truth_value, overall_xpath_dict, website="", field=""):
+def get_value_xpaths(
+    dom_tree,
+    truth_value,
+    overall_xpath_dict,
+    website="",
+    field="",
+):
     """Gets a list of xpaths that contain a text truth_value in DOMTree objects.
 
     Args:
@@ -219,11 +242,6 @@ def get_value_xpaths(dom_tree, truth_value, overall_xpath_dict, website="", fiel
       xpaths: a list of xpaths containing the truth_value exactly as inner texts.
       current_xpath_data: the xpaths and corresponding values in this DOMTree.
     """
-    f = False
-    if website == "willmeng.com":
-        breakpoint()
-        f = True
-
     if not truth_value:
         #  Some values are empty strings, that are not in the DOMTree.
         return []
@@ -241,21 +259,12 @@ def get_value_xpaths(dom_tree, truth_value, overall_xpath_dict, website="", fiel
     value = clean_spaces(value)
 
     # Iterate all the nodes in the given DOMTree.
-    for e in dom_tree.iter():
-        if f:
-            print(e.text_content())
-            print(e.tag)
-            print(e.attrib)
-            for k, v in e.items():
-                print(k, v)
-            print(e.text)
-            print(e.tail)
-            print()
+    for node in dom_tree.iter():
         # The value can only be matched in the text of the node or the tail.
-        if e.text:
+        if node.text:
             match_value_node(
-                e,
-                e.text,
+                node,
+                node.text,
                 current_xpath_data,
                 overall_xpath_dict,
                 text_part_flag="node_text",
@@ -267,10 +276,10 @@ def get_value_xpaths(dom_tree, truth_value, overall_xpath_dict, website="", fiel
                 current_page_nodes_in_order=current_page_nodes_in_order,
                 is_truth_value_list=is_truth_value_list,
             )
-        if e.tail:
+        if node.tail:
             match_value_node(
-                e,
-                e.tail,
+                node,
+                node.tail,
                 current_xpath_data,
                 overall_xpath_dict,
                 text_part_flag="node_tail_text",
@@ -346,10 +355,10 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
 
     # if website_to_load == 'monotype.com':
     #     breakpoint()
-    for v in vertical_to_websites_map:
-        if v != vertical_to_load:
+    for vertical in vertical_to_websites_map:
+        if vertical != vertical_to_load:
             continue
-        for truthfile in os.listdir(os.path.join(gt_path, v)):
+        for truthfile in os.listdir(os.path.join(gt_path, vertical)):
             # For example, a groundtruth file name can be "auto-yahoo-price.txt".
             vertical, website, field = truthfile.replace(".txt", "").split("-")
             # like book , amazon , isbn_13
@@ -357,21 +366,22 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
             if website != website_to_load:
                 continue
 
-            with open(os.path.join(gt_path, v, truthfile), "r") as gfo:
-                lines = gfo.readlines()
+            with open(os.path.join(gt_path, vertical, truthfile), "r") as load_file:
+                lines = load_file.readlines()
                 for line in lines[2:]:
                     # Each line should contains more than 3 elements splitted by \t
-                    # which are: index, number of values, value1, value2, etc.
-                    item = line.strip().split("\t")
-                    index = item[0]  # like 0123
-                    num_values = int(item[1])  # Can be 0 (when item[2] is "<NULL>").
-                    # all_data_dict[index]["field-" + field] = dict(values=item[2: 2 + num_values])
-                    items = [
-                        x
-                        for x in item[2:]
-                        if len(x) > 0
+                    # which are: page_id, number of values, value1, value2, etc.
+                    gt_items = line.strip().split("\t")
+                    page_id = gt_items[0]  # like 0123
+                    num_values = int(gt_items[1])  # Can be 0 (when item[2] is "<NULL>").
+
+                    # all_data_dict[page_id]["field-" + field] = dict(values=item[2: 2 + num_values])
+                    gt_texts = [
+                        gt_text
+                        for gt_text in gt_items[2:]
+                        if len(gt_text) > 0
                     ]
-                    all_data_dict[index]["field-" + field] = dict(values=items)
+                    all_data_dict[page_id][f"field-{field}"] = dict(values=gt_texts)
 
             # {"0123":
             #   {"field-engine":
@@ -394,8 +404,8 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
     """
 
     print("Reading the pickle of SWDE original dataset.....", file=sys.stderr)
-    with open(FLAGS.input_pickle_path, "rb") as gfo:
-        swde_html_data = pickle.load(gfo)
+    with open(FLAGS.input_pickle_path, "rb") as load_file:
+        swde_html_data = pickle.load(load_file)
     # {"vertical":'book',"website":'book-amazon(2000)',"path:'book/book-amazon(2000)/0000.htm',"html_str":xx} here
 
     for page in tqdm(swde_html_data, desc="Loading HTML data"):
@@ -408,11 +418,11 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
 
         path = page["path"]  # For example, auto/auto-aol(2000)/0000.htm
         html_str = page["html_str"]
-        _, _, index = path.split("/")  # website be like auto-aol(2000)
-        index = index.replace(".htm", "")
+        _, _, page_id = path.split("/")  # website be like auto-aol(2000)
+        page_id = page_id.replace(".htm", "")
 
-        all_data_dict[index]["html_str"] = html_str
-        all_data_dict[index]["path"] = path
+        all_data_dict[page_id]["html_str"] = html_str
+        all_data_dict[page_id]["path"] = path
 
     """
         this is an example for book-abebooks-0000.htm
@@ -688,8 +698,8 @@ def main(_):
 
     args_list = []
 
-    swde_path = FLAGS.input_groundtruth_path.split('groundtruth')[0]
-    p = Path(swde_path) / 'WAE'
+    swde_path = FLAGS.input_groundtruth_path.split("groundtruth")[0]
+    p = Path(swde_path) / "WAE"
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
     vertical_to_websites_map = {"WAE": websites}

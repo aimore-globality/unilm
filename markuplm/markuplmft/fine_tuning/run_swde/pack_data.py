@@ -22,100 +22,67 @@ r"""To pack all the swde html page files into a single pickle file.
 This script is to generate a single file to pack up all the content of htmls.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from pathlib import Path
-import glob
+from __future__ import absolute_import, division, print_function
+
 import os
 import pickle
 import sys
+from pathlib import Path
 
-from absl import app
-from absl import flags
 import tqdm
-from markuplmft.fine_tuning.run_swde import constants
+from absl import app, flags
 
 FLAGS = flags.FLAGS
 
 # Flags related to input data.
 flags.DEFINE_string("input_swde_path", "", "The root path to swde html page files.")
 flags.DEFINE_string("output_pack_path", "", "The file path to save the packed data.")
-flags.DEFINE_integer("first_n_pages", -1, "The cut-off number to shorten the number of pages.")
 
 
-def pack_swde_data(swde_path, pack_path, cut_off):
+def pack_swde_data(swde_path, pack_path):
     """Packs the swde dataset to a single file.
 
     Args:
-      swde_path: The path to SWDE dataset pages (http://shortn/_g22KuARPAi).
+      swde_path: The path to SWDE dataset pages.
       pack_path: The path to save packed SWDE dataset file.
-      cut_off: To shorten the list for testing.
     Returns:
       None
     """
-    # Get all website names for each vertical.
-    #   The SWDE dataset fold is structured as follows:
-    #     - swde/                                    # The root folder.
-    #       - swde/auto/                             # A certain vertical.
-    #         - swde/auto/auto-aol(2000)/            # A certain website.
-    #           - swde/auto/auto-aol(2000)/0000.htm  # A page.
-    # Get all vertical names.
 
-    p = Path(swde_path) / 'WAE'
-    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+    swde_path = Path(swde_path)
 
-    vertical_to_websites_map = {"WAE": websites}
-    """
-    for `auto`, that is --->
-    [
-        "msn", "aol", "kbb", "cars", "yahoo", "autoweb", "autobytel",
-        "automotive", "carquotes", "motortrend"
-    ]
-    """
-    # The data dict initialized with the path of each html file of SWDE.
-    swde_data = list()
-    print("Start loading data...")
-    for v in vertical_to_websites_map:
-        for w in os.listdir(os.path.join(swde_path, v)):
-            page_count = 0
-            filenames = os.listdir(os.path.join(swde_path, v, w))
-            filenames.sort()
-            for filename in filenames:
-                print(os.path.join(swde_path, v, w, filename))
-                page = dict(vertical=v, website=w, path=os.path.join(v, w, filename))
-                # path is something like `book/book-amazon(2000)/0000.htm`
-                swde_data.append(page)
-                page_count += 1
-                if cut_off > 0 and page_count == cut_off:
-                    break
+    swde_data = []
+    print("Loading data...")
 
-    # Load the html data.
-    with tqdm.tqdm(total=len(swde_data), file=sys.stdout) as progressbar:
-        for page in swde_data:
-            with open(os.path.join(swde_path, page["path"])) as webpage:
-                page["html_str"] = webpage.read()
+    websites_folder = os.listdir(os.path.join(swde_path))
 
-            progressbar.set_description("processed")
-            progressbar.update(1)
+    for website_folder in tqdm.tqdm(websites_folder, desc="Websites - Progress Bar", leave=True):
+        html_filenames = os.listdir(os.path.join(swde_path, website_folder))
+        html_filenames.sort()
+        for html_filename in html_filenames:
+            html_file_relative_path = os.path.join(website_folder, html_filename)
+            print(f"Page: {html_file_relative_path}")
 
-    # now, the swde_data is a list
-    # for each page in it
-    # we have it as
-    # {"vertical":'book',"website":'book-amazon(2000)',"path:'book/book-amazon(2000)/0000.htm',"html_str":xx}
+            html_file_absolute_path = os.path.join(swde_path, html_file_relative_path)
+            with open(html_file_absolute_path) as webpage_html:
+                html_str = webpage_html.read()
 
-    # and finally these info are dumped into the swde.pickle file
+            page = dict(
+                website=website_folder,  # E.g. 'WAE-capturagroup.com(8)'
+                path=html_file_relative_path,  # E.g. 'WAE-capturagroup.com(8)/0000.htm'
+                html_str=html_str,
+            )
 
-    # Save the html_str data.
-    with open(pack_path, "wb") as gfo:
-        pickle.dump(swde_data, gfo)
+            swde_data.append(page)
+    print("Saving data...")
+    with open(pack_path, "wb") as output_file:
+        pickle.dump(swde_data, output_file)
 
 
 def main(_):
     pack_swde_data(
         swde_path=FLAGS.input_swde_path,
         pack_path=FLAGS.output_pack_path,
-        cut_off=FLAGS.first_n_pages,
     )
 
 
