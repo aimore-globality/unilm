@@ -375,7 +375,7 @@ def load_and_cache_one_website(args, tokenizer, website):
         "cached",
         args.vertical,
         website,
-        f"cached_markuplm_{str(args.max_seq_length)}_pages{args.n_pages}_prevnodes{args.prev_nodes_into_account}",
+        f"cached_markuplm_{str(args.max_seq_length)}_prevnodes{args.prev_nodes_into_account}",
     )
 
     if not os.path.exists(os.path.dirname(cached_features_file)):
@@ -387,7 +387,7 @@ def load_and_cache_one_website(args, tokenizer, website):
 
     else:
         logger.info(
-            f"Creating features for {args.vertical}-{website}-pages{args.n_pages}_prevnodes{args.prev_nodes_into_account}"
+            f"Creating features for {args.vertical}-{website}-prevnodes{args.prev_nodes_into_account}"
         )
 
         features = get_swde_features(
@@ -398,7 +398,6 @@ def load_and_cache_one_website(args, tokenizer, website):
             doc_stride=args.doc_stride,
             max_length=args.max_seq_length,
             prev_nodes=args.prev_nodes_into_account,
-            n_pages=args.n_pages,
         )
 
         if args.local_rank in [-1, 0] and args.save_features:
@@ -493,7 +492,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     sub_output_dir = os.path.join(
         args.output_dir,
         args.vertical,
-        f"seed-{args.n_seed}_pages-{args.n_pages}",
+        f"seed-{args.n_seed}",
         "-".join(str(len(train_websites))),
     )
     # Original
@@ -620,12 +619,6 @@ def main():
         "Now we haven't supported multi-verticals in one program",
     )
     parser.add_argument("--n_seed", default=2, type=int, help="number of seed pages")
-    parser.add_argument(
-        "--n_pages",
-        default=2000,
-        type=int,
-        help="number of pages in each website, set a small number for debugging",
-    )
     parser.add_argument(
         "--prev_nodes_into_account",
         default=4,
@@ -900,7 +893,7 @@ def main():
 
     config = MarkupLMConfig.from_pretrained(args.model_name_or_path)
     config_dict = config.to_dict()
-    config_dict.update({"node_type_size": len(constants.ATTRIBUTES_PLUS_NONE[args.vertical])})
+    config_dict.update({"node_type_size": len(constants.ATTRIBUTES_PLUS_NONE)})
     config = MarkupLMConfig.from_dict(config_dict)
 
     tokenizer = MarkupLMTokenizer.from_pretrained(args.model_name_or_path)
@@ -909,68 +902,59 @@ def main():
     p = Path(swde_path)
     websites = [x.parts[-1].split("-")[1] for x in list(p.iterdir()) if 'cached' not in str(x)]
     print(f"\nWebsites ({len(websites)}):\n{websites}\n")
-    vertical_to_websites_map = {"WAE": websites}
 
     # first we load the features
     feature_dicts = load_and_cache_examples(
         args=args,
         tokenizer=tokenizer,
-        websites=vertical_to_websites_map[args.vertical],
+        websites=websites,
     )
 
     global global_feature_dicts
     global_feature_dicts = feature_dicts
 
-    all_precision = []
-    all_recall = []
-    all_f1 = []
-
     # This for loop goes over the different verticals. Since we have only one in WAE, I changed it from 10 to 1.
-    for i in range(1):
-        train_websites = websites
-        test_websites = websites
 
-        # I changed the code here, to specify the websites I want to train and evaluate.
-        # half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
-        # train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
-        # test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
+    train_websites = websites
+    test_websites = websites
 
-        # wid_start = i
-        # wid_end = i + args.n_seed
-        # train_websites = []
-        # test_websites = []
-        # for wid in range(wid_start, wid_end):
-        #     wwid = wid % 10
-        #     train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])
-        #
-        # for website in constants.VERTICAL_WEBSITES[args.vertical]:
-        #     if website not in train_websites:
-        #         test_websites.append(website)
+    # I changed the code here, to specify the websites I want to train and evaluate.
+    # half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
+    # train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
+    # test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
 
-        ori_config = copy.deepcopy(config)
-        ori_tokenizer = copy.deepcopy(tokenizer)
+    # wid_start = i
+    # wid_end = i + args.n_seed
+    # train_websites = []
+    # test_websites = []
+    # for wid in range(wid_start, wid_end):
+    #     wwid = wid % 10
+    #     train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])
+    #
+    # for website in constants.VERTICAL_WEBSITES[args.vertical]:
+    #     if website not in train_websites:
+    #         test_websites.append(website)
 
-        eval_res = do_something(train_websites, test_websites, args, config, tokenizer)
-        all_precision.append(eval_res["precision"])
-        all_recall.append(eval_res["recall"])
-        all_f1.append(eval_res["f1"])
+    ori_config = copy.deepcopy(config)
+    ori_tokenizer = copy.deepcopy(tokenizer)
 
-        config = ori_config
-        tokenizer = ori_tokenizer
+    eval_res = do_something(train_websites, test_websites, args, config, tokenizer)
+    all_precision = eval_res["precision"]
+    all_recall = eval_res["recall"]
+    all_f1 = eval_res["f1"]
 
-    p = sum(all_precision) / len(all_precision)
-    r = sum(all_recall) / len(all_recall)
-    f = sum(all_f1) / len(all_f1)
+    config = ori_config
+    tokenizer = ori_tokenizer
 
     logger.info("=================FINAL RESULTS=================")
-    logger.info(f"Precision : {p}")
-    logger.info(f"Recall : {r}")
-    logger.info(f"F1 : {f}")
+    logger.info(f"Precision : {all_precision}")
+    logger.info(f"Recall : {all_recall}")
+    logger.info(f"F1 : {all_f1}")
 
-    res_file = os.path.join(args.output_dir, f"{args.vertical}-all-10-runs-score.txt")
+    res_file = os.path.join(args.output_dir, f"run-score.txt")
 
     with open(res_file, "w") as fio:
-        fio.write(f"Precision : {p}\nRecall : {r}\nF1 : {f}\n")
+        fio.write(f"Precision : {all_precision}\nRecall : {all_recall}\nF1 : {all_f1}\n")
 
 
 if __name__ == "__main__":

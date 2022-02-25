@@ -17,6 +17,4 @@
 """
 
 
-ATTRIBUTES_PLUS_NONE = {
-    "WAE": ["PAST_CLIENT", "none"],
-}
+ATTRIBUTES_PLUS_NONE = ["PAST_CLIENT", "none"]

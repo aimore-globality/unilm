@@ -36,7 +36,7 @@ from tqdm import tqdm
 
 import multiprocessing as mp
 from pathlib import Path
-
+import glob
 FLAGS = flags.FLAGS
 random.seed(42)
 
@@ -340,33 +340,23 @@ def get_dom_tree(html, website):
 
 
 def load_html_and_groundtruth(website_to_load):
-    """
-    DONE READ!
-    """
-    # example is `book` and `abebooks`
     """Loads and returns the html string and ground truth data as a dictionary."""
     all_data_dict = collections.defaultdict(dict)
+
     gt_path = FLAGS.input_groundtruth_path
 
-    """
-    First build groudtruth dict
-    """
-    print("Reading the SWDE dataset pickle.....", file=sys.stderr)
+    print("Reading the SWDE dataset pickle...", file=sys.stderr)
     with open(FLAGS.input_pickle_path, "rb") as load_file:
         swde_html_data = pickle.load(load_file)
     # swde_html_data =[ {"website":'book-amazon(2000)', "path:'book/book-amazon(2000)/0000.htm', "html_str":xx}, ...]
 
-    # This for loop is going over the gt_paths and getting the ground_truth_labels for each field and adding them into the all_data_dict for each page of the website
     # TODO (aimore): Here when this dataset is transformed into pandas this will change and it will be easier
-    import glob
-
     file_expression = os.path.join(gt_path, website_to_load) + '**'
     files_with_exp = glob.glob(file_expression)
     for file in files_with_exp:
         # For example, a groundtruth file name can be "yahoo-PAST_CLIENT.txt".
         website, field = file.replace(".txt", "").split("-")
 
-        # TODO(aimore): In case the groundtruth comes as pandas this will be simpler
         with open(os.path.join(gt_path, file), "r") as load_file:
             lines = load_file.readlines()
             for line in lines[2:]:
@@ -382,42 +372,22 @@ def load_html_and_groundtruth(website_to_load):
                 ]
                 all_data_dict[page_id][f"field-{field}"] = dict(values=gt_texts)
 
-        page = swde_html_data[website_to_load]
+                website_data = swde_html_data[website_to_load]
 
-        path = page["path"]  # For example, auto/auto-aol(2000)/0000.htm
-        html_str = page["html_str"]
-        _, _, page_id = path.split("/")  # website be like auto-aol(2000)
-        page_id = page_id.replace(".htm", "")
+                all_data_dict[page_id]["path"] = website_data[page_id]["path"]
+                all_data_dict[page_id]["html_str"] = website_data[page_id]["html_str"]
 
-        all_data_dict[page_id]["html_str"] = html_str
-        all_data_dict[page_id]["path"] = path
-
-        # {"0123":
-        #   {"field-engine":
-        #       {"values":["engine A","engine B"]},
-        #    "field-price":
+        # {"0000":
+        #   {"field-PAST_CLIENT":
+        #       {"values":["Tishman Speyer","Tishman Speyer2"]},
         #   }
         # }
-    """
-        this is an example for book-abebooks-0000.htm
-        <-- all_data_dict["0000"] -->
-        {
-            'field-publication_date': {'values': ['2008']}, 
-            'field-author': {'values': ['Howard Zinn', 'Paul Buhle', 'Mike Konopacki']}, 
-            'field-title': {'values': ["A People's History of American Empire"]}, 
-            'field-publisher': {'values': ['Metropolitan Books']}, 
-            'field-isbn_13': {'values': ['9780805087444']},
-            'path': 'book/book-abebooks(2000)/0000.htm',
-            'html_str': omitted,
-        }
-    """
     return all_data_dict
 
 
 def get_field_xpaths(
     all_data_dict,
     website_to_process,
-    n_pages,
     max_variable_nodes_per_website,
     min_node_variability,
 ):
@@ -426,7 +396,6 @@ def get_field_xpaths(
     Args:
       all_data_dict: the dictionary saving both the html content and the truth.
       website_to_process: the website that we are working on.
-      n_pages: we will work on the first n_pages number of the all pages.
       max_variable_nodes_per_website: top N frequent variable nodes as the final set.
     """
     # Saving the xpath info of the whole website,
@@ -435,9 +404,7 @@ def get_field_xpaths(
     overall_xpath_dict = collections.defaultdict(set)
 
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
-    for page_id in tqdm(all_data_dict, desc="Processing %s" % website_to_process, total=n_pages):
-        if int(page_id) >= n_pages:
-            continue
+    for page_id in tqdm(all_data_dict, desc=f"Processing {website_to_process}"):
         # We add dom-tree attributes for the first n_pages
         page_data = all_data_dict[page_id]
         html = page_data["html_str"]
@@ -445,10 +412,7 @@ def get_field_xpaths(
         page_data["dom_tree"] = dom_tree
 
         # Match values of each field for the current page.
-        for field in page_data:
-            if not field.startswith("field-"):
-                continue
-
+        for field in [x for x in page_data if 'field' in x]:
             # Saving the xpaths of the values for each field.
             page_data[field]["groundtruth_xpaths"] = set()
             page_data[field]["is_truth_value_list"] = set()
@@ -469,12 +433,7 @@ def get_field_xpaths(
                     )
 
                     # Assert each truth value can be founded in >=1 nodes.
-                    assert len(xpaths) >= 1, "%s;\t%s;\t%s;\t%s; is not found" % (
-                        website_to_process,
-                        field,
-                        page_id,
-                        value,
-                    )
+                    assert len(xpaths) >= 1, f"{website_to_process} | {field} | {page_id} | {value} is not found"
 
                     # Update the page-level xpath information.
                     page_data[field]["groundtruth_xpaths"].update(xpaths)
@@ -482,7 +441,7 @@ def get_field_xpaths(
 
             # now for each page_data
             # an example
-            # page_data["field-author"] =
+            # page_data["field-PAST_CLIENT"] =
             # {
             #   'values': ['Dave Kemper', 'Patrick Sebranek', 'Verne Meyer'],
             #   'groundtruth_xpaths':
@@ -522,16 +481,9 @@ def get_field_xpaths(
         else:
             fixed_nodes.add(xpath)
 
-    print(
-        "Vertical: %s; Website: %s; fixed_nodes: %d; variable_nodes: %d"
-        % (
-            website_to_process,
-            len(fixed_nodes),
-            len(variable_nodes),
-        )
-    )
+    print(f"Website: {website_to_process} | fixed_nodes: {len(fixed_nodes)} | variable_nodes: {len(variable_nodes)}")
 
-    assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages)
+    assure_value_variable(all_data_dict, variable_nodes, fixed_nodes)
     all_data_dict["fixed_nodes"] = list(fixed_nodes)
     all_data_dict["variable_nodes"] = list(variable_nodes)
 
@@ -541,18 +493,12 @@ def get_field_xpaths(
     # 并且我们保证truth_value必定在variable nodes中
     # (and we guarantee that truth_value must be in variable nodes)
 
-    # now page_data has the `doc_strings` attributes
-    # and each field has the `is_truth_value_list` attributes
-
-    # all_data_dict has the following attributes
-    # "0000" ~ "1999" is the information for each page
     # "fixed_nodes" are the xpaths for nodes that cannot have truth-value
     # "variable_nodes" are the xpaths for nodes that might have truth-value
-
     return
 
 
-def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages):
+def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes):
     """Makes sure all values are in the variable nodes by updating sets.
 
     Args:
@@ -562,7 +508,7 @@ def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages):
       n_pages: to assume we only process first n_pages pages from each website.
     """
     for index in all_data_dict:
-        if not index.isdigit() or int(index) >= n_pages:
+        if not index.isdigit():
             # the key should be an integer, to exclude "fixed/variable nodes" entries.
             # n_pages to stop for only process part of the website.
             continue
@@ -590,7 +536,6 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
     get_field_xpaths(
         all_data_dict,
         website_to_process=website,
-        n_pages=FLAGS.n_pages,
         max_variable_nodes_per_website=FLAGS.max_variable_nodes_per_website,
         min_node_variability=FLAGS.min_node_variability,
     )
@@ -616,41 +561,36 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
 
     cleaned_features_for_this_website = {}
 
-    for index in all_data_dict:
-        if not index.isdigit():
-            # Skip the cases when index is actually the "fixed/variable_nodes" keys.
-            continue
-        if int(index) >= FLAGS.n_pages:
-            break
-        page_data = all_data_dict[index]
+    for page_id in [x for x in all_data_dict if 'nodes' not in x ]:
+        page_data = all_data_dict[page_id]
+
         assert "xpath_data" in page_data
 
         doc_strings = page_data["doc_strings"]
-
+        # E.g. doc_strings = [('1730 Pennsylvania Avenue NW | HITT', '/html/head/title'), ...]
         new_doc_strings = []
-
+        # The difference between doc_strings and new_doc_strings is that new_doc_strings contains the label
         field_info = {}
-        for field in page_data:
-            if not field.startswith("field-"):
-                continue
+        # TODO(Aimore): Probably change the name of this variable (field_info) to something more meaningful, such as: gt_node_ids
+        for field in [x for x in list(page_data.keys()) if 'field' in x]:
             for doc_string_id in page_data[field]["is_truth_value_list"]:
-                field_info[doc_string_id] = field[6:]
+                field_info[doc_string_id] = field.split("-")[1]
 
         for id, doc_string in enumerate(doc_strings):
             text, xpath = doc_string
             is_variable = xpath in variable_nodes
+            # Define Fixed-nodes
             if not is_variable:
                 new_doc_strings.append((text, xpath, "fixed-node"))
+            # Define Variable-nodes
             else:
-                # for variable nodes,we need to give them labels
-                # TODO (aimore): Understand what is this id? That will help understand why variable nodes are called like this or 'none'
-                gt_field = field_info.get(id, "none")
+                gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
                 new_doc_strings.append((text, xpath, gt_field))
 
-        cleaned_features_for_this_website[index] = new_doc_strings
+        cleaned_features_for_this_website[page_id] = new_doc_strings
 
-    output_file_path = os.path.join(FLAGS.output_data_path, f"{website}-{FLAGS.n_pages}.pickle")
-    print(f"Writing the processed first {FLAGS.n_pages} pages of {website} into {output_file_path}")
+    output_file_path = os.path.join(FLAGS.output_data_path, f"{website}.pickle")
+    print(f"Writing the processed {len(cleaned_features_for_this_website)} pages of {website} into {output_file_path}")
     with open(output_file_path, "wb") as f:
         pickle.dump(cleaned_features_for_this_website, f)
 
@@ -659,19 +599,16 @@ def main(_):
     if not os.path.exists(FLAGS.output_data_path):
         os.makedirs(FLAGS.output_data_path)
 
-    args_list = []
-
     swde_path = FLAGS.input_groundtruth_path.split("groundtruth")[0]
     p = Path(swde_path) / "WAE"
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
-    num_cores = int(mp.cpu_count() / 2)
-
-    for website in websites[:]:
-        generate_nodes_seq_and_write_to_file(website)
-    # with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
-    #     for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
-    #         t.update()
+    # for website in websites[-10:]:
+    #     generate_nodes_seq_and_write_to_file(website)
+    num_cores = mp.cpu_count()
+    with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
+        for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
+            t.update()
 
 
 if __name__ == "__main__":

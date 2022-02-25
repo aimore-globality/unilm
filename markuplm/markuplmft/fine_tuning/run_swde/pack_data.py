@@ -26,11 +26,12 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import pickle
-import sys
+
 from pathlib import Path
 
 import tqdm
 from absl import app, flags
+import collections
 
 FLAGS = flags.FLAGS
 
@@ -51,7 +52,7 @@ def pack_swde_data(swde_path, pack_path):
 
     swde_path = Path(swde_path)
 
-    swde_data = {}
+    swde_data = collections.defaultdict(dict)
     print("Loading data...")
 
     websites_folder = os.listdir(os.path.join(swde_path))
@@ -74,7 +75,8 @@ def pack_swde_data(swde_path, pack_path):
             )
 
             website = website_folder.split("(")[0]
-            swde_data[website] = page
+            page_id = html_filename.split(".")[0]
+            swde_data[website][page_id] = page
     print("Saving data...")
     with open(pack_path, "wb") as output_file:
         pickle.dump(swde_data, output_file)

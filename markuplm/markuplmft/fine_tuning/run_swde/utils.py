@@ -127,7 +127,6 @@ def get_swde_features(
     doc_stride,
     max_length,
     prev_nodes,
-    n_pages,
 ):
     """
     This function creates a list of features that goes into the model.
@@ -142,7 +141,7 @@ def get_swde_features(
     padded_xpath_tags_seq = [216] * 50
     padded_xpath_subs_seq = [1001] * 50
 
-    filename = os.path.join(root_dir, f"{vertical}-{website}-{n_pages}.pickle")
+    filename = os.path.join(root_dir, f"{vertical}-{website}.pickle")
     with open(filename, "rb") as f:
         raw_data = pickle.load(f)
 
@@ -152,7 +151,7 @@ def get_swde_features(
 
     # This loops goes over all the pages in a website
     for page_id in tqdm.tqdm(
-        raw_data, desc=f"Processing {vertical}-{website}-{n_pages} features ..."
+        raw_data, desc=f"Processing {vertical}-{website} features ..."
     ):
         html_path = f"{vertical}-{website}-{page_id}.htm"
         needed_docstrings_id_set = set()
