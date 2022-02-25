@@ -236,7 +236,7 @@ if os.path.exists(raw_data_folder):
     
 domains = list(df.domain.value_counts().index)
 
-groundtruth_data_path = raw_data_folder / 'groundtruth' / 'WAE'   
+groundtruth_data_path = raw_data_folder / 'groundtruth'
 groundtruth_data_path.mkdir(parents=True, exist_ok=True)
 
 for e, domain in enumerate(domains):        
@@ -252,7 +252,7 @@ for e, domain in enumerate(domains):
     for enum, df_page in df_domain.iterrows():
         # Save html
         html = df_page['html']
-        raw_data_path = raw_data_folder / 'WAE' / f"WAE-{domain}({domain_len})"
+        raw_data_path = raw_data_folder / 'WAE' / f"{domain}({domain_len})"
         raw_data_path.mkdir(parents=True, exist_ok=True)
         raw_data_path = (raw_data_path / str(page_count).zfill(4)).with_suffix('.htm')
         print(raw_data_path)

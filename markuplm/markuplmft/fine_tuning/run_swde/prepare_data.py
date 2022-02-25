@@ -339,14 +339,13 @@ def get_dom_tree(html, website):
     return dom_tree
 
 
-def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_websites_map):
+def load_html_and_groundtruth(website_to_load):
     """
     DONE READ!
     """
     # example is `book` and `abebooks`
     """Loads and returns the html string and ground truth data as a dictionary."""
     all_data_dict = collections.defaultdict(dict)
-    vertical_to_websites_map = vertical_to_websites_map
     gt_path = FLAGS.input_groundtruth_path
 
     """
@@ -355,40 +354,38 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
 
     # if website_to_load == 'monotype.com':
     #     breakpoint()
-    for vertical in vertical_to_websites_map:
-        if vertical != vertical_to_load:
+    # This for loop is going over the gt_paths and getting the ground_truth_labels for each field and adding them into the all_data_dict for each page of the website
+    # TODO (aimore): Here when this dataset is transformed into pandas this will change and it will be easier
+    for truthfile in os.listdir(os.path.join(gt_path)):
+        # For example, a groundtruth file name can be "yahoo-PAST_CLIENT.txt".
+        website, field = truthfile.replace(".txt", "").split("-")
+
+        if website != website_to_load:
             continue
-        for truthfile in os.listdir(os.path.join(gt_path, vertical)):
-            # For example, a groundtruth file name can be "auto-yahoo-price.txt".
-            vertical, website, field = truthfile.replace(".txt", "").split("-")
-            # like book , amazon , isbn_13
 
-            if website != website_to_load:
-                continue
+        with open(os.path.join(gt_path, truthfile), "r") as load_file:
+            lines = load_file.readlines()
+            for line in lines[2:]:
+                # Each line should contains more than 3 elements splitted by \t
+                # which are: page_id, number of values, value1, value2, etc.
+                gt_items = line.strip().split("\t")
+                page_id = gt_items[0]  # like 0123
+                num_values = int(gt_items[1])  # Can be 0 (when item[2] is "<NULL>").
 
-            with open(os.path.join(gt_path, vertical, truthfile), "r") as load_file:
-                lines = load_file.readlines()
-                for line in lines[2:]:
-                    # Each line should contains more than 3 elements splitted by \t
-                    # which are: page_id, number of values, value1, value2, etc.
-                    gt_items = line.strip().split("\t")
-                    page_id = gt_items[0]  # like 0123
-                    num_values = int(gt_items[1])  # Can be 0 (when item[2] is "<NULL>").
+                # all_data_dict[page_id]["field-" + field] = dict(values=item[2: 2 + num_values])
+                gt_texts = [
+                    gt_text
+                    for gt_text in gt_items[2:]
+                    if len(gt_text) > 0
+                ]
+                all_data_dict[page_id][f"field-{field}"] = dict(values=gt_texts)
 
-                    # all_data_dict[page_id]["field-" + field] = dict(values=item[2: 2 + num_values])
-                    gt_texts = [
-                        gt_text
-                        for gt_text in gt_items[2:]
-                        if len(gt_text) > 0
-                    ]
-                    all_data_dict[page_id][f"field-{field}"] = dict(values=gt_texts)
-
-            # {"0123":
-            #   {"field-engine":
-            #       {"values":["engine A","engine B"]},
-            #    "field-price":
-            #   }
-            # }
+        # {"0123":
+        #   {"field-engine":
+        #       {"values":["engine A","engine B"]},
+        #    "field-price":
+        #   }
+        # }
     """
 
     this is an example for book-abebooks-0000.htm
@@ -403,17 +400,17 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
 
     """
 
-    print("Reading the pickle of SWDE original dataset.....", file=sys.stderr)
+    print("Reading the SWDE dataset pickle.....", file=sys.stderr)
     with open(FLAGS.input_pickle_path, "rb") as load_file:
         swde_html_data = pickle.load(load_file)
-    # {"vertical":'book',"website":'book-amazon(2000)',"path:'book/book-amazon(2000)/0000.htm',"html_str":xx} here
+    # swde_html_data =[ {"website":'book-amazon(2000)', "path:'book/book-amazon(2000)/0000.htm', "html_str":xx}, ...]
 
+    # This for loop is going over all the websites and adding the html_str and path
     for page in tqdm(swde_html_data, desc="Loading HTML data"):
-        vertical = page["vertical"]
         website = page["website"]
         website = website[website.find("-") + 1 : website.find("(")]
 
-        if vertical != vertical_to_load or website != website_to_load:
+        if website != website_to_load:
             continue
 
         path = page["path"]  # For example, auto/auto-aol(2000)/0000.htm
@@ -446,7 +443,6 @@ def load_html_and_groundtruth(vertical_to_load, website_to_load, vertical_to_web
 
 def get_field_xpaths(
     all_data_dict,
-    vertical_to_process,
     website_to_process,
     n_pages,
     max_variable_nodes_per_website,
@@ -456,7 +452,6 @@ def get_field_xpaths(
 
     Args:
       all_data_dict: the dictionary saving both the html content and the truth.
-      vertical_to_process: the vertical that we are working on;
       website_to_process: the website that we are working on.
       n_pages: we will work on the first n_pages number of the all pages.
       max_variable_nodes_per_website: top N frequent variable nodes as the final set.
@@ -467,11 +462,11 @@ def get_field_xpaths(
     overall_xpath_dict = collections.defaultdict(set)
 
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
-    for index in tqdm(all_data_dict, desc="Processing %s" % website_to_process, total=n_pages):
-        if int(index) >= n_pages:
+    for page_id in tqdm(all_data_dict, desc="Processing %s" % website_to_process, total=n_pages):
+        if int(page_id) >= n_pages:
             continue
         # We add dom-tree attributes for the first n_pages
-        page_data = all_data_dict[index]
+        page_data = all_data_dict[page_id]
         html = page_data["html_str"]
         dom_tree = get_dom_tree(html, website=website_to_process)
         page_data["dom_tree"] = dom_tree
@@ -504,7 +499,7 @@ def get_field_xpaths(
                     assert len(xpaths) >= 1, "%s;\t%s;\t%s;\t%s; is not found" % (
                         website_to_process,
                         field,
-                        index,
+                        page_id,
                         value,
                     )
 
@@ -557,7 +552,6 @@ def get_field_xpaths(
     print(
         "Vertical: %s; Website: %s; fixed_nodes: %d; variable_nodes: %d"
         % (
-            vertical_to_process,
             website_to_process,
             len(fixed_nodes),
             len(variable_nodes),
@@ -616,12 +610,12 @@ def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes, n_pages):
 
 def generate_nodes_seq_and_write_to_file(compressed_args):
     """Extracts all the xpaths and labels the nodes for all the pages."""
-    vertical, website, vertical_to_websites_map = compressed_args
+    website = compressed_args
 
-    all_data_dict = load_html_and_groundtruth(vertical, website, vertical_to_websites_map)
+    all_data_dict = load_html_and_groundtruth(website)
+
     get_field_xpaths(
         all_data_dict,
-        vertical_to_process=vertical,
         website_to_process=website,
         n_pages=FLAGS.n_pages,
         max_variable_nodes_per_website=FLAGS.max_variable_nodes_per_website,
@@ -682,12 +676,8 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
 
         cleaned_features_for_this_website[index] = new_doc_strings
 
-    output_file_path = os.path.join(
-        FLAGS.output_data_path, f"{vertical}-{website}-{FLAGS.n_pages}.pickle"
-    )
-    print(
-        f"Writing the processed first {FLAGS.n_pages} pages of {vertical}-{website} into {output_file_path}"
-    )
+    output_file_path = os.path.join(FLAGS.output_data_path, f"{website}-{FLAGS.n_pages}.pickle")
+    print(f"Writing the processed first {FLAGS.n_pages} pages of {website} into {output_file_path}")
     with open(output_file_path, "wb") as f:
         pickle.dump(cleaned_features_for_this_website, f)
 
@@ -702,21 +692,13 @@ def main(_):
     p = Path(swde_path) / "WAE"
     websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
 
-    vertical_to_websites_map = {"WAE": websites}
-    verticals = vertical_to_websites_map.keys()
-
-    for vertical in verticals:
-        websites = vertical_to_websites_map[vertical]
-        for website in websites:
-            args_list.append((vertical, website, vertical_to_websites_map))
-
     num_cores = int(mp.cpu_count() / 2)
 
-    # for x in args_list[:]:
-    #     generate_nodes_seq_and_write_to_file(x)
-    with mp.Pool(num_cores) as pool, tqdm(total=len(args_list), desc="Processing swde-data") as t:
-        for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, args_list):
-            t.update()
+    for x in websites[:]:
+        generate_nodes_seq_and_write_to_file(x)
+    # with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
+    #     for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
+    #         t.update()
 
 
 if __name__ == "__main__":
