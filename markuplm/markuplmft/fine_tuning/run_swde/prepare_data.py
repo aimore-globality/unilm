@@ -351,28 +351,30 @@ def load_html_and_groundtruth(website_to_load):
     """
     First build groudtruth dict
     """
+    print("Reading the SWDE dataset pickle.....", file=sys.stderr)
+    with open(FLAGS.input_pickle_path, "rb") as load_file:
+        swde_html_data = pickle.load(load_file)
+    # swde_html_data =[ {"website":'book-amazon(2000)', "path:'book/book-amazon(2000)/0000.htm', "html_str":xx}, ...]
 
-    # if website_to_load == 'monotype.com':
-    #     breakpoint()
     # This for loop is going over the gt_paths and getting the ground_truth_labels for each field and adding them into the all_data_dict for each page of the website
     # TODO (aimore): Here when this dataset is transformed into pandas this will change and it will be easier
-    for truthfile in os.listdir(os.path.join(gt_path)):
+    import glob
+
+    file_expression = os.path.join(gt_path, website_to_load) + '**'
+    files_with_exp = glob.glob(file_expression)
+    for file in files_with_exp:
         # For example, a groundtruth file name can be "yahoo-PAST_CLIENT.txt".
-        website, field = truthfile.replace(".txt", "").split("-")
+        website, field = file.replace(".txt", "").split("-")
 
-        if website != website_to_load:
-            continue
-
-        with open(os.path.join(gt_path, truthfile), "r") as load_file:
+        # TODO(aimore): In case the groundtruth comes as pandas this will be simpler
+        with open(os.path.join(gt_path, file), "r") as load_file:
             lines = load_file.readlines()
             for line in lines[2:]:
                 # Each line should contains more than 3 elements splitted by \t
                 # which are: page_id, number of values, value1, value2, etc.
                 gt_items = line.strip().split("\t")
-                page_id = gt_items[0]  # like 0123
-                num_values = int(gt_items[1])  # Can be 0 (when item[2] is "<NULL>").
+                page_id = gt_items[0]
 
-                # all_data_dict[page_id]["field-" + field] = dict(values=item[2: 2 + num_values])
                 gt_texts = [
                     gt_text
                     for gt_text in gt_items[2:]
@@ -380,38 +382,7 @@ def load_html_and_groundtruth(website_to_load):
                 ]
                 all_data_dict[page_id][f"field-{field}"] = dict(values=gt_texts)
 
-        # {"0123":
-        #   {"field-engine":
-        #       {"values":["engine A","engine B"]},
-        #    "field-price":
-        #   }
-        # }
-    """
-
-    this is an example for book-abebooks-0000.htm
-    <-- all_data_dict["0000"] -->
-    {
-        'field-publication_date': {'values': ['2008']}, 
-        'field-author': {'values': ['Howard Zinn', 'Paul Buhle', 'Mike Konopacki']}, 
-        'field-title': {'values': ["A People's History of American Empire"]}, 
-        'field-publisher': {'values': ['Metropolitan Books']}, 
-        'field-isbn_13': {'values': ['9780805087444']}
-    }
-
-    """
-
-    print("Reading the SWDE dataset pickle.....", file=sys.stderr)
-    with open(FLAGS.input_pickle_path, "rb") as load_file:
-        swde_html_data = pickle.load(load_file)
-    # swde_html_data =[ {"website":'book-amazon(2000)', "path:'book/book-amazon(2000)/0000.htm', "html_str":xx}, ...]
-
-    # This for loop is going over all the websites and adding the html_str and path
-    for page in tqdm(swde_html_data, desc="Loading HTML data"):
-        website = page["website"]
-        website = website[website.find("-") + 1 : website.find("(")]
-
-        if website != website_to_load:
-            continue
+        page = swde_html_data[website_to_load]
 
         path = page["path"]  # For example, auto/auto-aol(2000)/0000.htm
         html_str = page["html_str"]
@@ -421,6 +392,12 @@ def load_html_and_groundtruth(website_to_load):
         all_data_dict[page_id]["html_str"] = html_str
         all_data_dict[page_id]["path"] = path
 
+        # {"0123":
+        #   {"field-engine":
+        #       {"values":["engine A","engine B"]},
+        #    "field-price":
+        #   }
+        # }
     """
         this is an example for book-abebooks-0000.htm
         <-- all_data_dict["0000"] -->
@@ -434,10 +411,6 @@ def load_html_and_groundtruth(website_to_load):
             'html_str': omitted,
         }
     """
-
-    # all_data_dict here has all the pages
-    # however, only those in swde.pickle has the newly-appended 'path' and 'html_str'
-
     return all_data_dict
 
 
@@ -694,8 +667,8 @@ def main(_):
 
     num_cores = int(mp.cpu_count() / 2)
 
-    for x in websites[:]:
-        generate_nodes_seq_and_write_to_file(x)
+    for website in websites[:]:
+        generate_nodes_seq_and_write_to_file(website)
     # with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
     #     for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
     #         t.update()

@@ -280,7 +280,7 @@ for e, domain in enumerate(domains):
         
     # Save groundtruth    
     for tag, page_annotations in domain_annotations.items():
-        groundtruth_data_tag_path = groundtruth_data_path / f"WAE-{domain}-{tag}.txt"
+        groundtruth_data_tag_path = groundtruth_data_path / f"{domain}-{tag}.txt"
         print(groundtruth_data_tag_path)
 
         page_annotations_df = pd.DataFrame(page_annotations)

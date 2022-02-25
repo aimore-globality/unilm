@@ -51,7 +51,7 @@ def pack_swde_data(swde_path, pack_path):
 
     swde_path = Path(swde_path)
 
-    swde_data = []
+    swde_data = {}
     print("Loading data...")
 
     websites_folder = os.listdir(os.path.join(swde_path))
@@ -68,12 +68,13 @@ def pack_swde_data(swde_path, pack_path):
                 html_str = webpage_html.read()
 
             page = dict(
-                website=website_folder,  # E.g. 'WAE-capturagroup.com(8)'
-                path=html_file_relative_path,  # E.g. 'WAE-capturagroup.com(8)/0000.htm'
+                website=website_folder,  # E.g. 'capturagroup.com(8)'
+                path=html_file_relative_path,  # E.g. 'capturagroup.com(8)/0000.htm'
                 html_str=html_str,
             )
 
-            swde_data.append(page)
+            website = website_folder.split("(")[0]
+            swde_data[website] = page
     print("Saving data...")
     with open(pack_path, "wb") as output_file:
         pickle.dump(swde_data, output_file)
