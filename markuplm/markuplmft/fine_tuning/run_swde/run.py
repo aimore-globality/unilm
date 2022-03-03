@@ -1,35 +1,30 @@
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import copy
+import glob
 import logging
 import os
 import random
-import glob
+from pathlib import Path
+from typing import List
 
 import numpy as np
+import torch
+from eval_utils import page_level_constraint
+from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
-from tensorboardX import SummaryWriter
 from tqdm import tqdm, trange
-from transformers import (
-    WEIGHTS_NAME,
-    AdamW,
-    get_linear_schedule_with_warmup,
-)
+from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
+from utils import SwdeDataset, get_swde_features
 
+from markuplm.markuplmft.fine_tuning.run_swde import constants
 from markuplm.markuplmft.models.markuplm import (
     MarkupLMConfig,
-    MarkupLMTokenizer,
     MarkupLMForTokenClassification,
+    MarkupLMTokenizer,
 )
-
-from utils import get_swde_features, SwdeDataset
-from eval_utils import page_level_constraint
-from markuplm.markuplmft.fine_tuning.run_swde import constants
-import torch
-
-import copy
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +244,9 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
         model = torch.nn.DataParallel(model)
 
     # Eval!
-    logger.info("***** Running evaluation {} *****".format(prefix))
+    logger.info(f"***** Running evaluation {prefix} *****")
     logger.info(f"  Num examples for {website} = {len(dataset)}")
-    logger.info("  Batch size = %d", args.eval_batch_size)
+    logger.info(f"  Batch size = {args.eval_batch_size}")
     # if len(dataset) == 0:
     #     print("WILL ERROR")
     #     default_res = (1, 1, 1)
@@ -260,9 +255,9 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
     all_logits = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         model.eval()
-        batch = tuple(t.to(args.device) for t in batch)
+        batch = tuple(b.to(args.device) for b in batch) # TODO (AIMORE): Why they use tuple here?
         with torch.no_grad():
-            inputs = {
+            inputs = { # TODO (AIMORE): Can't this batch have better names, instead of these numbered indices?
                 "input_ids": batch[0],
                 "attention_mask": batch[1],
                 "token_type_ids": batch[2],
@@ -321,9 +316,9 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
         for xpath in all_res[html_path]:
             final_probs = all_res[html_path][xpath]["pred"] / torch.sum(
                 all_res[html_path][xpath]["pred"]
-            ) # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then?
+            )  # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then? Maybe in case of more than one label?
             pred_id = torch.argmax(final_probs).item()
-            pred_type = constants.ATTRIBUTES_PLUS_NONE[args.vertical][pred_id]
+            pred_type = constants.ATTRIBUTES_PLUS_NONE[pred_id]
             final_probs = final_probs.numpy().tolist()
 
             # TODO (aimore): Convert this to pandas
@@ -332,7 +327,7 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
                     html_path,
                     xpath,
                     all_res[html_path][xpath]["text"],
-                    all_res[html_path][xpath]["truth"], # TODO (aimore): Convert these to variables
+                    all_res[html_path][xpath]["truth"],  # TODO (aimore): Convert these to variables
                     pred_type,
                     ",".join([str(score) for score in final_probs]),
                 ]
@@ -340,7 +335,7 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
 
             lines.append(s)
 
-    res = page_level_constraint(args.vertical, website, lines, sub_output_dir)
+    res = page_level_constraint(website, lines, sub_output_dir)
 
     return res  # (precision, recall, f1)
 
@@ -350,7 +345,6 @@ def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
     Evaluate the model
     """
 
-    all_eval_res = {}
     all_precision = []
     all_recall = []
     all_f1 = []
@@ -373,7 +367,6 @@ def load_and_cache_one_website(args, tokenizer, website):
     cached_features_file = os.path.join(
         args.root_dir,
         "cached",
-        args.vertical,
         website,
         f"cached_markuplm_{str(args.max_seq_length)}_prevnodes{args.prev_nodes_into_account}",
     )
@@ -387,12 +380,11 @@ def load_and_cache_one_website(args, tokenizer, website):
 
     else:
         logger.info(
-            f"Creating features for {args.vertical}-{website}-prevnodes{args.prev_nodes_into_account}"
+            f"Creating features for {website}-prevnodes{args.prev_nodes_into_account}"
         )
 
         features = get_swde_features(
             root_dir=args.root_dir,
-            vertical=args.vertical,
             website=website,
             tokenizer=tokenizer,
             doc_stride=args.doc_stride,
@@ -407,7 +399,7 @@ def load_and_cache_one_website(args, tokenizer, website):
     return features
 
 
-def load_and_cache_examples(args, tokenizer, websites):
+def load_and_cache_examples(args, tokenizer, websites:List):
     r"""
     Load and process the raw data.
     """
@@ -424,14 +416,12 @@ def load_and_cache_examples(args, tokenizer, websites):
     return feature_dicts
 
 
-def get_dataset_and_info_for_websites(websites, evaluate=False):
+def get_dataset_and_info_for_websites(websites: List, evaluate=False):
     """
-
     Args:
         websites: a list of websites
-
     Returns:
-        a dataset object
+        a dataset object and info
     """
 
     all_features = []
@@ -478,7 +468,7 @@ def get_dataset_and_info_for_websites(websites, evaluate=False):
             for f in all_features
         ]
 
-    return dataset, info
+    return dataset, info # TODO(AIMORE): What is the purpose of this info?
 
 
 def do_something(train_websites, test_websites, args, config, tokenizer):
@@ -491,7 +481,6 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     # My modification
     sub_output_dir = os.path.join(
         args.output_dir,
-        args.vertical,
         f"seed-{args.n_seed}",
         "-".join(str(len(train_websites))),
     )
@@ -509,7 +498,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
 
     model.to(args.device)
 
-    logger.info("Training/evaluation parameters %s", args)
+    logger.info(f"Training/evaluation parameters {args}")
 
     # Before we do anything with models, we want to ensure that we get fp16 execution of torch.einsum if args.fp16 is
     # set. Otherwise it'll default to "promote" mode, and we'll get fp32 operations. Note that running
@@ -523,14 +512,14 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
             raise ImportError(
                 "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
             )
-
+    print(f"sub_output_dir:{sub_output_dir}")  # TODO (aimore): perhaps change this name.
     # Training
     if args.do_train:
         train_dataset, _ = get_dataset_and_info_for_websites(train_websites)
         tokenizer.save_pretrained(sub_output_dir)
         model.to(args.device)
         global_step, tr_loss = train(args, train_dataset, model, tokenizer, sub_output_dir)
-        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+        logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
     # Save the trained model and the tokenizer
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -538,7 +527,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
         if not os.path.exists(sub_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(sub_output_dir)
 
-        logger.info("Saving model checkpoint to %s", sub_output_dir)
+        logger.info(f"Saving model checkpoint to {sub_output_dir}")
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         # Take care of distributed/parallel training
@@ -612,13 +601,11 @@ def main():
         "in which we have `book-abebooks-2000.pickle` files like that",
     )
     parser.add_argument(
-        "--vertical",
-        default="book",
-        type=str,
-        help="Which vertical to train and test"
-        "Now we haven't supported multi-verticals in one program",
+        "--n_seed",
+        default=2,
+        type=int,
+        help="number of seed pages",
     )
-    parser.add_argument("--n_seed", default=2, type=int, help="number of seed pages")
     parser.add_argument(
         "--prev_nodes_into_account",
         default=4,
@@ -681,7 +668,11 @@ def main():
         "A number of warnings are expected for a normal SQuAD evaluation.",
     )
 
-    parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
+    parser.add_argument(
+        "--do_train",
+        action="store_true",
+        help="Whether to run training.",
+    )
     parser.add_argument(
         "--do_eval", action="store_true", help="Whether to run eval on the dev set."
     )
@@ -747,7 +738,12 @@ def main():
         type=float,
         help="Epsilon for Adam optimizer.",
     )
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
+    parser.add_argument(
+        "--max_grad_norm",
+        default=1.0,
+        type=float,
+        help="Max gradient norm.",
+    )
     parser.add_argument(
         "--num_train_epochs",
         default=3.0,
@@ -875,12 +871,11 @@ def main():
         level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN,
     )
     logger.warning(
-        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-        args.local_rank,
-        device,
-        args.n_gpu,
-        bool(args.local_rank != -1),
-        args.fp16,
+        f"Process rank: {args.local_rank}, "
+        f"device: {device}, "
+        f"n_gpu: {args.n_gpu}, "
+        f"distributed training: {bool(args.local_rank != -1)}, "
+        f"16-bits training: {args.fp16}"
     )
 
     # Set seed
@@ -900,7 +895,11 @@ def main():
 
     swde_path = args.root_dir
     p = Path(swde_path)
-    websites = [x.parts[-1].split("-")[1] for x in list(p.iterdir()) if 'cached' not in str(x)]
+    websites = [
+        x.parts[-1].split("-")[1]
+        for x in list(p.iterdir())
+        if "cached" not in str(x)
+    ]
     print(f"\nWebsites ({len(websites)}):\n{websites}\n")
 
     # first we load the features
@@ -935,16 +934,16 @@ def main():
     #     if website not in train_websites:
     #         test_websites.append(website)
 
-    ori_config = copy.deepcopy(config)
-    ori_tokenizer = copy.deepcopy(tokenizer)
+    # ori_config = copy.deepcopy(config)
+    # ori_tokenizer = copy.deepcopy(tokenizer)
 
     eval_res = do_something(train_websites, test_websites, args, config, tokenizer)
     all_precision = eval_res["precision"]
     all_recall = eval_res["recall"]
     all_f1 = eval_res["f1"]
 
-    config = ori_config
-    tokenizer = ori_tokenizer
+    # config = ori_config
+    # tokenizer = ori_tokenizer
 
     logger.info("=================FINAL RESULTS=================")
     logger.info(f"Precision : {all_precision}")

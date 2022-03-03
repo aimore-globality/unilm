@@ -121,7 +121,6 @@ def process_xpath(xpath: str):
 
 def get_swde_features(
     root_dir,
-    vertical,
     website,
     tokenizer,
     doc_stride,
@@ -141,7 +140,7 @@ def get_swde_features(
     padded_xpath_tags_seq = [216] * 50
     padded_xpath_subs_seq = [1001] * 50
 
-    filename = os.path.join(root_dir, f"{vertical}-{website}.pickle")
+    filename = os.path.join(root_dir, f"{website}.pickle")
     with open(filename, "rb") as f:
         raw_data = pickle.load(f)
 
@@ -151,9 +150,9 @@ def get_swde_features(
 
     # This loops goes over all the pages in a website
     for page_id in tqdm.tqdm(
-        raw_data, desc=f"Processing {vertical}-{website} features ..."
+        raw_data, desc=f"Processing {website} features ..."
     ):
-        html_path = f"{vertical}-{website}-{page_id}.htm"
+        html_path = f"{website}-{page_id}.htm"
         needed_docstrings_id_set = set()
 
         # This for loop constrains the amount of xpath that are used to create the input features and predict the page.
@@ -236,7 +235,7 @@ def get_swde_features(
                 first_token_text.append(text)  # E.g. text = 'HITT FUTURES'
                 # ['1730 Pennsylvania Avenue NW | HITT', '1730 Pennsylvania Avenue NW', 'Washington, DC', "HITT completed an occupied building renovation of the main lobby, elevator cabsand typical tenant lobbies on four of the floors in this commercial office building loca
 
-                all_labels_seq += [constants.ATTRIBUTES_PLUS_NONE[vertical].index(type)] * len(
+                all_labels_seq += [constants.ATTRIBUTES_PLUS_NONE.index(type)] * len(
                     token_ids
                 )
                 # E. g. all_labels_seq = [-100, -100, ..., 1, 1, 1, 1, 1, -100, ..., -100, -100]

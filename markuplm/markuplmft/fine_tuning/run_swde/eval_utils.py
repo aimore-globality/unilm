@@ -25,12 +25,8 @@ def aimore_metrics(evaluation_dict):
     print(f"Avg. Recall: {avg_recall}")
     return avg_precision, avg_recall
 
-def page_hits_level_metric(
-        vertical,
-        target_website,
-        sub_output_dir,
-        prev_voted_lines
-):
+
+def page_hits_level_metric(target_website, sub_output_dir, prev_voted_lines):
     """Evaluates the hit level prediction result with precision/recall/f1."""
 
     all_precisions = []
@@ -81,7 +77,9 @@ def page_hits_level_metric(
                 num_html_pages_with_truth += 1
             if result["pred"]:
                 num_html_pages_with_pred += 1
-            if result["truth"] & result["pred"]:  # 似乎这里是个交集...不能随便乱搞 # Seems like an intersection here... can't just mess around
+            if (
+                result["truth"] & result["pred"]
+            ):  # 似乎这里是个交集...不能随便乱搞 # Seems like an intersection here... can't just mess around
                 # Here is where it considers at least one correct prediction because it takes the intersection of sets
                 num_html_pages_with_correct += 1
         # Metrics are computed over the number of pages in a domain.
@@ -115,12 +113,12 @@ def page_hits_level_metric(
     print(metric_str, file=sys.stderr)
 
     # Aimore version
-    all_avg_f1 = 2 * (np.mean(all_avg_precision) * np.mean(all_avg_recall)) / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
-    return (
-        np.mean(all_avg_precision),
-        np.mean(all_avg_recall),
-        np.mean(all_avg_f1)
+    all_avg_f1 = (
+        2
+        * (np.mean(all_avg_precision) * np.mean(all_avg_recall))
+        / (np.mean(all_avg_precision) + np.mean(all_avg_recall) + 0.000001)
     )
+    return (np.mean(all_avg_precision), np.mean(all_avg_recall), np.mean(all_avg_f1))
 
     # TODO (aimore): Why not take the mean
     # Original
@@ -131,14 +129,18 @@ def page_hits_level_metric(
     # )
 
 
-def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines):
+def site_level_voting(target_website, sub_output_dir, prev_voted_lines):
     """Adds the majority voting for the predictions."""
 
     lines = prev_voted_lines
 
     field_xpath_freq_dict = dict()
 
-    for line in lines:  # This counts the xpaths across the domain which have the most predictions (If there is no prediction this line this for is skipped)
+    for (
+        line
+    ) in (
+        lines
+    ):  # This counts the xpaths across the domain which have the most predictions (If there is no prediction this line this for is skipped)
         items = line.split("\t")
         assert len(items) >= 5, items
         xpath = items[1]
@@ -154,8 +156,9 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
     most_frequent_xpaths = dict()  # Site level voting.
     # field_xpath_freq_dict = {xpath1:count1, xpath2:count2, ...}
     for field, xpth_freq in field_xpath_freq_dict.items():
-        frequent_xpath = sorted(
-            xpth_freq.items(), key=lambda kv: kv[1], reverse=True)[0][0]  # Top 1.
+        frequent_xpath = sorted(xpth_freq.items(), key=lambda kv: kv[1], reverse=True)[0][
+            0
+        ]  # Top 1.
         most_frequent_xpaths[field] = frequent_xpath
 
     voted_lines = []
@@ -180,21 +183,19 @@ def site_level_voting(vertical, target_website, sub_output_dir, prev_voted_lines
         f.write("\n".join(voted_lines))
 
     return page_hits_level_metric(  # re-eval with the voted prediction
-        vertical,
         target_website,
         sub_output_dir,
-        voted_lines
+        voted_lines,
     )
 
 
-def page_level_constraint(vertical, target_website,
-                          lines, sub_output_dir):
+def page_level_constraint(target_website, lines, sub_output_dir):
     """Takes the top highest prediction for empty field by ranking raw scores."""
     """
     In this step, we make sure every node has a prediction
     """
 
-    tags = constants.ATTRIBUTES_PLUS_NONE[vertical]
+    tags = constants.ATTRIBUTES_PLUS_NONE
 
     site_field_truth_exist = dict()
     page_field_max = dict()
@@ -214,11 +215,15 @@ def page_level_constraint(vertical, target_website,
         raw_scores = [float(x) for x in items[5].split(",")]
         assert len(raw_scores) == len(tags)
         site_field_truth_exist[truth] = True
-        for index, score in enumerate(raw_scores): # The raw_scores is a tuple logits [0.17, 0.83] this for loop gets the first one (0.17)
+        for index, score in enumerate(
+            raw_scores
+        ):  # The raw_scores is a tuple logits [0.17, 0.83] this for loop gets the first one (0.17)
             if html_path not in page_field_max:
                 page_field_max[html_path] = {}
-            if tags[index] not in page_field_max[html_path] or \
-                    score >= page_field_max[html_path][tags[index]]:
+            if (
+                tags[index] not in page_field_max[html_path]
+                or score >= page_field_max[html_path][tags[index]]
+            ):
                 page_field_max[html_path][tags[index]] = score
     # E.g. page_field_max = {'page_id':{'tag': max_pred}} Gets the max predictions of each tag per page
     print(page_field_pred_count, file=sys.stderr)
@@ -242,14 +247,19 @@ def page_level_constraint(vertical, target_website,
             if tag in site_field_truth_exist and tag not in page_field_pred_count:
                 # site_field_truth_exist = {'PAST_CLIENT': True, 'none': True}
                 # page_field_pred_count = {'PAST_CLIENT': 155}
-                if pred != "none": # This makes all nodes that are not variable skip the if below.
+                if pred != "none":  # This makes all nodes that are not variable skip the if below.
                     continue
                 # This if is responsible for filtering out all the 'none' nodes that don't have a probability higher than the max probability - 0.001.
                 # So this should be expected to drastically reduce the amount of predicted nodes.
                 if raw_scores[index] >= page_field_max[html_path][tags[index]] - (1e-3):
-                    items[4] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
+                    items[
+                        4
+                    ] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
         voted_lines.append("\t".join(items))
     print(f"lines: {len(lines)} | voted_lines: {len(voted_lines)}")
     # What happens if there is no prediction and that hack above doesn't pass?
     return site_level_voting(
-        vertical, target_website, sub_output_dir, voted_lines)
+        target_website,
+        sub_output_dir,
+        voted_lines,
+    )

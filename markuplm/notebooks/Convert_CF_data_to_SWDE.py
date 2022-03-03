@@ -45,7 +45,7 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # %% [markdown] tags=[]
 # # Load
 
-# %%
+# %% tags=[]
 dataset = 'develop'
 
 # %% [markdown]
@@ -61,20 +61,30 @@ len(df)
 # ## Positive Data (containing at least one annotation)
 
 # %% tags=[]
-# Create a sample that contains only positives:
-df['annotations_len'] = df['annotations'].apply(len)
-df_sample = df[df['annotations_len'] > 0]
-save_path = data_path.replace('.avro', f'_positives({len(df_sample)}).pkl')
-print(save_path)
-df_sample.to_pickle(save_path)
+# Count PAST CLIENT annotations
+df['annotations_len'] = df['annotations'].apply(lambda x: x.get("PAST_CLIENT", [])).apply(len)
+
+df_positives = df[df['annotations_len'] > 0]
+df_negatives = df[df['annotations_len'] == 0]
+
+negative_fraction = 0.10
+df_negatives = df_negatives[df_negatives['domain'].isin(df_positives['domain'])]
+df_negatives_sample = df_negatives.groupby("domain").sample(frac=negative_fraction, random_state=66)
+
+# save_path = data_path.replace('.avro', f'_pos({len(df_positives)}).pkl')
+# print(f"Saving file: {save_path}")
+# df_positives.to_pickle(save_path)
 
 # %% tags=[]
-data_path = save_path
-# data_path = "../../../web-annotation-extractor/data/processed/train/dataset_positives(11641).pkl"
-# data_path = "../../../web-annotation-extractor/data/processed/develop/dataset_positives(?).pkl"
+# # data_path = save_path
+# if dataset == 'train':
+#     data_path = "../../../web-annotation-extractor/data/processed/train/dataset_pos(?)_neg(?).pkl"
+# if dataset == 'develop':
+#     data_path = "../../../web-annotation-extractor/data/processed/develop/dataset_pos(1986)_neg(5122).pkl"
 
-df = pd.read_pickle(data_path)
-len(df)
+# df = pd.read_pickle(data_path)
+# print(f"{dataset} - {data_path}")
+# len(df)
 
 # %% [markdown]
 # # Select Tags
@@ -90,14 +100,15 @@ annotation_tags
 # ## Remove hiphen from domains
 
 # %% tags=[]
-df.domain = df.domain.apply(lambda x: x.replace('-', ''))
+df_positives.domain = df_positives.domain.apply(lambda x: x.replace('-', ''))
+df_positives_initial_len = len(df_positives)
 
 # %% [markdown]
 # ## Assert that domain don't contain parenthesis
 #
 
 # %% tags=[]
-assert len(df[df['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
+assert len(df_positives[df_positives['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
 # Remove parenthesis from domain in case there is (assertion above fails)
 # ... df = df[~df['domain'].apply(lambda x: '(' in x or ')' in x)]
 
@@ -107,30 +118,30 @@ assert len(df[df['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
 # %% tags=[]
 for tag in annotation_tags:
     print(f'- {tag}')
-    df[f'annotations-{tag}'] = df['annotations'].apply(lambda x: x.get(tag))        
-    df[f'text-{tag}'] = df.dropna(subset=[f'annotations-{tag}'])[f'annotations-{tag}'].apply(lambda x: [y['text'] for y in x])        
+    df_positives[f'annotations-{tag}'] = df_positives['annotations'].apply(lambda x: x.get(tag))        
+    df_positives[f'text-{tag}'] = df_positives.dropna(subset=[f'annotations-{tag}'])[f'annotations-{tag}'].apply(lambda x: [y['text'] for y in x])        
 
 # %% [markdown]
 # # Remove samples that don't have html
 
 # %% tags=[]
-pages_without_html = df[df['html'] == 'PLACEHOLDER_HTML'].dropna(subset=['annotations-PAST_CLIENT'])
+pages_without_html = df_positives[df_positives['html'] == 'PLACEHOLDER_HTML'].dropna(subset=['annotations-PAST_CLIENT'])
 annotations_without_html = len([y for x in pages_without_html['text-PAST_CLIENT'] for y in x])
 print(f"There are {len(pages_without_html)} pages and {annotations_without_html} annotations without html - We are loosing these annotations because we don't have the html")
 
 # %% tags=[]
-df = df[df['html'] != 'PLACEHOLDER_HTML']
+df_positives = df_positives[df_positives['html'] != 'PLACEHOLDER_HTML']
 
 # %% [markdown]
 # # Remove annotations that cannot be found in the xpaths of the html
 
 # %% tags=[]
-initial_amount_of_label = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+initial_amount_of_label = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
 print(f"Initial amount of labels: {initial_amount_of_label}")
 
 all_new_annotations = []
 
-for i, row in tqdm(df.iterrows()):
+for i, row in tqdm(df_positives.iterrows()):
     if not row.isnull()[f'text-{tag}']:
         clean_dom_tree = get_dom_tree(row['html'], 'website')
         
@@ -159,21 +170,24 @@ for i, row in tqdm(df.iterrows()):
         all_new_annotations.append(annotations_that_can_be_found)
     else:
         all_new_annotations.append(None)
-        
-df[f'text-{tag}'] = all_new_annotations
 
-final_amount_of_label = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+df_positives[f'text-{tag}'] = all_new_annotations
+
+final_amount_of_label = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+
+# %% tags=[]
 print(f"Final amount of labels: {final_amount_of_label}")
 print(f"Number of labels lost because they couldn't be found in the page: {initial_amount_of_label - final_amount_of_label}")
 
 # %% tags=[]
-len(df)
+current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% tags=[]
-print(f"With text and tail the annotation coverage is: {100*9644/12085:.2f} %")
+print(f"With text and tail the page coverage is: {100*len(df_positives)/df_positives_initial_len:.2f} %")
 
 # %% tags=[]
-print(f"With text, tail and xpath_content the annotation coverage is: {100*11500/12085:.2f} %")
+# print(f"With text, tail and xpath_content the annotation coverage is: {100*11500/12085:.2f} %") # outdated
 
 # %% [markdown]
 # ## Debug (find why annotation could not be found in html):
@@ -196,25 +210,46 @@ print(f"With text, tail and xpath_content the annotation coverage is: {100*11500
 # # Remove image link annotations
 
 # %% tags=[]
-current_annotations = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
-current_annotations
+current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% tags=[]
-df[f'text-{tag}'] = df[f'text-{tag}'].dropna().apply(lambda annotations: [annotation  for annotation in annotations if 'http' not in annotation])
+df_positives[f'text-{tag}'] = df_positives[f'text-{tag}'].dropna().apply(lambda annotations: [annotation  for annotation in annotations if 'http' not in annotation])
 
-# %%
-current_annotations = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
-current_annotations
+# %% tags=[]
+current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% [markdown]
 # # Remove samples without annotation
 
 # %% tags=[]
-df = df[df[f'text-{tag}'].fillna('').apply(list).apply(len) > 0]
+df_positives = df_positives[df_positives[f'text-{tag}'].fillna('').apply(list).apply(len) > 0]
 
 # %% tags=[]
-current_annotations = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
-current_annotations
+current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
+
+# %% [markdown]
+# # Add negatives back
+
+# %% tags=[]
+df_positives_negatives = df_positives.append(df_negatives_sample)
+
+# %% [markdown]
+# # Save intermediate Data
+
+# %% tags=[]
+data_path
+
+# %% tags=[]
+save_path = data_path.replace('.avro', f'_pos({len(df_positives)})_neg({len(df_negatives_sample)})_intermediate.pkl')
+print(f"Saving file: {save_path}")
+df_positives_negatives.to_pickle(save_path)
+
+save_path = data_path.replace(".avro", f"_pos({len(df_positives)})_intermediate.pkl")
+print(f"Saving file: {save_path}")
+df_positives.to_pickle(save_path)
 
 # %% [markdown] tags=[]
 # # Format and Save data
@@ -240,7 +275,7 @@ groundtruth_data_path = raw_data_folder / 'groundtruth'
 groundtruth_data_path.mkdir(parents=True, exist_ok=True)
 
 for e, domain in enumerate(domains):        
-    df_domain = df[df.domain == domain]
+    df_domain = df_positives_negatives[df_positives_negatives.domain == domain]
     
     print(f"{e:>3}: {len(df_domain):>5} page(s) - {domain:>25}")
     
@@ -310,20 +345,14 @@ for e, domain in enumerate(domains):
 # ## Number of Domains
 
 # %% tags=[]
-df.domain.value_counts()
+df_positives_negatives.domain.value_counts()
 
 # %% [markdown]
 # ## Number of Pages
 
-# %% tags=[]
-len(df)
-
-# %% [markdown]
-# ## Number of Annotations
-
-# %% tags=[]
-current_annotations = len([y for x in df.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
-current_annotations
+# %%
+current_annotations = len([y for x in df_positives_negatives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+print(f"Annotations: {current_annotations} | Pages: {len(df_positives_negatives)}")
 
 # %% [markdown]
 # ---
