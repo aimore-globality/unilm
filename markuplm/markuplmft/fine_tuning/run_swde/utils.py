@@ -140,7 +140,7 @@ def get_swde_features(
     padded_xpath_tags_seq = [216] * 50
     padded_xpath_subs_seq = [1001] * 50
 
-    filename = os.path.join(root_dir, f"{website}.pickle")
+    filename = os.path.join(root_dir, website)
     with open(filename, "rb") as f:
         raw_data = pickle.load(f)
 
@@ -170,9 +170,7 @@ def get_swde_features(
             used_prev = 0
             prev_id = index_node - 1
             while prev_id >= 0 and used_prev < prev_nodes:
-                if raw_data[page_id][prev_id][
-                    0
-                ].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
+                if raw_data[page_id][prev_id][0].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
                     needed_docstrings_id_set.add(prev_id)
                     used_prev += 1
                 prev_id -= 1

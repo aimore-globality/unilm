@@ -1,5 +1,5 @@
 from __future__ import absolute_import, division, print_function
-
+import multiprocessing as mp
 import argparse
 import copy
 import glob
@@ -17,10 +17,10 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
-from utils import SwdeDataset, get_swde_features
+from markuplmft.fine_tuning.run_swde.utils import SwdeDataset, get_swde_features
 
-from markuplm.markuplmft.fine_tuning.run_swde import constants
-from markuplm.markuplmft.models.markuplm import (
+from markuplmft.fine_tuning.run_swde import constants
+from markuplmft.models.markuplm import (
     MarkupLMConfig,
     MarkupLMForTokenClassification,
     MarkupLMTokenizer,
@@ -211,7 +211,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
                     # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info("Saving model checkpoint to %s", output_dir)
+                    logger.info(f"Saving model checkpoint to {output_dir}")
 
             if 0 < args.max_steps < global_step:
                 epoch_iterator.close()
@@ -363,7 +363,8 @@ def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
     }
 
 
-def load_and_cache_one_website(args, tokenizer, website):
+def load_and_cache_one_website(arguments):
+    args, tokenizer, website = arguments
     cached_features_file = os.path.join(
         args.root_dir,
         "cached",
@@ -375,7 +376,7 @@ def load_and_cache_one_website(args, tokenizer, website):
         os.makedirs(os.path.dirname(cached_features_file))
 
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        logger.info("Loading features from cached file %s", cached_features_file)
+        logger.info(f"Loading features from cached file {cached_features_file}")
         features = torch.load(cached_features_file)
 
     else:
@@ -393,10 +394,10 @@ def load_and_cache_one_website(args, tokenizer, website):
         )
 
         if args.local_rank in [-1, 0] and args.save_features:
-            logger.info("Saving features into cached file %s", cached_features_file)
+            logger.info(f"Saving features into cached file: {cached_features_file}")
             torch.save(features, cached_features_file)
 
-    return features
+    return website, features
 
 
 def load_and_cache_examples(args, tokenizer, websites:List):
@@ -409,9 +410,15 @@ def load_and_cache_examples(args, tokenizer, websites:List):
 
     feature_dicts = {}
 
-    for website in websites:
-        features_per_website = load_and_cache_one_website(args, tokenizer, website)
-        feature_dicts[website] = features_per_website
+    num_cores = mp.cpu_count()
+    with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Loading/Creating Features") as t:
+        arguments = zip([args]*len(websites), [tokenizer]*len(websites), websites)
+        for website, features_per_website in pool.imap_unordered(load_and_cache_one_website, arguments):
+            feature_dicts[website] = features_per_website
+
+    # for website in websites:
+    #     features_per_website = load_and_cache_one_website(args, tokenizer, website)
+    #     feature_dicts[website] = features_per_website
 
     return feature_dicts
 
@@ -553,7 +560,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
                 logging.WARN
             )  # Reduce model loading logs
 
-        logger.info("Evaluate the following checkpoints: %s", checkpoints)
+        logger.info(f"Evaluate the following checkpoints: {checkpoints}")
         config = MarkupLMConfig.from_pretrained(sub_output_dir)
         tokenizer = MarkupLMTokenizer.from_pretrained(sub_output_dir)
 
@@ -896,7 +903,7 @@ def main():
     swde_path = args.root_dir
     p = Path(swde_path)
     websites = [
-        x.parts[-1].split("-")[1]
+        x.parts[-1]
         for x in list(p.iterdir())
         if "cached" not in str(x)
     ]
@@ -938,22 +945,24 @@ def main():
     # ori_tokenizer = copy.deepcopy(tokenizer)
 
     eval_res = do_something(train_websites, test_websites, args, config, tokenizer)
-    all_precision = eval_res["precision"]
-    all_recall = eval_res["recall"]
-    all_f1 = eval_res["f1"]
+    
+    if eval_res:
+        all_precision = eval_res["precision"]
+        all_recall = eval_res["recall"]
+        all_f1 = eval_res["f1"]
 
-    # config = ori_config
-    # tokenizer = ori_tokenizer
+        # config = ori_config
+        # tokenizer = ori_tokenizer
 
-    logger.info("=================FINAL RESULTS=================")
-    logger.info(f"Precision : {all_precision}")
-    logger.info(f"Recall : {all_recall}")
-    logger.info(f"F1 : {all_f1}")
+        logger.info("=================FINAL RESULTS=================")
+        logger.info(f"Precision : {all_precision}")
+        logger.info(f"Recall : {all_recall}")
+        logger.info(f"F1 : {all_f1}")
 
-    res_file = os.path.join(args.output_dir, f"run-score.txt")
+        res_file = os.path.join(args.output_dir, f"run-score.txt")
 
-    with open(res_file, "w") as fio:
-        fio.write(f"Precision : {all_precision}\nRecall : {all_recall}\nF1 : {all_f1}\n")
+        with open(res_file, "w") as fio:
+            fio.write(f"Precision : {all_precision}\nRecall : {all_recall}\nF1 : {all_f1}\n")
 
 
 if __name__ == "__main__":

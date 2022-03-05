@@ -220,6 +220,7 @@ def match_value_node(
         # 以及 overall_xpath_dict[xpath].add(clean_etext)，即记录当前网址上该xpath对应的文字，以add加入集合
         # (And overall_xpath_dict[xpath].add(clean_etext), that is,
         # record the text corresponding to the xpath on the current URL, and add it to the set)
+    return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
 
 
 def get_value_xpaths(
@@ -246,7 +247,7 @@ def get_value_xpaths(
         #  Some values are empty strings, that are not in the DOMTree.
         return []
 
-    xpaths = []  # The resulting list of xpaths to be returned.
+    matched_xpaths = []  # The resulting list of xpaths to be returned.
     current_xpath_data = dict()  # The resulting dictionary to save all page data.
 
     current_page_nodes_in_order = []
@@ -262,14 +263,14 @@ def get_value_xpaths(
     for node in dom_tree.iter():
         # The value can only be matched in the text of the node or the tail.
         if node.text:
-            match_value_node(
-                node,
-                node.text,
-                current_xpath_data,
-                overall_xpath_dict,
+            current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
+                node=node,
+                node_text=node.text,
+                current_xpath_data=current_xpath_data,
+                overall_xpath_dict=overall_xpath_dict,
                 text_part_flag="node_text",
                 groundtruth_value=value,
-                matched_xpaths=xpaths,
+                matched_xpaths=matched_xpaths,
                 website=website,
                 field=field,
                 dom_tree=dom_tree,
@@ -277,14 +278,14 @@ def get_value_xpaths(
                 is_truth_value_list=is_truth_value_list,
             )
         if node.tail:
-            match_value_node(
-                node,
-                node.tail,
-                current_xpath_data,
-                overall_xpath_dict,
+            current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
+                node=node,
+                node_text=node.tail,
+                current_xpath_data=current_xpath_data,
+                overall_xpath_dict=overall_xpath_dict,
                 text_part_flag="node_tail_text",
                 groundtruth_value=value,
-                matched_xpaths=xpaths,
+                matched_xpaths=matched_xpaths,
                 website=website,
                 field=field,
                 dom_tree=dom_tree,
@@ -292,7 +293,7 @@ def get_value_xpaths(
                 is_truth_value_list=is_truth_value_list,
             )
 
-    return xpaths, current_xpath_data, current_page_nodes_in_order, is_truth_value_list
+    return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
 
 
 def get_dom_tree(html, website):
@@ -333,6 +334,7 @@ def get_dom_tree(html, website):
         html = html.replace("</tr>-->", "</tr>")
 
     html = clean_format_str(html)
+    # TODO(Aimore): Deal with XML cases. If there are problems here with XLM, is because it can only treat HTMLpages
     x = lxml.html.fromstring(html)
     etree_root = cleaner.clean_html(x)
     dom_tree = etree.ElementTree(etree_root)
@@ -403,16 +405,21 @@ def get_field_xpaths(
     #  - Value is a set of text appeared before inside the node.
     overall_xpath_dict = collections.defaultdict(set)
 
+    current_xpath_data = dict() # I added this condition in case the page doesn't contain any positive annotation
+    current_page_nodes_in_order = [] # I added this condition in case the page doesn't contain any positive annotation
+
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
-    for page_id in tqdm(all_data_dict, desc=f"Processing {website_to_process}"):
+    for page_id in tqdm(all_data_dict, desc=f"Processing {website_to_process}", ):
         # We add dom-tree attributes for the first n_pages
         page_data = all_data_dict[page_id]
         html = page_data["html_str"]
+
         dom_tree = get_dom_tree(html, website=website_to_process)
         page_data["dom_tree"] = dom_tree
 
         # Match values of each field for the current page.
-        for field in [x for x in page_data if 'field' in x]:
+        fields = [keys for keys in page_data if 'field' in keys] # page_data = ['field-PAST_CLIENT', 'path', 'html_str', 'dom_tree']
+        for field in fields:
             # Saving the xpaths of the values for each field.
             page_data[field]["groundtruth_xpaths"] = set()
             page_data[field]["is_truth_value_list"] = set()
@@ -420,10 +427,7 @@ def get_field_xpaths(
             for value in page_data[field]["values"]:
                 if len(value) != 0:
                     (
-                        xpaths,
-                        current_xpath_data,
-                        current_page_nodes_in_order,
-                        is_truth_value_list,
+                        current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
                     ) = get_value_xpaths(
                         dom_tree,
                         value,
@@ -433,10 +437,10 @@ def get_field_xpaths(
                     )
 
                     # Assert each truth value can be founded in >=1 nodes.
-                    assert len(xpaths) >= 1, f"{website_to_process} | {field} | {page_id} | {value} is not found"
+                    assert len(matched_xpaths) >= 1, f"{website_to_process} | {field} | {page_id} | {value} is not found"
 
                     # Update the page-level xpath information.
-                    page_data[field]["groundtruth_xpaths"].update(xpaths)
+                    page_data[field]["groundtruth_xpaths"].update(matched_xpaths)
                     page_data[field]["is_truth_value_list"].update(is_truth_value_list)
 
             # now for each page_data
@@ -527,14 +531,13 @@ def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes):
             fixed_nodes.difference_update(xpaths)
 
 
-def generate_nodes_seq_and_write_to_file(compressed_args):
+def generate_nodes_seq_and_write_to_file(website):
     """Extracts all the xpaths and labels the nodes for all the pages."""
-    website = compressed_args
 
     all_data_dict = load_html_and_groundtruth(website)
 
     get_field_xpaths(
-        all_data_dict,
+        all_data_dict=all_data_dict,
         website_to_process=website,
         max_variable_nodes_per_website=FLAGS.max_variable_nodes_per_website,
         min_node_variability=FLAGS.min_node_variability,
@@ -561,7 +564,8 @@ def generate_nodes_seq_and_write_to_file(compressed_args):
 
     cleaned_features_for_this_website = {}
 
-    for page_id in [x for x in all_data_dict if 'nodes' not in x ]:
+    page_ids = [keys for keys in all_data_dict if 'nodes' not in keys] # The keys of all_data_dict include also fixed_nodes and variable_nodes and here we only care about the page_ids
+    for page_id in page_ids:
         page_data = all_data_dict[page_id]
 
         assert "xpath_data" in page_data
@@ -601,13 +605,25 @@ def main(_):
 
     swde_path = FLAGS.input_groundtruth_path.split("groundtruth")[0]
     p = Path(swde_path) / "WAE"
-    websites = [x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())]
+    websites = sorted([x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())])
 
-    # for website in websites[-10:]:
+    # websites = websites[7:8]
+    # for e, x in enumerate(websites):
+    #     print(e, x)
+
+    # for website in websites[:]:
     #     generate_nodes_seq_and_write_to_file(website)
+
+    # from p_tqdm import p_uimap
+    # iterator = p_uimap(generate_nodes_seq_and_write_to_file, websites)
+    # for e, result in enumerate(iterator):
+    #     print(e)
+
+
     num_cores = mp.cpu_count()
     with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
         for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
+        # for res in pool.imap(generate_nodes_seq_and_write_to_file, websites):
             t.update()
 
 
