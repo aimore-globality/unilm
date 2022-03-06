@@ -26,7 +26,7 @@ def aimore_metrics(evaluation_dict):
     return avg_precision, avg_recall
 
 
-def page_hits_level_metric(target_website, sub_output_dir, prev_voted_lines):
+def page_hits_level_metric(prev_voted_lines):
     """Evaluates the hit level prediction result with precision/recall/f1."""
 
     all_precisions = []
@@ -89,28 +89,21 @@ def page_hits_level_metric(target_website, sub_output_dir, prev_voted_lines):
         precision = num_html_pages_with_correct / (num_html_pages_with_pred + 0.000001)
         recall = num_html_pages_with_correct / (num_html_pages_with_truth + 0.000001)
         f1 = 2 * (precision * recall) / (precision + recall + 0.000001)
-        metric_str += "%s, %d, %d, %.2f, %.2f, %.2f\n" % (
-            tag,
-            num_html_pages_with_truth,
-            num_html_pages_with_pred,
-            precision,
-            recall,
-            f1,
-        )
+        metric_str += f"{tag}, {num_html_pages_with_truth}, {num_html_pages_with_pred}, {precision:.2f}, {recall:.2f}, {f1:.2f}\n"
         # All metrics are then averaged over the number of tags
         all_precisions.append(precision)
         all_recall.append(recall)
         all_f1.append(f1)
 
-    output_path = os.path.join(sub_output_dir, "scores", f"{target_website}-final-scores.txt")
+    # output_path = os.path.join(sub_output_dir, "scores", f"{target_website}-final-scores.txt")
 
-    if not os.path.exists(os.path.dirname(output_path)):
-        os.makedirs(os.path.dirname(output_path))
+    # if not os.path.exists(os.path.dirname(output_path)):
+    #     os.makedirs(os.path.dirname(output_path))
 
-    with open(output_path, "w") as f:
-        f.write(metric_str)
-        print(f.name, file=sys.stderr)
-    print(metric_str, file=sys.stderr)
+    # with open(output_path, "w") as fs:
+    #     fs.write(metric_str)
+    #     print(fs.name, file=sys.stderr)
+    # print(metric_str, file=sys.stderr)
 
     # Aimore version
     all_avg_f1 = (
@@ -120,27 +113,15 @@ def page_hits_level_metric(target_website, sub_output_dir, prev_voted_lines):
     )
     return (np.mean(all_avg_precision), np.mean(all_avg_recall), np.mean(all_avg_f1))
 
-    # TODO (aimore): Why not take the mean
-    # Original
-    # return (
-    #     sum(all_precisions) / len(all_precisions),
-    #     sum(all_recall) / len(all_recall),
-    #     sum(all_f1) / len(all_f1),
-    # )
 
-
-def site_level_voting(target_website, sub_output_dir, prev_voted_lines):
+def site_level_voting(prev_voted_lines):
     """Adds the majority voting for the predictions."""
 
     lines = prev_voted_lines
 
     field_xpath_freq_dict = dict()
 
-    for (
-        line
-    ) in (
-        lines
-    ):  # This counts the xpaths across the domain which have the most predictions (If there is no prediction this line this for is skipped)
+    for line in lines:  # This counts the xpaths across the domain which have the most predictions (If there is no prediction this line this for is skipped)
         items = line.split("\t")
         assert len(items) >= 5, items
         xpath = items[1]
@@ -174,22 +155,20 @@ def site_level_voting(target_website, sub_output_dir, prev_voted_lines):
             items[4] = flag
         voted_lines.append("\t".join(items))
     print(f"lines: {len(lines)} | voted_lines: {len(voted_lines)}")
-    output_path = os.path.join(sub_output_dir, "preds", f"{target_website}-final-preds.txt")
+    # output_path = os.path.join(sub_output_dir, "preds", f"{target_website}-final-preds.txt")
 
-    if not os.path.exists(os.path.dirname(output_path)):
-        os.makedirs(os.path.dirname(output_path))
+    # if not os.path.exists(os.path.dirname(output_path)):
+    #     os.makedirs(os.path.dirname(output_path))
 
-    with open(output_path, "w") as f:
-        f.write("\n".join(voted_lines))
+    # with open(output_path, "w") as f:
+    #     f.write("\n".join(voted_lines))
 
     return page_hits_level_metric(  # re-eval with the voted prediction
-        target_website,
-        sub_output_dir,
         voted_lines,
     )
 
 
-def page_level_constraint(target_website, lines, sub_output_dir):
+def page_level_constraint(lines):
     """Takes the top highest prediction for empty field by ranking raw scores."""
     """
     In this step, we make sure every node has a prediction
@@ -252,14 +231,10 @@ def page_level_constraint(target_website, lines, sub_output_dir):
                 # This if is responsible for filtering out all the 'none' nodes that don't have a probability higher than the max probability - 0.001.
                 # So this should be expected to drastically reduce the amount of predicted nodes.
                 if raw_scores[index] >= page_field_max[html_path][tags[index]] - (1e-3):
-                    items[
-                        4
-                    ] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
+                    items[4] = tag  # It seems that here, if there is no prediction, force a prediction on anything that is a bit lower than the xpath with maximum probability.
         voted_lines.append("\t".join(items))
     print(f"lines: {len(lines)} | voted_lines: {len(voted_lines)}")
     # What happens if there is no prediction and that hack above doesn't pass?
     return site_level_voting(
-        target_website,
-        sub_output_dir,
         voted_lines,
     )

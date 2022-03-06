@@ -11,7 +11,7 @@ from typing import List
 
 import numpy as np
 import torch
-from eval_utils import page_level_constraint
+from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
@@ -226,7 +226,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
     return global_step, tr_loss / global_step
 
 
-def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
+def eval_on_one_website(args, model, website, prefix=""):
     if website == "intralinks.com":
         print("Check", website)
     dataset, info = get_dataset_and_info_for_websites([website], evaluate=True)
@@ -335,12 +335,12 @@ def eval_on_one_website(args, model, website, sub_output_dir, prefix=""):
 
             lines.append(s)
 
-    res = page_level_constraint(website, lines, sub_output_dir)
+    res = page_level_constraint(lines)
 
     return res  # (precision, recall, f1)
 
 
-def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
+def evaluate(args, model, test_websites, prefix=""):
     r"""
     Evaluate the model
     """
@@ -350,7 +350,7 @@ def evaluate(args, model, test_websites, sub_output_dir, prefix=""):
     all_f1 = []
 
     for website in tqdm(test_websites):
-        res_on_one_website = eval_on_one_website(args, model, website, sub_output_dir, prefix)
+        res_on_one_website = eval_on_one_website(args, model, website, prefix)
         all_precision.append(res_on_one_website[0])
         all_recall.append(res_on_one_website[1])
         all_f1.append(res_on_one_website[2])
@@ -376,13 +376,11 @@ def load_and_cache_one_website(arguments):
         os.makedirs(os.path.dirname(cached_features_file))
 
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        logger.info(f"Loading features from cached file {cached_features_file}")
+        logger.info(f"Loading features from cached file: {cached_features_file}")
         features = torch.load(cached_features_file)
 
     else:
-        logger.info(
-            f"Creating features for {website}-prevnodes{args.prev_nodes_into_account}"
-        )
+        logger.info(f"Creating features for: {website}-prevnodes{args.prev_nodes_into_account}")
 
         features = get_swde_features(
             root_dir=args.root_dir,
@@ -459,18 +457,18 @@ def get_dataset_and_info_for_websites(websites: List, evaluate=False):
         # in evaluation, we do not add labels
         dataset = SwdeDataset(
             all_input_ids=all_input_ids,
-            all_attention_mask=all_attention_mask,
+            all_attention_mask=all_attention_mask, 
             all_token_type_ids=all_token_type_ids,
             all_xpath_tags_seq=all_xpath_tags_seq,
             all_xpath_subs_seq=all_xpath_subs_seq,
         )
         info = [
             (
-                f.html_path,
-                f.involved_first_tokens_pos,
-                f.involved_first_tokens_xpaths,
-                f.involved_first_tokens_types,
-                f.involved_first_tokens_text,
+                f.html_path, # '1820productions.com.pickle-0000.htm'
+                f.involved_first_tokens_pos, # [1, 1, 34, 70, 80]
+                f.involved_first_tokens_xpaths, # ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
+                f.involved_first_tokens_types, # ['none', 'none', 'none', 'none', 'none']
+                f.involved_first_tokens_text, # ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);", 'Portfolio | 1820 Productions - Video Production Dallas', 'window._wpemojiSettings = {"baseUrl":"https:\\/\\/s.w.org\\/images\\/core\\/emoji\\/11\\/72x72\\/","ext":".png","svgUrl":"https:\\/\\/s.w.org\\/images\\/core\\/emoji\\/11\\/svg\\/","svgExt":".svg","source":{"concatemoji":"https:\\/\\/1820productions.com\\/wp-includes\\/js\\/wp-emoji-release.min.js?ver=4.9.18"}};!function(e,a,t){var n,r,o,i=a.createElement("canvas"),p=i.getContext&&i.getContext("2d");function s(e,t){var a=String.fromCharCode;p.clearRect(0,0,i.width,i.height),p.fillText(a.apply(this,e),0,0);e=i.toDataURL();return p.clearRect(0,0,i.width,i.height),p.fillText(a.apply(this,t),0,0),e===i.toDataURL()}function c(e){var t=a.createElement("script");t.src=e,t.defer=t.type="text/javascript",a.getElementsByTagName("head")[0].appendChild(t)}for(o=Array("flag","emoji"),t.supports={everything:!0,everythingExceptFlag:!0},r=0;r<o.length;r++)t.supports[o[r]]=function(e){if(!p||!p.fillText)return!1;switch(p.textBaseline="top",p.font="600 32px Arial",e){case"flag":return s([55356,56826,55356,56819],[55356,56826,8203,55356,56819])?!1:!s([55356,57332,56128,56423,56128,56418,56128,56421,56128,56430,56128,56423,56128,56447],[55356,57332,8203,56128,56423,8203,56128,56418,8203,56128,56421,8203,56128,56430,8203,56128,56423,8203,56128,56447]);case"emoji":return!s([55358,56760,9792,65039],[55358,56760,8203,9792,65039])}return!1}(o[r]),t.supports.everything=t.supports.everything&&t.supports[o[r]],"flag"!==o[r]&&(t.supports.everythingExceptFlag=t.supports.everythingExceptFlag&&t.supports[o[r]]);t.supports.everythingExceptFlag=t.supports.everythingExceptFlag&&!t.supports.flag,t.DOMReady=!1,t.readyCallback=function(){t.DOMReady=!0},t.supports.everything||(n=function(){t.readyCallback()},a.addEventListener?(a.addEventListener("DOMContentLoaded",n,!1),e.addEventListener("load",n,!1)):(e.attachEvent("onload",n),a.attachEvent("onreadystatechange",function(){"complete"===a.readyState&&t.readyCallback()})),(n=t.source||{}).concatemoji?c(n.concatemoji):n.wpemoji&&n.twemoji&&(c(n.twemoji),c(n.wpemoji)))}(window,document,window._wpemojiSettings);']
             )
             for f in all_features
         ]
@@ -583,7 +581,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
             model.to(args.device)
 
             # Evaluate
-            result = evaluate(args, model, test_websites, sub_output_dir, prefix=global_step)
+            result = evaluate(args, model, test_websites, prefix=global_step)
 
             result = dict(
                 (k + ("_{}".format(global_step) if global_step else ""), v)
@@ -907,6 +905,14 @@ def main():
         for x in list(p.iterdir())
         if "cached" not in str(x)
     ]
+
+    # websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
+
+    # websites = websites[:10] # Just for speed reasons
+
+    train_websites = websites
+    test_websites = websites
+
     print(f"\nWebsites ({len(websites)}):\n{websites}\n")
 
     # first we load the features
@@ -919,40 +925,12 @@ def main():
     global global_feature_dicts
     global_feature_dicts = feature_dicts
 
-    # This for loop goes over the different verticals. Since we have only one in WAE, I changed it from 10 to 1.
-
-    train_websites = websites
-    test_websites = websites
-
-    # I changed the code here, to specify the websites I want to train and evaluate.
-    # half_websites_index = round(len(constants.VERTICAL_WEBSITES[args.vertical])/2)
-    # train_websites = constants.VERTICAL_WEBSITES[args.vertical][:half_websites_index]
-    # test_websites = constants.VERTICAL_WEBSITES[args.vertical][half_websites_index:]
-
-    # wid_start = i
-    # wid_end = i + args.n_seed
-    # train_websites = []
-    # test_websites = []
-    # for wid in range(wid_start, wid_end):
-    #     wwid = wid % 10
-    #     train_websites.append(constants.VERTICAL_WEBSITES[args.vertical][wwid])
-    #
-    # for website in constants.VERTICAL_WEBSITES[args.vertical]:
-    #     if website not in train_websites:
-    #         test_websites.append(website)
-
-    # ori_config = copy.deepcopy(config)
-    # ori_tokenizer = copy.deepcopy(tokenizer)
-
     eval_res = do_something(train_websites, test_websites, args, config, tokenizer)
     
     if eval_res:
         all_precision = eval_res["precision"]
         all_recall = eval_res["recall"]
         all_f1 = eval_res["f1"]
-
-        # config = ori_config
-        # tokenizer = ori_tokenizer
 
         logger.info("=================FINAL RESULTS=================")
         logger.info(f"Precision : {all_precision}")
