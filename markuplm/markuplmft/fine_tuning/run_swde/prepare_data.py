@@ -595,7 +595,7 @@ def main(_):
     p = Path(swde_path) / "WAE"
     websites = sorted([x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())])
 
-    websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
+    # websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
 
     print(f"Prepare Data: Websites {len(websites)} -\n {websites}")
 

@@ -1,0 +1,10 @@
+{
+    "jupyter.jupyterServerType": "local",
+    "python.testing.pytestArgs": [
+        "markuplm"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "jupyter.sendSelectionToInteractiveWindow": true,
+    "key": "shift+enter",           "command": "jupyter.execSelectionInteractive", "when": "editorTextFocus"
+}

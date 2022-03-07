@@ -1,0 +1,123 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Prepare data - train",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/prepare_data.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--input_groundtruth_path",
+                "/data/GIT/swde/my_data/train/my_CF_sourceCode/groundtruth",
+                "--input_pickle_path",
+                "/data/GIT/swde/my_data/train/my_CF_sourceCode/wae.pickle",
+                "--output_data_path",
+                "/data/GIT/swde/my_data/train/my_CF_processed",
+            ]
+        },
+        {
+            "name": "Python: Prepare data - develop",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/prepare_data.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--input_groundtruth_path",
+                "/data/GIT/swde/my_data/develop/my_CF_sourceCode/groundtruth",
+                "--input_pickle_path",
+                "/data/GIT/swde/my_data/develop/my_CF_sourceCode/wae.pickle",
+                "--output_data_path",
+                "/data/GIT/swde/my_data/develop/my_CF_processed",
+            ]
+        },
+        {
+            "name": "Python: Run evaluation",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/run.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fp16",
+                "--root_dir",
+                "/data/GIT/swde/my_data/develop/my_CF_processed/",
+                "--n_seed",
+                "1",
+                "--prev_nodes_into_account",
+                "2000",
+                "--model_name_or_path",
+                "microsoft/markuplm-base",
+                "--output_dir",
+                "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/",
+                "--do_eval",
+                "--per_gpu_eval_batch_size",
+                "16",
+                "--model_path",
+                "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/seed-1/3-4-1",
+                // "--overwrite_cache",
+            ]
+        },
+        {
+            "name": "Python: Run train",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/run.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--fp16",
+                "--root_dir",
+                "/data/GIT/swde/my_data/train/my_CF_processed/",
+                "--n_seed",
+                "1",
+                "--prev_nodes_into_account",
+                "2000",
+                "--model_name_or_path",
+                "microsoft/markuplm-base",
+                "--output_dir",
+                ".",
+                "--do_train",
+                "--per_gpu_train_batch_size",
+                "16",
+                "--num_train_epochs",
+                "1",
+                "--learning_rate",
+                "2e-5",
+                "--save_steps",
+                "1000000",
+                "--warmup_ratio",
+                "0.1",
+                "--overwrite_output_dir",
+                // "--overwrite_cache",
+            ]
+        },
+        {
+            "name": "Python: Pack Data - develop",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/pack_data.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--input_swde_path",
+                "/data/GIT/swde/my_data/develop/my_CF_sourceCode/WAE/",
+                "--output_pack_path",
+                "/data/GIT/swde/my_data/develop/my_CF_sourceCode/wae.pickle"
+            ]
+        },
+        {
+            "name": "Python: Pack Data - train",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/pack_data.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--input_swde_path",
+                "/data/GIT/swde/my_data/train/my_CF_sourceCode/WAE/",
+                "--output_pack_path",
+                "/data/GIT/swde/my_data/train/my_CF_sourceCode/wae.pickle"
+            ]
+        }
+    ]
+}
