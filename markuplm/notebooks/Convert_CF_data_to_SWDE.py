@@ -10,7 +10,7 @@
 #   kernelspec:
 #     display_name: markuplmft
 #     language: python
-#     name: markuplmft
+#     name: python3
 # ---
 
 # %% [markdown] tags=[]
@@ -37,7 +37,6 @@ import pandavro as pdx
 from ast import literal_eval
 from pathlib import Path
 import os   
-import sys
 import shutil
 from tqdm import tqdm
 from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
@@ -46,7 +45,9 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # # Load
 
 # %% tags=[]
-dataset = 'develop'
+dataset = 'train'
+# dataset = 'develop'
+dataset
 
 # %% [markdown]
 # ## Full Data
@@ -68,12 +69,19 @@ df_positives = df[df['annotations_len'] > 0]
 df_negatives = df[df['annotations_len'] == 0]
 
 negative_fraction = 0.10
-df_negatives = df_negatives[df_negatives['domain'].isin(df_positives['domain'])]
-df_negatives_sample = df_negatives.groupby("domain").sample(frac=negative_fraction, random_state=66)
+
+domains_20_or_less = df_negatives.groupby('domain')['url'].count()[df_negatives.groupby('domain')['url'].count() <= 20].index
+domains_more_than_20 = df_negatives.groupby('domain')['url'].count()[df_negatives.groupby('domain')['url'].count() > 20].index
+
+df_negatives_sample = df_negatives[df_negatives['domain'].isin(domains_more_than_20)].groupby("domain").sample(frac=negative_fraction, random_state=66)
+df_negatives_sample = df_negatives_sample.append(df_negatives[df_negatives['domain'].isin(domains_20_or_less)])
 
 # save_path = data_path.replace('.avro', f'_pos({len(df_positives)}).pkl')
 # print(f"Saving file: {save_path}")
 # df_positives.to_pickle(save_path)
+
+# %%
+print(f"Negatives: {len(df_negatives)} | Negatives sample: {len(df_negatives_sample)} | Positives:{len(df_positives)}")
 
 # %% tags=[]
 # # data_path = save_path
@@ -100,6 +108,7 @@ annotation_tags
 # ## Remove hiphen from domains
 
 # %% tags=[]
+df_negatives_sample.domain = df_negatives_sample.domain.apply(lambda x: x.replace('-', ''))
 df_positives.domain = df_positives.domain.apply(lambda x: x.replace('-', ''))
 df_positives_initial_len = len(df_positives)
 
@@ -108,6 +117,7 @@ df_positives_initial_len = len(df_positives)
 #
 
 # %% tags=[]
+assert len(df_negatives_sample[df_negatives_sample['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
 assert len(df_positives[df_positives['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
 # Remove parenthesis from domain in case there is (assertion above fails)
 # ... df = df[~df['domain'].apply(lambda x: '(' in x or ')' in x)]
@@ -122,15 +132,59 @@ for tag in annotation_tags:
     df_positives[f'text-{tag}'] = df_positives.dropna(subset=[f'annotations-{tag}'])[f'annotations-{tag}'].apply(lambda x: [y['text'] for y in x])        
 
 # %% [markdown]
-# # Remove samples that don't have html
+# # Remove pages that don't have html
 
 # %% tags=[]
-pages_without_html = df_positives[df_positives['html'] == 'PLACEHOLDER_HTML'].dropna(subset=['annotations-PAST_CLIENT'])
+pages_without_html = df_positives[df_positives['html'] == 'PLACEHOLDER_HTML']
 annotations_without_html = len([y for x in pages_without_html['text-PAST_CLIENT'] for y in x])
-print(f"There are {len(pages_without_html)} pages and {annotations_without_html} annotations without html - We are loosing these annotations because we don't have the html")
-
-# %% tags=[]
+print(f"Pages removed: {len(pages_without_html)}")
+print(f"Annotations removed: {annotations_without_html}")
 df_positives = df_positives[df_positives['html'] != 'PLACEHOLDER_HTML']
+
+# %%
+pages_without_html = df_negatives_sample[df_negatives_sample['html'] == 'PLACEHOLDER_HTML']
+print(f"Pages removed: {len(pages_without_html)}")
+df_negatives_sample = df_negatives_sample[df_negatives_sample['html'] != 'PLACEHOLDER_HTML']
+
+# %% [markdown]
+# ## Remove pages that are not strictly HTML
+
+# %%
+import lxml
+# TODO: Deal with XLM cases
+def get_only_html(t):
+    text = 'NOT HTML'
+    try:
+        text = lxml.html.fromstring(t)
+        return text
+    except:
+        return text
+
+
+# %%
+print(len(df_positives))
+all_pages = df_positives['html'].apply(lambda x: get_only_html(x))
+positive_non_html_pages = df_positives[all_pages == 'NOT HTML']
+df_positives = df_positives[all_pages != 'NOT HTML']
+print(len(df_positives))
+
+# %%
+print(len(df_negatives_sample))
+all_pages = df_negatives_sample['html'].apply(lambda x: get_only_html(x))
+negative_non_html_pages = df_negatives_sample[all_pages == 'NOT HTML']
+df_negatives_sample = df_negatives_sample[all_pages != 'NOT HTML']
+print(len(df_negatives_sample))
+
+# %%
+non_html_pages = positive_non_html_pages.append(negative_non_html_pages)
+print(f"non_html_pages: {len(non_html_pages)}")
+if len(non_html_pages) > 0:
+    save_path = f"{dataset}-non_html_pages({len(non_html_pages)}).csv"
+    print(f"Save path: {save_path}")
+    non_html_pages.to_csv(save_path)
+
+# %%
+non_html_pages
 
 # %% [markdown]
 # # Remove annotations that cannot be found in the xpaths of the html
@@ -203,6 +257,9 @@ print(f"With text and tail the page coverage is: {100*len(df_positives)/df_posit
 #         print('tail:', node.tail)
 #         print('xpath:', xpath_content)        
 
+# %%
+# [x for x in df_positives_negatives['domain'].value_counts().sort_values().index if 'group' in x]
+
 # %% tags=[]
 # html = row['html']
 
@@ -210,14 +267,14 @@ print(f"With text and tail the page coverage is: {100*len(df_positives)/df_posit
 # # Remove image link annotations
 
 # %% tags=[]
-current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+current_annotations = len([y for x in df_positives[f'text-{tag}'].dropna().values for y in x])
 print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% tags=[]
 df_positives[f'text-{tag}'] = df_positives[f'text-{tag}'].dropna().apply(lambda annotations: [annotation  for annotation in annotations if 'http' not in annotation])
 
 # %% tags=[]
-current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+current_annotations = len([y for x in df_positives[f'text-{tag}'].dropna().values for y in x])
 print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% [markdown]
@@ -227,14 +284,50 @@ print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 df_positives = df_positives[df_positives[f'text-{tag}'].fillna('').apply(list).apply(len) > 0]
 
 # %% tags=[]
-current_annotations = len([y for x in df_positives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+current_annotations = len([y for x in df_positives[f'text-{tag}'].dropna().values for y in x])
 print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
+
+# %% [markdown]
+# # Remove domains in negatives that are not in the positives
+
+# %%
+df_negatives_sample = df_negatives_sample[df_negatives_sample['domain'].isin(df_positives['domain'])]
+
+# %% [markdown]
+# # Checks
+
+# %% [markdown]
+# ## The number of domains in negatives are the same as in positives
+
+# %%
+print(f"Positive Domains: {len(set(df_positives['domain']))} | Negative Domains: {len(set(df_negatives_sample['domain']))}")
+
+# %% [markdown]
+# ## Negative data doesn't contain domains that are not in positive data 
+
+# %%
+assert len(set(df_negatives_sample['domain']) - set(df_positives['domain'])) == 0, 'Negatives have a domain that positive doesnt have!'
+
+# %% [markdown]
+# ## The percentage of negative data is still the same (not more than 10%relative difference)
+
+# %%
+df_negatives_positive_domain = df_negatives[df_negatives['domain'].isin(df_positives['domain'])]
+final_negative_fraction = len(df_negatives_sample) / len(df_negatives_positive_domain)
+print(f" {len(df_negatives_sample)} | {len(df_negatives_positive_domain)} | {100*final_negative_fraction:.4f} %")
+assert negative_fraction - 0.01 < final_negative_fraction < negative_fraction + 0.01
 
 # %% [markdown]
 # # Add negatives back
 
 # %% tags=[]
 df_positives_negatives = df_positives.append(df_negatives_sample)
+
+# %%
+len(df_positives_negatives)
+
+# %%
+len(set(df_positives_negatives['domain']))
 
 # %% [markdown]
 # # Save intermediate Data
@@ -259,7 +352,8 @@ raw_data_folder = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceC
 
 if os.path.exists(raw_data_folder):
     print(f'Are you sure you want to remove this folder? (y/n) \n{raw_data_folder}')
-    answer = input()    
+    # answer = input()
+    answer = 'y'
     if answer == 'y':
         try:
             shutil.rmtree(raw_data_folder)
@@ -269,7 +363,7 @@ if os.path.exists(raw_data_folder):
 # else:
 #     print(f"File '{groundtruth_data_path}' not found in the directory")
     
-domains = list(df.domain.value_counts().index)
+domains = list(df_positives_negatives.domain.value_counts().index)
 
 groundtruth_data_path = raw_data_folder / 'groundtruth'
 groundtruth_data_path.mkdir(parents=True, exist_ok=True)
@@ -290,7 +384,7 @@ for e, domain in enumerate(domains):
         raw_data_path = raw_data_folder / 'WAE' / f"{domain}({domain_len})"
         raw_data_path.mkdir(parents=True, exist_ok=True)
         raw_data_path = (raw_data_path / str(page_count).zfill(4)).with_suffix('.htm')
-        print(raw_data_path)
+        # print(raw_data_path)
         
         Html_file = open(raw_data_path, "w")
         Html_file.write(html)
@@ -309,14 +403,14 @@ for e, domain in enumerate(domains):
                 annotate = []
             # print(f'annotate: \n{annotate} - {len(annotate)}')            
             domain_annotations[tag].append(annotate)            
-        print()
+        # print()
         # if raw_data_path.name == '0042.htm':
         #     break
         
     # Save groundtruth    
     for tag, page_annotations in domain_annotations.items():
         groundtruth_data_tag_path = groundtruth_data_path / f"{domain}-{tag}.txt"
-        print(groundtruth_data_tag_path)
+        # print(groundtruth_data_tag_path)
 
         page_annotations_df = pd.DataFrame(page_annotations)
         
@@ -331,7 +425,7 @@ for e, domain in enumerate(domains):
         page_annotations_df.reset_index(inplace=True)
         page_annotations_df['index'] = page_annotations_df['index'].apply(lambda x: str(x).zfill(4))
         
-        # Add one extra row on the top
+    # Add one extra row on the top
         page_annotations_df.loc[-1] = page_annotations_df.count()  # adding a row
         page_annotations_df.index = page_annotations_df.index + 1  # shifting index
         page_annotations_df = page_annotations_df.sort_index()
