@@ -125,7 +125,6 @@ def get_swde_features(
     tokenizer,
     doc_stride,
     max_length,
-    prev_nodes,
 ):
     """
     This function creates a list of features that goes into the model.
@@ -169,7 +168,7 @@ def get_swde_features(
 
             used_prev = 0
             prev_id = index_node - 1
-            while prev_id >= 0 and used_prev < prev_nodes:
+            while prev_id >= 0:
                 if raw_data[page_id][prev_id][0].strip():  # This if should ignore all nodes that text is empty.  # TODO(aimore): This could improve if any space is removed or very small text of len(1).
                     needed_docstrings_id_set.add(prev_id)
                     used_prev += 1

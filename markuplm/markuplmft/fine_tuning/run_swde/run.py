@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 def set_seed(args):
-    r"""
+    """
     Fix the random seed for reproduction.
     """
     random.seed(args.seed)
@@ -48,7 +48,7 @@ def to_list(tensor):
     return tensor.detach().cpu().tolist()
 
 
-def train(args, train_dataset, model, tokenizer, sub_output_dir):
+def train(args, train_dataset, model, sub_output_dir):
     """
     Train the model
     """
@@ -81,12 +81,13 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
     optimizer_grouped_parameters = [
         {
             "params": [
-                p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
+                param for param_name, param in model.named_parameters() if not any(nd in param_name for nd in no_decay)
             ],
             "weight_decay": args.weight_decay,
         },
         {
-            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "params": [
+                param for param_name, param in model.named_parameters() if any(nd in param_name for nd in no_decay)],
             "weight_decay": 0.0,
         },
     ]
@@ -118,17 +119,14 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
-    logger.info(
-        "  Total train batch size (w. parallel, distributed & accumulation) = %d",
-        args.train_batch_size
-        * args.gradient_accumulation_steps
-        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1),
-    )
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
+    logger.info(f"  Num examples = len(train_dataset)")
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per GPU = {args.per_gpu_train_batch_size}")
+
+    total_train_batch_size = args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1)
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {t_total}")
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
@@ -138,23 +136,19 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
     )
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     for epoch in train_iterator:
-        if isinstance(train_dataloader, DataLoader) and isinstance(
-            train_dataloader.sampler, DistributedSampler
-        ):
+        if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
             train_dataloader.sampler.set_epoch(epoch)
-        epoch_iterator = tqdm(
-            train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0]
-        )
-        for step, batch in enumerate(epoch_iterator):
+        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        for step, batch_list in enumerate(epoch_iterator):
             model.train()
-            batch = tuple(t.to(args.device) for t in batch)
+            batch_list = tuple(batch.to(args.device) for batch in batch_list)
             inputs = {
-                "input_ids": batch[0],
-                "attention_mask": batch[1],
-                "token_type_ids": batch[2],
-                "xpath_tags_seq": batch[3],
-                "xpath_subs_seq": batch[4],
-                "labels": batch[5],
+                "input_ids": batch_list[0],
+                "attention_mask": batch_list[1],
+                "token_type_ids": batch_list[2],
+                "xpath_tags_seq": batch_list[3],
+                "xpath_subs_seq": batch_list[4],
+                "labels": batch_list[5],
             }
 
             outputs = model(**inputs)
@@ -165,7 +159,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
-            if args.fp16:
+            if args.fp16: # TODO (Aimore): Replace this with Accelerate
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
@@ -195,9 +189,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
                         # for key, value in results.items():
                         #    tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar(
-                        "loss", (tr_loss - logging_loss) / args.logging_steps, global_step
-                    )
+                    tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if (
@@ -206,14 +198,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
                     and global_step % args.save_steps == 0
                 ):
                     # Save model checkpoint
-                    output_dir = os.path.join(sub_output_dir, "checkpoint-{}".format(global_step))
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    model_to_save = model.module if hasattr(model, "module") else model
-                    # Take care of distributed/parallel training
-                    model_to_save.save_pretrained(output_dir)
-                    torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info(f"Saving model checkpoint to {output_dir}")
+                    save_model(sub_output_dir, model, global_step)
 
             if 0 < args.max_steps < global_step:
                 epoch_iterator.close()
@@ -227,8 +212,18 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
 
     return global_step, tr_loss / global_step
 
+def save_model(sub_output_dir, model, global_step):
+    output_dir = os.path.join(sub_output_dir, f"checkpoint-{global_step}")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    model_to_save = model.module if hasattr(model, "module") else model
+    # Take care of distributed/parallel training
+    model_to_save.save_pretrained(output_dir)
+    torch.save(args, os.path.join(output_dir, "training_args.bin"))
+    logger.info(f"Saving model checkpoint to {output_dir}")
 
-def eval_on_one_website(args, model, website, prefix=""):
+
+def predict_on_website(args, model, website):
     if website == "intralinks.com":
         print("Check", website)
     dataset, info = get_dataset_and_info_for_websites([website], evaluate=True)
@@ -246,13 +241,9 @@ def eval_on_one_website(args, model, website, prefix=""):
         model = torch.nn.DataParallel(model)
 
     # Eval!
-    logger.info(f"***** Running evaluation {prefix} *****")
+    logger.info(f"***** Running evaluation *****")
     logger.info(f"  Num examples for {website} = {len(dataset)}")
     logger.info(f"  Batch size = {args.eval_batch_size}")
-    # if len(dataset) == 0:
-    #     print("WILL ERROR")
-    #     default_res = (1, 1, 1)
-    #     return default_res
 
     all_logits = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
@@ -309,9 +300,6 @@ def eval_on_one_website(args, model, website, prefix=""):
                 assert all_res[html_path][xpath]["truth"] == type
                 assert all_res[html_path][xpath]["text"] == text
 
-    # we have build all_res
-    # then write predictions
-
     lines = {
         "html_path": [],
         "xpath": [],
@@ -339,21 +327,21 @@ def eval_on_one_website(args, model, website, prefix=""):
     result_df = pd.DataFrame(lines)
     return result_df 
 
-def evaluate(args, model, test_websites, prefix=""):
-    r"""
+def evaluate(args, model, test_websites):
+    """
     Evaluate the model
     """
-    dataset_results = pd.DataFrame()
+    dataset_predicted = pd.DataFrame()
     for website in tqdm(test_websites):
-        res_on_one_website = eval_on_one_website(args, model, website, prefix)
-        res_on_one_website['domain'] = website
-        dataset_results = dataset_results.append(res_on_one_website)
+        website_predicted = predict_on_website(args, model, website)
+        website_predicted['domain'] = website
+        dataset_predicted = dataset_predicted.append(website_predicted)
     
-    metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_results)
+    metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_predicted)
     print(f"metrics_per_dataset: {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}")
 
-    # compute_metrics_per_domain(dataset_results)    
-    # compute_metrics_per_page(dataset_results)
+    # compute_metrics_per_domain(dataset_predicted)    
+    # compute_metrics_per_page(dataset_predicted)
 
     return metrics_per_dataset
 
@@ -397,7 +385,7 @@ def load_and_cache_one_website(arguments):
         args.root_dir,
         "cached",
         website,
-        f"cached_markuplm_{str(args.max_seq_length)}_prevnodes{args.prev_nodes_into_account}",
+        f"cached_markuplm_{str(args.max_seq_length)}",
     )
 
     if not os.path.exists(os.path.dirname(cached_features_file)):
@@ -408,7 +396,7 @@ def load_and_cache_one_website(arguments):
         features = torch.load(cached_features_file)
 
     else:
-        logger.info(f"Creating features for: {website}-prevnodes{args.prev_nodes_into_account}")
+        logger.info(f"Creating features for: {website}")
 
         features = get_swde_features(
             root_dir=args.root_dir,
@@ -416,7 +404,6 @@ def load_and_cache_one_website(arguments):
             tokenizer=tokenizer,
             doc_stride=args.doc_stride,
             max_length=args.max_seq_length,
-            prev_nodes=args.prev_nodes_into_account,
         )
 
         if args.local_rank in [-1, 0] and args.save_features:
@@ -426,8 +413,8 @@ def load_and_cache_one_website(arguments):
     return website, features
 
 
-def load_and_cache_examples(args, tokenizer, websites:List):
-    r"""
+def load_and_cache_websites(args, tokenizer, websites:List):
+    """
     Load and process the raw data.
     """
     # if args.local_rank not in [-1, 0]:
@@ -514,7 +501,6 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     # My modification
     sub_output_dir = os.path.join(
         args.output_dir,
-        f"seed-{args.n_seed}",
         str(len(train_websites))
     )
 
@@ -544,7 +530,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
         train_dataset, _ = get_dataset_and_info_for_websites(train_websites)
         tokenizer.save_pretrained(sub_output_dir)
         model.to(args.device)
-        global_step, tr_loss = train(args, train_dataset, model, tokenizer, sub_output_dir)
+        global_step, tr_loss = train(args, train_dataset, model, sub_output_dir)
         logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
     # Save the trained model and the tokenizer
@@ -563,57 +549,19 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
         torch.save(args, os.path.join(sub_output_dir, "training_args.bin"))
 
     # Evaluation - we can ask to evaluate all the checkpoints (sub-directories) in a directory
-    results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
-        # I had to force here to specify the model
-        checkpoints = [args.model_path]
-        sub_output_dir = checkpoints[0]
-        # checkpoints = [sub_output_dir] # The original
+        logger.info(f"Evaluate the following model: {args.model_path}")
+        config = MarkupLMConfig.from_pretrained(args.model_path)
+        tokenizer = MarkupLMTokenizer.from_pretrained(args.model_path)
 
-        if args.eval_all_checkpoints:
-            checkpoints = list(
-                os.path.dirname(c)
-                for c in sorted(glob.glob(sub_output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
-            )
-            logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce model loading logs
+        model = MarkupLMForTokenClassification.from_pretrained(args.model_path, config=config)
+        model.to(args.device)
 
-        logger.info(f"Evaluate the following checkpoints: {checkpoints}")
-        config = MarkupLMConfig.from_pretrained(sub_output_dir)
-        tokenizer = MarkupLMTokenizer.from_pretrained(sub_output_dir)
+        result = evaluate(args, model, test_websites)
 
-        for checkpoint in checkpoints:
-            # Reload the model
-            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            try:
-                int(global_step)
-            except ValueError:
-                global_step = ""
-            if global_step and int(global_step) < args.eval_from_checkpoint:
-                continue
-            if (
-                global_step
-                and args.eval_to_checkpoint is not None
-                and int(global_step) >= args.eval_to_checkpoint
-            ):
-                continue
+        logger.info(f"Results: {result}")
 
-
-            
-            model = MarkupLMForTokenClassification.from_pretrained(checkpoint, config=config)
-            model.to(args.device)
-
-            # Evaluate
-            result = evaluate(args, model, test_websites, prefix=global_step)
-
-            result = dict(
-                (k + (f"_{global_step}" if global_step else ""), v)
-                for k, v in result.items()
-            )
-            results.update(result)
-
-    logger.info("Results: {}".format(results))
-
-    return results
+        return result
 
 
 def main():
@@ -626,19 +574,6 @@ def main():
         required=True,
         help="the root directory of the pre-processed SWDE dataset, "
         "in which we have `book-abebooks-2000.pickle` files like that",
-    )
-    parser.add_argument(
-        "--n_seed",
-        default=2,
-        type=int,
-        help="number of seed pages",
-    )
-    parser.add_argument(
-        "--prev_nodes_into_account",
-        default=4,
-        type=int,
-        help="how many previous nodes before a variable nodes will we use"
-        "large value means more context",
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -875,10 +810,8 @@ def main():
         and not args.overwrite_output_dir
     ):
         raise ValueError(
-            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                args.output_dir
-            )
-        )
+            f"Output directory ({args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
+            )        
 
     # Setup CUDA, GPU & distributed training
     if args.local_rank == -1 or args.no_cuda:
@@ -922,21 +855,21 @@ def main():
 
     swde_path = Path(args.root_dir)
     websites = [
-        x.parts[-1]
-        for x in list(swde_path.iterdir())
-        if "cached" not in str(x)
+        file_path.parts[-1]
+        for file_path in list(swde_path.iterdir())
+        if "cached" not in str(file_path)
     ]
 
-    websites = [x for x in websites if "ciphr.com" not in x] #! Remove this website for now just because it is taking too long (+20min.) 
+    websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
     websites = websites[:10] #! Just for speed reasons
 
     train_websites = websites
     test_websites = websites
 
-    print(f"\nWebsites ({len(websites)}):\n{websites}\n")
+    logger.info(f"\nWebsites ({len(websites)}):\n{websites}\n")
 
     # first we load the features
-    feature_dicts = load_and_cache_examples(
+    feature_dicts = load_and_cache_websites(
         args=args,
         tokenizer=tokenizer,
         websites=websites,

@@ -118,9 +118,6 @@ Take **seed=1, vertical=nbaplayer** as example.
 CUDA_VISIBLE_DEVICES=0,1 python run.py \
 	--root_dir /Path/To/Processed_SWDE \
 	--vertical nbaplayer \
-	--n_seed 1 \
-	--n_pages 2000 \
-	--prev_nodes_into_account 4 \
 	--model_name_or_path microsoft/markuplm-base \
 	--output_dir /Your/Output/Path \
 	--do_train \
