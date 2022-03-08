@@ -97,7 +97,7 @@
                 "--output_pack_path",
                 "/data/GIT/swde/my_data/train/my_CF_sourceCode/wae.pickle"
             ]
-        }
+        },
         {
             "name": "Python: Pack Data - develop",
             "type": "python",
