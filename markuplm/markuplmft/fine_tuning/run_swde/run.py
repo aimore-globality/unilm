@@ -1,17 +1,17 @@
 from __future__ import absolute_import, division, print_function
 import multiprocessing as mp
 import argparse
-import copy
+# import copy
 import glob
 import logging
 import os
 import random
 from pathlib import Path
 from typing import List
-
+import pandas as pd
 import numpy as np
 import torch
-from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
+# from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
@@ -25,6 +25,7 @@ from markuplmft.models.markuplm import (
     MarkupLMForTokenClassification,
     MarkupLMTokenizer,
 )
+from sklearn.metrics import confusion_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def to_list(tensor):
 
 
 def train(args, train_dataset, model, tokenizer, sub_output_dir):
-    r"""
+    """
     Train the model
     """
     if args.local_rank in [-1, 0]:
@@ -75,6 +76,7 @@ def train(args, train_dataset, model, tokenizer, sub_output_dir):
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     # Prepare optimizer and schedule (linear warmup and decay)
+    # TODO (Aimore): Improve the name of these variables
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
         {
@@ -268,9 +270,7 @@ def eval_on_one_website(args, model, website, prefix=""):
             logits = outputs["logits"]  # which is (bs,seq_len,node_type)
             all_logits.append(logits.detach().cpu())
 
-    all_probs = torch.softmax(
-        torch.cat(all_logits, dim=0), dim=2
-    )  # (all_samples, seq_len, node_type)
+    all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)  # (all_samples, seq_len, node_type)
 
     assert len(all_probs) == len(info)
 
@@ -295,7 +295,10 @@ def eval_on_one_website(args, model, website, prefix=""):
             involved_first_tokens_text,
         ):
 
-            pred = sub_prob[pos]  # (node_type_size)
+            pred = sub_prob[pos] #? This gets the first logit of each respective node
+            #? sub_prob = [tensor([0.0045, 0.9955]), ...], sub_prob.shape = [384, 2]
+            #? pos = 14
+            #? pred = tensor([0.0045, 0.9955])
             if xpath not in all_res[html_path]:
                 all_res[html_path][xpath] = {}
                 all_res[html_path][xpath]["pred"] = pred
@@ -309,59 +312,84 @@ def eval_on_one_website(args, model, website, prefix=""):
     # we have build all_res
     # then write predictions
 
-    lines = []
+    lines = {
+        "html_path": [],
+        "xpath": [],
+        "text": [],
+        "truth": [],
+        "pred_type": [],
+        "final_probs": []
+        }
 
     for html_path in all_res:
         # E.g. all_res [dict] = {html_path = {xpath = {'pred': tensor([0.4181, 0.5819]), 'truth': 'PAST_CLIENT', 'text': 'A healthcare client gains control of their ACA processes | BerryDunn'},...}, ...}
         for xpath in all_res[html_path]:
-            final_probs = all_res[html_path][xpath]["pred"] / torch.sum(
-                all_res[html_path][xpath]["pred"]
-            )  # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then? Maybe in case of more than one label?
+            final_probs = all_res[html_path][xpath]["pred"] / torch.sum(all_res[html_path][xpath]["pred"])  # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then? Maybe in case of more than one label?
             pred_id = torch.argmax(final_probs).item()
             pred_type = constants.ATTRIBUTES_PLUS_NONE[pred_id]
             final_probs = final_probs.numpy().tolist()
 
-            # TODO (aimore): Convert this to pandas
-            s = "\t".join(
-                [
-                    html_path,
-                    xpath,
-                    all_res[html_path][xpath]["text"],
-                    all_res[html_path][xpath]["truth"],  # TODO (aimore): Convert these to variables
-                    pred_type,
-                    ",".join([str(score) for score in final_probs]),
-                ]
-            )
+            lines["html_path"].append(html_path)
+            lines["xpath"].append(xpath)
+            lines["text"].append(all_res[html_path][xpath]["text"])
+            lines["truth"].append(all_res[html_path][xpath]["truth"])
+            lines["pred_type"].append(pred_type)
+            lines["final_probs"].append(final_probs)
 
-            lines.append(s)
-
-    res = page_level_constraint(lines)
-
-    return res  # (precision, recall, f1)
-
+    result_df = pd.DataFrame(lines)
+    return result_df 
 
 def evaluate(args, model, test_websites, prefix=""):
     r"""
     Evaluate the model
     """
-
-    all_precision = []
-    all_recall = []
-    all_f1 = []
-
+    dataset_results = pd.DataFrame()
     for website in tqdm(test_websites):
         res_on_one_website = eval_on_one_website(args, model, website, prefix)
-        all_precision.append(res_on_one_website[0])
-        all_recall.append(res_on_one_website[1])
-        all_f1.append(res_on_one_website[2])
+        res_on_one_website['domain'] = website
+        dataset_results = dataset_results.append(res_on_one_website)
+    
+    metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_results)
+    print(f"metrics_per_dataset: {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}")
 
-    # Results averaged per tag and now they will be averaged by all the domains
-    return {
-        "precision": sum(all_precision) / len(all_precision),
-        "recall": sum(all_recall) / len(all_recall),
-        "f1": sum(all_f1) / len(all_f1),
-    }
+    # compute_metrics_per_domain(dataset_results)    
+    # compute_metrics_per_page(dataset_results)
 
+    return metrics_per_dataset
+
+def compute_metrics(truth, pred):
+    metrics = {}
+    
+    truth = np.array(truth)
+    pred = np.array(pred)
+
+    cm = confusion_matrix(truth, pred, labels=constants.ATTRIBUTES_PLUS_NONE)
+    cm = {
+        'TP': cm[0, 0], 
+        'FN': cm[0, 1],
+        'FP': cm[1, 0], 
+        'TN': cm[1, 1]
+        }
+
+    precision = cm["TP"] / (cm["TP"] + cm["FP"])
+    recall = cm["TP"] / (cm["TP"] + cm["FN"])
+    f1 = 2 * (precision * recall) / (precision + recall)
+
+    metrics = {"precision": precision, "recall": recall, "f1": f1}
+    return metrics, cm
+
+def compute_metrics_per_dataset(df):
+    groung_truth = df['truth']
+    predictions = df['pred_type']
+    return compute_metrics(groung_truth, predictions)
+
+# def compute_metrics_per_domain(df):
+#     df.groupby('domain')
+#     return compute_metrics(groung_truth, predictions)
+
+# def compute_metrics_per_page(df):
+#     df.groupby('html_path')
+#     return compute_metrics(groung_truth, predictions)
 
 def load_and_cache_one_website(arguments):
     args, tokenizer, website = arguments
@@ -547,9 +575,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
                 os.path.dirname(c)
                 for c in sorted(glob.glob(sub_output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
             )
-            logging.getLogger("transformers.modeling_utils").setLevel(
-                logging.WARN
-            )  # Reduce model loading logs
+            logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce model loading logs
 
         logger.info(f"Evaluate the following checkpoints: {checkpoints}")
         config = MarkupLMConfig.from_pretrained(sub_output_dir)
@@ -570,6 +596,9 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
                 and int(global_step) >= args.eval_to_checkpoint
             ):
                 continue
+
+
+            
             model = MarkupLMForTokenClassification.from_pretrained(checkpoint, config=config)
             model.to(args.device)
 
@@ -577,7 +606,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
             result = evaluate(args, model, test_websites, prefix=global_step)
 
             result = dict(
-                (k + ("_{}".format(global_step) if global_step else ""), v)
+                (k + (f"_{global_step}" if global_step else ""), v)
                 for k, v in result.items()
             )
             results.update(result)
@@ -891,17 +920,15 @@ def main():
 
     tokenizer = MarkupLMTokenizer.from_pretrained(args.model_name_or_path)
 
-    swde_path = args.root_dir
-    p = Path(swde_path)
+    swde_path = Path(args.root_dir)
     websites = [
         x.parts[-1]
-        for x in list(p.iterdir())
+        for x in list(swde_path.iterdir())
         if "cached" not in str(x)
     ]
 
-    # websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
-
-    # websites = websites[:10] # ! Just for speed reasons
+    websites = [x for x in websites if "ciphr.com" not in x] #! Remove this website for now just because it is taking too long (+20min.) 
+    websites = websites[:10] #! Just for speed reasons
 
     train_websites = websites
     test_websites = websites
