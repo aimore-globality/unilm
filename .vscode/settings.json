@@ -8,10 +8,9 @@
     "jupyter.sendSelectionToInteractiveWindow": true,
     "key": "shift+enter",           "command": "jupyter.execSelectionInteractive", "when": "editorTextFocus",
     "workbench.colorCustomizations": {
-        "editor.selectionBackground": "#c26060c0", // red hexadecimal code
-        // "editor.selectionHighlightBackground": "#fff", // white hex code
-        "editor.selectionHighlightBackground": "#00ff553a", // white hex code
-        "editor.findMatchBackground": "#00cc44f8", //Current SEARCH MATCH
-        "editor.findMatchHighlightBackground": "#ff7b00d0" //Other SEARCH MATCHES
+        "editor.selectionBackground": "#c26060c0",
+        "editor.selectionHighlightBackground": "#00ff553a",
+        "editor.findMatchBackground": "#00cc44f8",
+        "editor.findMatchHighlightBackground": "#ff7b00d0"
     }
 }

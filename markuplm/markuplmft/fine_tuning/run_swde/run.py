@@ -141,7 +141,7 @@ def train(
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = len(train_dataset)")
+    logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {num_train_epochs}")
     logger.info(f"  Instantaneous batch size per GPU = {per_gpu_train_batch_size}")
 
@@ -242,7 +242,7 @@ def save_model(sub_output_dir, model, global_step):
     # Take care of distributed/parallel training
     model_to_save.save_pretrained(output_dir)
     torch.save(args, os.path.join(output_dir, "training_args.bin"))
-    logger.info(f"Saving model checkpoint to {output_dir}")
+    logger.info(f"AIMORE - Saving model checkpoint to {output_dir}")
 
 def predict_on_website(per_gpu_eval_batch_size, n_gpu, local_rank, device, model, website):
     if website == "intralinks.com":
@@ -364,40 +364,6 @@ def evaluate(per_gpu_eval_batch_size, n_gpu, local_rank, device, model, test_web
     # compute_metrics_per_page(dataset_predicted)
 
     return metrics_per_dataset
-
-def compute_metrics(truth, pred):
-    metrics = {}
-    
-    truth = np.array(truth)
-    pred = np.array(pred)
-
-    cm = confusion_matrix(truth, pred, labels=constants.ATTRIBUTES_PLUS_NONE)
-    cm = {
-        'TP': cm[0, 0], 
-        'FN': cm[0, 1],
-        'FP': cm[1, 0], 
-        'TN': cm[1, 1]
-        }
-
-    precision = cm["TP"] / (cm["TP"] + cm["FP"])
-    recall = cm["TP"] / (cm["TP"] + cm["FN"])
-    f1 = 2 * (precision * recall) / (precision + recall)
-
-    metrics = {"precision": precision, "recall": recall, "f1": f1}
-    return metrics, cm
-
-def compute_metrics_per_dataset(df):
-    groung_truth = df['truth']
-    predictions = df['pred_type']
-    return compute_metrics(groung_truth, predictions)
-
-# def compute_metrics_per_domain(df):
-#     df.groupby('domain')
-#     return compute_metrics(groung_truth, predictions)
-
-# def compute_metrics_per_page(df):
-#     df.groupby('html_path')
-#     return compute_metrics(groung_truth, predictions)
 
 def load_and_cache_one_website(arguments):
     args, tokenizer, website = arguments
@@ -551,7 +517,6 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
     if args.fp16:
         try:
             import apex
-
             apex.amp.register_half_function(torch, "einsum")
         except ImportError:
             raise ImportError(
