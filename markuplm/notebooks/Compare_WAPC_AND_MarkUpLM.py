@@ -10,7 +10,7 @@
 #   kernelspec:
 #     display_name: wae
 #     language: python
-#     name: wae
+#     name: python3
 # ---
 
 # # Compare WAPC in production with a MarkUpLM
@@ -34,7 +34,7 @@ dataset
 
 # + tags=[]
 if dataset == 'develop':
-    data_path = f"../../../web-annotation-extractor/data/processed/develop/dataset_pos(1735)_neg(5122)_intermediate.pkl"
+    data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1735)_neg(4035)_intermediate.pkl"
 
 # + tags=[]
 df = pd.read_pickle(data_path)
@@ -92,8 +92,9 @@ df["predictions"] = predictions
 #         FN: {FN} - {len(FN)}")
 
 # + tags=[]
-def compute_recall_adjusted(ground_truth_set, prediction_set, negative_percentage=1):
-    fp_scalar = 1/negative_percentage
+def compute_recall(ground_truth, prediction):
+    prediction_set = {str(text) for text in predictions}
+    ground_truth_set = {str(text) for text in ground_truth}
     
     TP = len(prediction_set & ground_truth_set)
     FN = len(ground_truth_set - prediction_set)
@@ -102,28 +103,48 @@ def compute_recall_adjusted(ground_truth_set, prediction_set, negative_percentag
         return TP/(TP+FN)
     return None
 
-def compute_precision_adjusted(ground_truth_set, prediction_set, negative_percentage=1):
+def compute_precision_adjusted(ground_truth, prediction, negative_percentage=1):
+    positive_index = ground_truth.dropna()[ground_truth.dropna().apply(len) > 0].index
+    ground_truth_pos = ground_truth.loc[positive_index]
+    prediction_pos = prediction.loc[positive_index]
+
+    ground_truth_neg = ground_truth.loc[~ground_truth.isin(ground_truth_pos)]
+    prediction_neg = prediction.loc[~prediction.isin(ground_truth_pos)]
+
     fp_scalar = 1/negative_percentage
-    
+
+    prediction_set = {str(text) for text in prediction}
+    ground_truth_set = {str(text) for text in ground_truth}
     TP = len(prediction_set & ground_truth_set)
-    FP = len(prediction_set - ground_truth_set) * fp_scalar    
+    FP = len(prediction_set - ground_truth_set)
     
-    if TP+FP > 0:
-        return TP/(TP+FP)
+    prediction_set_pos = {str(text) for text in prediction_pos}
+    ground_truth_set_pos = {str(text) for text in ground_truth_pos}
+
+    prediction_set_neg = {str(text) for text in prediction_neg}
+    ground_truth_set_neg = {str(text) for text in ground_truth_neg}
+
+    FP_pos = len(prediction_set_pos - ground_truth_set_pos)
+    FP_neg = len(prediction_set_neg - ground_truth_set_neg) * fp_scalar
+    FP_adjusted = FP_pos + FP_neg
+    
+    # print(f" TP: {TP} \n FP: {FP} \n FP_neg: {FP_neg} \n FP_pos: {FP_pos} \n FP_adjusted: {FP_adjusted}")
+
+    if TP + FP_adjusted > 0:        
+        precision_adjusted = TP/(TP + FP_adjusted)
+        return precision_adjusted
     return None
+    
 
 negative_percentage = 0.10
 
-def compute_segmentation_metrics(ground_truth, predictions):
-    predictions = {str(text) for text in predictions}
-    ground_truth = {str(text) for text in ground_truth}
+def compute_segmentation_metrics(ground_truth_series, predictions_series):
+    precision = compute_precision_adjusted(ground_truth_series, predictions_series, negative_percentage)
+    recall = compute_recall(ground_truth_series, predictions_series)
 
-#     recall = ExactMatchEvaluation.compute_recall(ground_truth, predictions)
-#     precision = ExactMatchEvaluation.compute_precision(ground_truth, predictions)
-    
-    recall = compute_recall_adjusted(ground_truth, predictions, negative_percentage)
-    precision = compute_precision_adjusted(ground_truth, predictions, negative_percentage)
-    
+    # recall = ExactMatchEvaluation.compute_recall(ground_truth, predictions)
+    # precision = ExactMatchEvaluation.compute_precision(ground_truth, predictions)
+    # print(precision, recall)
     f1 = ExactMatchEvaluation.compute_f1(precision, recall)
     return pd.Series({
             "segmentation_precision": precision,
@@ -137,7 +158,27 @@ df_domain_metrics = df.groupby("domain").apply(lambda x: compute_segmentation_me
 df_domain_metrics.mean().to_dict()
 # -
 
+df_domain_metrics = df.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.predictions))
+df_domain_metrics.mean().to_dict()
+
 # # Load SWDE data
+
+# # Load MarkupLM Trained Model and predict on something 
+
+# +
+# from markuplmft.fine_tuning.run_swde.lm_model import LModel
+# lm = LModel()
+# lm.load_data()
+# lm.prepare_model_to_train()
+# lm.fit()
+# -
+
+from markuplmft.fine_tuning.run_swde.lm_model import LModel
+lm = LModel()
+lm.load_data('develop')
+results = lm.predict_on_develop()
+
+lm.evaluate(results)
 
 # ## Load the trained MarkUp model 
 
@@ -165,6 +206,7 @@ df["predictions_without_training"] = predictions_without_training
 df_domain_metrics = df.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.predictions_without_training))
 df_domain_metrics.mean().to_dict()
 # -
+
 
 
 

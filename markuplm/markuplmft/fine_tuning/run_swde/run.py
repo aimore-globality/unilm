@@ -25,7 +25,7 @@ from markuplmft.models.markuplm import (
     MarkupLMForTokenClassification,
     MarkupLMTokenizer,
 )
-from sklearn.metrics import confusion_matrix
+from markuplm.markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
 logger = logging.getLogger(__name__)
 
