@@ -66,20 +66,20 @@ class LModel():
         self.fp16_opt_level = "O1"
         self.weight_decay = 0.0
         self.warmup_ratio = 0.0
-        self.per_gpu_train_batch_size = 16
-        self.per_gpu_eval_batch_size = 16
+        self.per_gpu_train_batch_size = 24
+        self.per_gpu_eval_batch_size = 24
 
-        self.num_train_epochs = 1
+        self.num_train_epochs = 5
         self.gradient_accumulation_steps = 1
         self.learning_rate = 1e-5
         self.adam_epsilon = 1e-8
         self.max_grad_norm = 1.0
 
-        self.save_steps = 3000
+        self.save_steps = 1000
         self.max_step = -1
         self.pre_trained_model_folder_path = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/286"
         self.evaluate_during_training = False
-        self.logging_steps = 10
+        self.logging_steps = 1
         self.output_dir = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/"
         self.overwrite_output_dir = True
         
@@ -114,7 +114,7 @@ class LModel():
 
         print("self.__dict__", pprint(self.__dict__))
 
-    def load_data(self, dataset='train'):
+    def load_data(self, dataset='train', limit_data=False):
         if dataset == 'train':
             self.data_root_dir = self.train_data_root_dir
         else:
@@ -127,9 +127,10 @@ class LModel():
             for file_path in list(swde_path.iterdir())
             if "cached" not in str(file_path)
         ]
-        websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
-        # self.websites = websites[:10] #! Just for speed reasons
-        self.websites = websites
+        self.websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
+
+        if limit_data:
+            self.websites = self.websites[:limit_data] #! Just for speed reasons
 
         print(f"\nWebsites ({len(self.websites)}):\n{self.websites}\n")
 
@@ -343,9 +344,7 @@ class LModel():
         global_step = 0
         tr_loss, logging_loss = 0.0, 0.0
         self.model.zero_grad()
-        train_iterator = trange(
-            int(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
-        )
+        train_iterator = trange(int(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0])
         set_seed(self.n_gpu)  # Added here for reproductibility (even between python 2 and 3)
         for epoch in train_iterator:
             if isinstance(self.train_dataloader, DataLoader) and isinstance(self.train_dataloader.sampler, DistributedSampler):
@@ -399,10 +398,11 @@ class LModel():
                             raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
                             # results = evaluate(args, model, tokenizer, prefix=str(global_step))
                             # for key, value in results.items():
-                            #    tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                        #! tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                        #! tb_writer.add_scalar("loss", (tr_loss - logging_loss) / logging_steps, global_step)
-                        logging_loss = tr_loss
+                            #    tb_writer.add_scalar('eval_{}'.format(key), value, global_step)                        
+                        # print(f"global_step: {global_step} | lr: {self.learning_rate} | scheduler.get_lr()[0]: {self.scheduler.get_lr()[0]}")
+                        # log_loss = (tr_loss - logging_loss) / self.logging_steps
+                        # print(f"Loss: {log_loss} tr_loss: {tr_loss} logging_loss: {logging_loss}")
+                        # logging_loss = tr_loss
 
                     if (
                         self.local_rank in [-1, 0]
@@ -410,7 +410,7 @@ class LModel():
                         and global_step % self.save_steps == 0
                     ):
                         # Save model checkpoint
-                        self.save_model(sub_output_dir, global_step)
+                        self.save_model(self.save_model_path, global_step)
 
                 if 0 < self.max_steps < global_step:
                     epoch_iterator.close()
@@ -418,6 +418,8 @@ class LModel():
             if 0 < self.max_steps < global_step:
                 train_iterator.close()
                 break
+
+            print(f"Epoch: {epoch} - Loss: {tr_loss / global_step}")
 
         # if self.local_rank in [-1, 0]:
         #     tb_writer.close()
@@ -448,11 +450,7 @@ class LModel():
 
     def predict_on_develop(self):
         set_seed(self.n_gpu)
-        config = MarkupLMConfig.from_pretrained(self.pre_trained_model_folder_path)
-        self.tokenizer = MarkupLMTokenizer.from_pretrained(self.pre_trained_model_folder_path)
-
-        self.model = MarkupLMForTokenClassification.from_pretrained(self.pre_trained_model_folder_path, config=config)
-        self.model.to(self.device)
+        self.load_model()
         
         dataset_predicted = pd.DataFrame()
         for website in tqdm(self.websites):
@@ -575,4 +573,7 @@ class LModel():
         print(f"Saving model checkpoint to {output_dir}")
 
     def load_model(self):
-        pass
+        config = MarkupLMConfig.from_pretrained(self.pre_trained_model_folder_path)
+        self.tokenizer = MarkupLMTokenizer.from_pretrained(self.pre_trained_model_folder_path)
+        self.model = MarkupLMForTokenClassification.from_pretrained(self.pre_trained_model_folder_path, config=config)
+        self.model.to(self.device)

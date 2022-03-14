@@ -162,9 +162,9 @@ def compute_segmentation_metrics(ground_truth_series, prediction_series, domain=
     # print(precision, recall)
     f1 = ExactMatchEvaluation.compute_f1(precision, recall)
     results = pd.Series(dict(
-            segmentation_precision= precision,
-            segmentation_recall= recall,
-            segmentation_f1= f1
+            segmentation_precision = precision,
+            segmentation_recall = recall,
+            segmentation_f1 = f1
        ))
     if debug:
         display(results)
@@ -174,9 +174,6 @@ def compute_segmentation_metrics(ground_truth_series, prediction_series, domain=
 # + tags=[]
 df_domain_metrics = df.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.predictions, x.domain))
 df_domain_metrics.mean().to_dict()
-
-# +
-# df
 # -
 
 # # Load MarkupLM Trained Model and predict on something 
@@ -192,37 +189,42 @@ results = pd.read_pickle("results_classified.pkl")
 results
 
 results = results.reset_index().drop('index', axis=1)
-pos_results = results[results['pred_type']=='PAST_CLIENT']
+# pos_results = results[results['pred_type']=='PAST_CLIENT'] #! The Performance of the MarkupLM
+# pos_results = results[results['truth']=='PAST_CLIENT'] #! The best this system can give, considering that the annotations for the text are correct. However, this might not be the best for the values.
+pos_results = results #! No classification 
 len(pos_results)
 
 sementation_on_nodes  = pc.segmenter_html._segment_companies(pos_results['text']).fillna("").apply(list)
 results['sementation_on_nodes'] = sementation_on_nodes
 results['reconciliations'] = pc.get_reconciliations(results['sementation_on_nodes'].dropna())
-
 results['reconciliations'].dropna().sort_values()
 
+# +
+# #? Create mapping to convert value into taxonomy
 value_to_taxonomy_mappings = dict([(company.name, company.uri)for company in graph.known_company_taxonomy])
+
+# #? Convert reconciliations into reconciliations taxonomized 
 results['reconciliations_taxonomized'] = results['reconciliations'].dropna().apply(lambda values: [value_to_taxonomy_mappings.get(x) for x in values]) 
 
+# #? Create the domain column
 results['domain'] = results['domain'].apply(lambda x: x.split('.pickle')[0])
 
+# #? Get the intersection of the domains
 df = df[df['domain'].isin(results['domain'])]
 
+# #? Create mapping to convert value into taxonomy 
 results_grouped = pd.DataFrame(results.groupby(by='html_path').agg({'reconciliations_taxonomized': lambda x: [z for y in list(x.dropna()) for z in y] , 'domain': lambda x: list(x)[0]}))
 
+# #? Make sure both datasets have the same number of pages
 assert len(df) == len(results_grouped)
-results_grouped
+# -
 
+# #? Load and apply pageid to url mapping
 pageid_url_mapping = pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl")
-# results_grouped.reset_index(inplace=True)
+results_grouped.reset_index(inplace=True)
 results_grouped['url'] = results_grouped['html_path'].apply(lambda x: pageid_url_mapping.get(x)[0])
 
-results_grouped
-
-df
-
 results_grouped = results_grouped.set_index("url")
-
 df = df.set_index("url")
 
 merge = df.join(results_grouped, lsuffix="_l")
@@ -230,7 +232,29 @@ merge = df.join(results_grouped, lsuffix="_l")
 merge_domain_metrics = merge.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.predictions, x.domain))
 merge_domain_metrics.mean().to_dict()
 
+# #! Positive Nodes are predictions by the model
+merge_domain_metrics = merge.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.reconciliations_taxonomized, x.domain))
+merge_domain_metrics.mean().to_dict()
+
+# #! Positive Nodes are groundtruth
+merge_domain_metrics = merge.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.reconciliations_taxonomized, x.domain))
+merge_domain_metrics.mean().to_dict()
+
+# #! No classification 
 merge_domain_metrics = merge.groupby("domain").apply(lambda x: compute_segmentation_metrics(x.ground_truth, x.reconciliations_taxonomized, x.domain))
 merge_domain_metrics.mean().to_dict()
 
 
+
+# ---
+
+all_values = merge['annotations'].apply(lambda x: [y.get('value') for y in x.get("PAST_CLIENT", {} ) if y.get('value') ])
+all_text = merge['annotations'].apply(lambda x: [y.get('text') for y in x.get("PAST_CLIENT", {} ) if y.get('text') ])
+print(len([x for y in all_values for x in y]))
+print(len([x for y in all_text for x in y]))
+merge['all_values'] = all_values
+merge['all_text'] = all_text
+merge['contain_value'] = merge["all_values"].apply(len) > 0
+merge['contain_text'] = merge["all_text"].apply(len) > 0
+
+merge
