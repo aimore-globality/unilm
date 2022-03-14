@@ -4,6 +4,8 @@ import argparse
 from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
 # import copy
+from pprint import pprint
+import collections
 import glob
 import logging
 import os
@@ -64,13 +66,13 @@ class LModel():
         self.fp16_opt_level = "O1"
         self.weight_decay = 0.0
         self.warmup_ratio = 0.0
-        self.per_gpu_train_batch_size = 8
-        self.per_gpu_eval_batch_size = 8
+        self.per_gpu_train_batch_size = 16
+        self.per_gpu_eval_batch_size = 16
 
+        self.num_train_epochs = 1
         self.gradient_accumulation_steps = 1
         self.learning_rate = 1e-5
         self.adam_epsilon = 1e-8
-        self.num_train_epochs = 1
         self.max_grad_norm = 1.0
 
         self.save_steps = 3000
@@ -110,6 +112,8 @@ class LModel():
         #? Prepare pre-trained tokenizer
         self.tokenizer = MarkupLMTokenizer.from_pretrained(self.pre_trained_model_folder_path)
 
+        print("self.__dict__", pprint(self.__dict__))
+
     def load_data(self, dataset='train'):
         if dataset == 'train':
             self.data_root_dir = self.train_data_root_dir
@@ -124,7 +128,8 @@ class LModel():
             if "cached" not in str(file_path)
         ]
         websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
-        self.websites = websites[:10] #! Just for speed reasons
+        # self.websites = websites[:10] #! Just for speed reasons
+        self.websites = websites
 
         print(f"\nWebsites ({len(self.websites)}):\n{self.websites}\n")
 
@@ -496,7 +501,7 @@ class LModel():
 
         assert len(all_probs) == len(info)
 
-        all_res = {}
+        all_res = collections.defaultdict(dict)
 
         for sub_prob, sub_info in zip(all_probs, info):
             (
@@ -506,9 +511,6 @@ class LModel():
                 involved_first_tokens_types,
                 involved_first_tokens_text,
             ) = sub_info
-
-            if html_path not in all_res:
-                all_res[html_path] = {}
 
             for pos, xpath, type, text in zip(
                 involved_first_tokens_pos,

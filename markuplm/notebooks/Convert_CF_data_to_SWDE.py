@@ -45,8 +45,8 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # # Load
 
 # %% tags=[]
-dataset = 'train'
-# dataset = 'develop'
+# dataset = 'train'
+dataset = 'develop'
 dataset
 
 # %% [markdown]
@@ -348,6 +348,8 @@ df_positives.to_pickle(save_path)
 # # Format and Save data
 
 # %% tags=[]
+pageid_url_mapping = {}
+
 raw_data_folder = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceCode'
 
 if os.path.exists(raw_data_folder):
@@ -379,12 +381,15 @@ for e, domain in enumerate(domains):
     domain_len = len(df_domain)
     
     for enum, df_page in df_domain.iterrows():
-        # Save html
         html = df_page['html']
         raw_data_path = raw_data_folder / 'WAE' / f"{domain}({domain_len})"
         raw_data_path.mkdir(parents=True, exist_ok=True)
         raw_data_path = (raw_data_path / str(page_count).zfill(4)).with_suffix('.htm')
-        # print(raw_data_path)
+
+        name = str(page_count).zfill(4) + '.htm'
+        pageid = f"{domain}.pickle-{name}"
+        url = df_page['url']
+        pageid_url_mapping[pageid] = [url]
         
         Html_file = open(raw_data_path, "w")
         Html_file.write(html)
@@ -431,6 +436,9 @@ for e, domain in enumerate(domains):
         page_annotations_df = page_annotations_df.sort_index()
         
         page_annotations_df.to_csv(groundtruth_data_tag_path, sep="\t", index=False)
+
+# %%
+pd.to_pickle(pageid_url_mapping, f"/data/GIT/swde/my_data/{dataset}/my_CF_sourceCode/pageid_url_mapping.pkl")
 
 # %% [markdown]
 # # Final Stats

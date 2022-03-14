@@ -1,6 +1,7 @@
 from __future__ import absolute_import, division, print_function
 import multiprocessing as mp
 import argparse
+import collections
 # import copy
 import glob
 import logging
@@ -25,7 +26,7 @@ from markuplmft.models.markuplm import (
     MarkupLMForTokenClassification,
     MarkupLMTokenizer,
 )
-from markuplm.markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
+from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -284,8 +285,9 @@ def predict_on_website(per_gpu_eval_batch_size, n_gpu, local_rank, device, model
     all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)  # (all_samples, seq_len, node_type)
 
     assert len(all_probs) == len(info)
-
-    all_res = {}
+    #? info = It is a list of tuples, each tuple is: ('canelamedia.com.pick...e-0000.htm', [1, 1, 14, 14], ['/html/head', '/html/head/title', '/html/head/title/tail', '/html/head/script[1]'], ['none', 'none', 'none', 'none'], ['', 'Home - Canela Media ... Audiences', '', '{"@context":"https:/...ome"}}]}]}'])
+    
+    all_res = collections.defaultdict(dict)
 
     for sub_prob, sub_info in zip(all_probs, info):
         (
@@ -295,9 +297,6 @@ def predict_on_website(per_gpu_eval_batch_size, n_gpu, local_rank, device, model
             involved_first_tokens_types,
             involved_first_tokens_text,
         ) = sub_info
-
-        if html_path not in all_res:
-            all_res[html_path] = {}
 
         for pos, xpath, type, text in zip(
             involved_first_tokens_pos,
@@ -830,7 +829,7 @@ def main():
     ]
 
     websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
-    websites = websites[:10] #! Just for speed reasons
+    # websites = websites[:10] #! Just for speed reasons
 
     train_websites = websites
     test_websites = websites
