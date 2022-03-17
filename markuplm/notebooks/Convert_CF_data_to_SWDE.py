@@ -63,6 +63,7 @@ len(df)
 
 # %% tags=[]
 # Count PAST CLIENT annotations
+# TODO (Aimore): Change the name of annotations_len to gt_text_count
 df['annotations_len'] = df['annotations'].apply(lambda x: x.get("PAST_CLIENT", [])).apply(len)
 
 df_positives = df[df['annotations_len'] > 0]

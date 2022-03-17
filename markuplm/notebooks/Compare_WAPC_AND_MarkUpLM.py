@@ -22,6 +22,8 @@ from microcosm.api import create_object_graph
 from microcosm_sagemaker.bundle import BundleInputArtifact
 from web_annotation_extractor.evaluations.exact_match_evaluation import ExactMatchEvaluation
 from microcosm.api import create_object_graph
+import plotly.graph_objects as go
+
 graph = create_object_graph('test')
 
 pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
@@ -176,7 +178,9 @@ df_domain_metrics = df.groupby("domain").apply(lambda x: compute_segmentation_me
 df_domain_metrics.mean().to_dict()
 # -
 
-df_domain_metrics
+df.groupby('domain').sum("annotations_len").sort_values("annotations_len")
+
+# # Get new metrics and plots
 
 # +
 debug = False
@@ -258,11 +262,11 @@ cf_matrix = pd.DataFrame(cf_matrix).T.sort_values("num_positives")
 len(cf_matrix)
 # -
 
+cf_matrix[cf_matrix["num_positives"] == 0]
+
+
 cf_matrix = cf_matrix[cf_matrix["num_positives"] > 0]
 cf_matrix
-
-# +
-import plotly.graph_objects as go
 
 
 def plot_performance(
@@ -351,8 +355,6 @@ def plot_performance(
     return go.Figure(data=data, layout=layout)
 
 
-
-# -
 
 plot_performance(
     domain=cf_matrix.index,
