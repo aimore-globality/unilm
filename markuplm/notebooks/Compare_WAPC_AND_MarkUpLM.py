@@ -307,6 +307,13 @@ def plot_performance(
         y=100 * precision,
         name="precision",
         mode="lines+markers",
+        marker=dict(
+            size=6,
+            color="Red",
+            symbol="cross",
+            line_color='red',
+            line_width=1,
+        ),
         yaxis="y2",
     )
 
@@ -322,12 +329,14 @@ def plot_performance(
 
     layout = go.Layout(
         title=title,
-        yaxis=dict(title="Counts", ),
+        yaxis=dict(
+            title="Counts",
+        ),
         yaxis2=dict(
             title="%",
             overlaying="y",
             side="right",
-            range=[0, 100],
+            range=[-5, 105],
         ),
         width=len(domain) * 27 if len(domain) > 20 else 600,
         height=600,
@@ -338,7 +347,6 @@ def plot_performance(
             bordercolor="Black",
             borderwidth=1,
         ),
-        
     )
     return go.Figure(data=data, layout=layout)
 
@@ -399,6 +407,18 @@ plot_performance(
     FN=cf_matrix_all["FN"],
     num_positives=cf_matrix_all["num_positives"],
     precision=cf_matrix_all["precision_adjusted"],
+    recall=cf_matrix_all["recall"],
+    f1=cf_matrix_all["f1"],
+        )
+
+plot_performance(
+    title="Performance per Domain",
+    domain=cf_matrix_all.index,
+    TP=cf_matrix_all["TP"],
+    FP=cf_matrix_all["FP"],
+    FN=cf_matrix_all["FN"],
+    num_positives=cf_matrix_all["num_positives"],
+    precision=cf_matrix_all["precision"],
     recall=cf_matrix_all["recall"],
     f1=cf_matrix_all["f1"],
         )
