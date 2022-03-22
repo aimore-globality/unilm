@@ -361,19 +361,22 @@ def get_field_xpaths(
 
             # Clean the groundtruth gt_values
             clean_gt_values = []
-            for gt_value in gt_values: 
+            for gt_value in gt_values:
                 # Some gt_values contains HTML tags and special strings like "&nbsp;"
                 # So we need to escape the HTML by parsing and then extract the inner text.
                 gt_value = lxml.html.fromstring(gt_value)
                 gt_value = " ".join(etree.XPath("//text()")(gt_value))
                 gt_value = clean_spaces(gt_value)
                 gt_value = clean_format_str(gt_value)
+                gt_value = gt_value.strip()
                 clean_gt_values.append(gt_value)
 
 
-
+            
             matched_xpaths = []  # The resulting list of xpaths to be returned.
             current_xpath_data = dict()  # The resulting dictionary to save all page data.
+            
+            gt_text_in_nodes = dict()  # A list of the gt_text in each xpath node
 
             current_page_nodes_in_order = []
             is_truth_value_list = []
@@ -421,23 +424,33 @@ def get_field_xpaths(
                                 xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
                             clean_etext = clean_spaces(etext)
 
-                            # Update the dictionary.
+                            #? Update the dictionary.
                             current_xpath_data[xpath] = clean_etext
                             overall_xpath_dict[xpath].add(clean_etext)
                             current_page_nodes_in_order.append((clean_etext, xpath))
 
-                            # Clean the groundtruth and the node text. Check if the groundtruth is in the node text.                        
+                            #? Clean the groundtruth and the node text. Check if the groundtruth is in the node text.                        
                             clean_etext = clean_format_str(clean_etext)
 
+                            #? Create node ground truth by checking if the the gt_text is in the clean node_text
+                            gt_text_in_node = []
                             for gt_value in clean_gt_values:
-                                if gt_value.strip() in clean_etext.strip():
+                                if gt_value in clean_etext.strip():
+                                    gt_text_in_node.append(gt_value)
                                     matched_xpaths.append(xpath)
                                     is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
                                     break
 
-            # Update the page-level xpath information.
+                            if len(matched_xpaths) == 0:
+                                gt_text_in_nodes[xpath] = []
+                            else:
+                                gt_text_in_nodes[xpath] = gt_text_in_node
+
+            #? Update the page-level xpath information.
             all_data_dict[page_id][field]["groundtruth_xpaths"].update(matched_xpaths)
             all_data_dict[page_id][field]["is_truth_value_list"].update(is_truth_value_list)
+
+            all_data_dict[page_id][field]["gt_text_in_nodes"] = gt_text_in_nodes
 
             # now for each all_data_dict[page_id]
             # an example
@@ -535,6 +548,7 @@ def generate_nodes_seq_and_write_to_file(website):
         {'values': ['SA', 'Luye Pharma Group Ltd.', 'Vipshop (US) Inc', 'Delta Air Lines', 'New York University', 'Harmon Store', 'Rutgers University', 'Amneal Pharmaceuticals, LLC', 'Kashiv Pharma, LLC', ...], 
          'groundtruth_xpaths': {'/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[11]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[12]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[21]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[19]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[20]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[10]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[18]/p[1]', ...}, 
          'is_truth_value_list': {384, 256, 128, 649, 533, 410, 412, 669, 555, ...}
+         'gt_text_in_nodes': {xpath1:[], xpath2:[gt_text1, gt_text2]}
          }, 
     'path': 'lernerdavid.com(41)/0000.htm', 
     'html_str': 'html' }, 
@@ -553,6 +567,7 @@ def generate_nodes_seq_and_write_to_file(website):
     page_ids = [keys for keys in all_data_dict if 'nodes' not in keys] # The keys of all_data_dict include also fixed_nodes and variable_nodes and here we only care about the page_ids
     for page_id in page_ids:
         page_data = all_data_dict[page_id]
+        gt_text_dict = page_data['field-PAST_CLIENT']['gt_text_in_nodes']
 
         assert "xpath_data" in page_data
 
@@ -565,17 +580,18 @@ def generate_nodes_seq_and_write_to_file(website):
         for field in [x for x in list(page_data.keys()) if 'field' in x]:
             for doc_string_id in page_data[field]["is_truth_value_list"]:
                 field_info[doc_string_id] = field.split("-")[1]
-
+        
         for id, doc_string in enumerate(doc_strings):
             text, xpath = doc_string
             is_variable = xpath in variable_nodes
+            gt_text = gt_text_dict.get(xpath)
             # Define Fixed-nodes
             if not is_variable:
-                new_doc_strings.append((text, xpath, "fixed-node"))
+                new_doc_strings.append((text, xpath, "fixed-node", gt_text)) #!Add here the gt_text
             # Define Variable-nodes
             else:
                 gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
-                new_doc_strings.append((text, xpath, gt_field))
+                new_doc_strings.append((text, xpath, gt_field, gt_text))
 
         cleaned_features_for_this_website[page_id] = new_doc_strings
 
@@ -594,6 +610,8 @@ def main(_):
     swde_path = FLAGS.input_groundtruth_path.split("groundtruth")[0]
     p = Path(swde_path) / "WAE"
     websites = sorted([x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())])
+
+    websites = websites[:] #! Limit the amount of websites
 
     # websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
 

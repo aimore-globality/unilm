@@ -31,31 +31,6 @@ dataset = 'develop'
 # %% [markdown]
 # # Packed Data (Data after pack_data.py)
 
-# %% [markdown]
-# ## SWDE data 
-
-# %% tags=[]
-# data_path = '../../../swde/sourceCode/swde_small.pickle'
-# data_packed = pd.read_pickle(data_path)
-# len(data_packed)
-
-# %% tags=[]
-# data_packed[:1]
-
-# %% [markdown] tags=[]
-# ### Ground Truth
-
-# %% tags=[]
-# gt_path = Path('../../../swde/sourceCode/groundtruth/auto/')
-# gt_file = [x for x in list(gt_path.iterdir())][0] 
-# with open(gt_file) as text:
-#     lines = text.readlines()
-#     for l in lines:
-#         print(l)
-
-# %% [markdown]
-# ## My data
-
 # %% tags=[]
 data_path = f'../../../swde/my_data/{dataset}/my_CF_sourceCode/wae.pickle'
 data_packed = pd.read_pickle(data_path)
@@ -82,20 +57,6 @@ for gt_file in list(gt_path.iterdir())[:]:
 #
 
 # %% [markdown] tags=[]
-# ## SWDE data 
-
-# %% tags=[]
-# website_data_path = Path.cwd().parents[2] / 'swde/swde_processed/auto-msn-3.pickle'
-# df = pd.read_pickle(website_data_path)
-
-# %% tags=[]
-# page_index = '0000'
-# pd.DataFrame(df[page_index], columns=['text', 'xpath', 'node-type'])
-
-# %% [markdown] tags=[]
-# ## My data 
-
-# %% [markdown] tags=[]
 # ## Check if all websites have at least one tag
 
 # %% tags=[]
@@ -113,27 +74,39 @@ assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} 
 
 # %% tags=[]
 from tqdm import tqdm
+
+all_dfs = {}
 for website_path in tqdm(websites_data_path):
+    dfs = []
     website_data = pd.read_pickle(website_path)
-    print(f"{website_path} {len(website_data)}")
-    for page_index in website_data.keys():
-        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
-        # assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
-    if website_path == '/data/GIT/swde/my_data/develop/my_CF_processed/direct.com.pickle':
-        break
+    break
+    # print(f"{website_path} {len(website_data)}")
+    # # if website_path == '/data/GIT/swde/my_data/develop/my_CF_processed/ciphr.com.pickle':
+    # for page_index in website_data.keys():
+    #     df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type', 'gt_text'])
+    #     df['gt_text_len'] = df['gt_text'].apply(len)
+    #     dfs.append(df)
+
+    # all_dfs[website_path.parts[-1].split(".pickle")[0]] = dfs
+
+    # # assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
+    # # break
 
 # %%
-website_path
-
-# %% tags=[]
-print(website_path, len(website_data))
-
-# %% tags=[]
-df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type'])
-df
+website_data['0000'][0]
 
 # %%
-'PAST_CLIENT' in text_avg
+import numpy as np
+for enum, (website, dfs) in enumerate(all_dfs.items()):
+    # print(website)
+    for df in dfs:
+        if np.any(df["gt_text_len"] > 1):
+            display(df)
+            break
+
+# %% tags=[]
+# df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type', 'gt_text'])
+df[df['node-type'] == "PAST_CLIENT"]
 
 # %%
 from tqdm.notebook import tqdm

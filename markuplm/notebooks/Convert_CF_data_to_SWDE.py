@@ -307,12 +307,7 @@ assert negative_fraction - 0.01 < final_negative_fraction < negative_fraction + 
 
 # %% tags=[]
 df_positives_negatives = df_positives.append(df_negatives_sample)
-
-# %%
-len(df_positives_negatives)
-
-# %%
-len(set(df_positives_negatives['domain']))
+print(f"Positive negatives: '{len(df_positives_negatives)}' pages and '{len(set(df_positives_negatives['domain']))}' domains")
 
 # %% [markdown]
 # # Save intermediate Data
@@ -337,23 +332,24 @@ pageid_url_mapping = {}
 
 raw_data_folder = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceCode'
 
-if os.path.exists(raw_data_folder):
-    print(f'Are you sure you want to remove this folder? (y/n) \n{raw_data_folder}')
-    # answer = input()
-    answer = 'y'
-    if answer == 'y':
-        try:
-            shutil.rmtree(raw_data_folder)
-            print(f"REMOVED: {raw_data_folder}")
-        except OSError as e:
-            print ("Error: %s - %s." % (e.filename, e.strerror))
+# if os.path.exists(raw_data_folder): #! Uncomment
+#     print(f'Are you sure you want to remove this folder? (y/n) \n{raw_data_folder}')
+#     # answer = input()
+#     answer = 'n'
+#     if answer == 'y':
+#         try:
+#             shutil.rmtree(raw_data_folder)
+#             print(f"REMOVED: {raw_data_folder}")
+#         except OSError as e:
+#             print ("Error: %s - %s." % (e.filename, e.strerror))
+
 # else:
 #     print(f"File '{groundtruth_data_path}' not found in the directory")
     
 domains = list(df_positives_negatives.domain.value_counts().index)
 
 groundtruth_data_path = raw_data_folder / 'groundtruth'
-groundtruth_data_path.mkdir(parents=True, exist_ok=True)
+# groundtruth_data_path.mkdir(parents=True, exist_ok=True) #! Uncomment
 
 for e, domain in enumerate(domains):        
     df_domain = df_positives_negatives[df_positives_negatives.domain == domain]
@@ -376,18 +372,18 @@ for e, domain in enumerate(domains):
         url = df_page['url']
         pageid_url_mapping[pageid] = [url]
         
-        Html_file = open(raw_data_path, "w")
-        Html_file.write(html)
-        Html_file.close()
+        # Html_file = open(raw_data_path, "w") #! Uncomment
+        # Html_file.write(html)
+        # Html_file.close()
         
         page_count += 1
-                
-        # Get groundtruth for page for each tag
+
+        # #? Get groundtruth for page for each tag
         for tag in ["PAST_CLIENT"]:            
             domain_annotations[tag] = domain_annotations.get(tag, [])
             if not df_page.isnull()[f'{tag}-gt_text']:
                 annotations = df_page[f'{tag}-gt_text']                
-                # Remove image links from text annotation
+                # #? Remove image links from text annotation
                 annotate = [annotation.strip() if (annotation and 'http' not in annotation.strip()) else '' for annotation in annotations]
             else:
                 annotate = []
@@ -397,30 +393,30 @@ for e, domain in enumerate(domains):
         # if raw_data_path.name == '0042.htm':
         #     break
         
-    # Save groundtruth    
+    # #? Save groundtruth    
     for tag, page_annotations in domain_annotations.items():
         groundtruth_data_tag_path = groundtruth_data_path / f"{domain}-{tag}.txt"
         # print(groundtruth_data_tag_path)
 
         page_annotations_df = pd.DataFrame(page_annotations)
         
-        # Count number of annotations
+        # #? Count number of annotations
         page_annotations_df['number of values'] = page_annotations_df.T.count()        
         
-        # Invert columns order 
+        # #? Invert columns order 
         cols = page_annotations_df.columns.tolist()
         page_annotations_df = page_annotations_df[cols[::-1]] 
         
-        # Get page index
+        # #? Get page index
         page_annotations_df.reset_index(inplace=True)
         page_annotations_df['index'] = page_annotations_df['index'].apply(lambda x: str(x).zfill(4))
         
-        # Add one extra row on the top
+        # #? Add one extra row on the top
         page_annotations_df.loc[-1] = page_annotations_df.count()  # adding a row
         page_annotations_df.index = page_annotations_df.index + 1  # shifting index
         page_annotations_df = page_annotations_df.sort_index()
         
-        page_annotations_df.to_csv(groundtruth_data_tag_path, sep="\t", index=False)
+        # page_annotations_df.to_csv(groundtruth_data_tag_path, sep="\t", index=False) #! Uncomment
 
 # %%
 pd.to_pickle(pageid_url_mapping, f"/data/GIT/swde/my_data/{dataset}/my_CF_sourceCode/pageid_url_mapping.pkl")

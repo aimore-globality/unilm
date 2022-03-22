@@ -270,6 +270,9 @@ results_grouped = results_grouped.drop(["domain"], axis=1)
 
 # # ? Set index from both dataframes
 results_grouped = results_grouped.set_index("url")
+# -
+
+# ### Merge develop with results_grouped (predictions from MarkupLM)
 
 # +
 merge = df.join(results_grouped).reset_index()
@@ -277,16 +280,9 @@ merge = df.join(results_grouped).reset_index()
 merge["node_companies_tax"] = merge["node_companies_tax"].fillna("").apply(list)
 for mode, index in mode_indices.items():
     merge[f"{mode}-node_companies_tax"] = merge[f"{mode}-node_companies_tax"].fillna("").apply(list)
+# -
 
-# +
-print("WAPC")
-metrics_dataset, metrics_per_domain, fig, fig_adjusted = get_metrics_and_plots(merge)
-display(metrics_dataset)
-
-for mode in mode_indices:
-    print(mode)
-    metrics_dataset, metrics_per_domain, fig, fig_adjusted = get_metrics_and_plots(merge, predicted_col=f"{mode}-node_companies_tax", gt_col="PAST_CLIENT-gt_value")
-    display(metrics_dataset)
+# ### Compute Metrics
 
 # +
 print("WAPC")

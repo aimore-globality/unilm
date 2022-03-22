@@ -192,7 +192,10 @@ class LModel():
                 print(f"Saving features into cached file: {cached_features_file}\n")
                 torch.save(features, cached_features_file)
 
-        return website, features
+        if self.parallelize:
+            return website, features
+        else:
+            return features
 
     def get_dataset_and_info_for_websites(self, websites: List, evaluate=False):
         print("Getting data information for websites: ")
@@ -236,6 +239,7 @@ class LModel():
                     f.involved_first_tokens_xpaths, #? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
                     f.involved_first_tokens_types, #? ['none', 'none', 'none', 'none', 'none']
                     f.involved_first_tokens_text, #? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
+                    f.involved_first_tokens_gt_text, #? 
                 )
                 for f in all_features
             ]
@@ -508,13 +512,16 @@ class LModel():
                 involved_first_tokens_xpaths,
                 involved_first_tokens_types,
                 involved_first_tokens_text,
+                involved_first_tokens_gt_text,
             ) = sub_info
 
-            for pos, xpath, type, text in zip(
+            for pos, xpath, type, text, gt_text in zip(
                 involved_first_tokens_pos,
                 involved_first_tokens_xpaths,
                 involved_first_tokens_types,
                 involved_first_tokens_text,
+                involved_first_tokens_gt_text,
+
             ):
 
                 pred = sub_prob[pos] #? This gets the first logit of each respective node
@@ -526,6 +533,8 @@ class LModel():
                     all_res[html_path][xpath]["pred"] = pred
                     all_res[html_path][xpath]["truth"] = type
                     all_res[html_path][xpath]["text"] = text
+                    all_res[html_path][xpath]["gt_text"] = gt_text
+                    
                 else:
                     all_res[html_path][xpath]["pred"] += pred
                     assert all_res[html_path][xpath]["truth"] == type
@@ -535,6 +544,7 @@ class LModel():
             "html_path": [],
             "xpath": [],
             "text": [],
+            "gt_text": [],
             "truth": [],
             "pred_type": [],
             "final_probs": []
@@ -550,6 +560,7 @@ class LModel():
 
                 lines["html_path"].append(html_path)
                 lines["xpath"].append(xpath)
+                lines["gt_text"].append(all_res[html_path][xpath]["gt_text"])
                 lines["text"].append(all_res[html_path][xpath]["text"])
                 lines["truth"].append(all_res[html_path][xpath]["truth"])
                 lines["pred_type"].append(pred_type)
