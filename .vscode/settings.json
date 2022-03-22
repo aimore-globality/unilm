@@ -11,7 +11,13 @@
         "editor.selectionBackground": "#c26060c0",
         "editor.selectionHighlightBackground": "#00ff553a",
         "editor.findMatchBackground": "#00cc44f8",
-        "editor.findMatchHighlightBackground": "#ff7b00d0"
+        "editor.findMatchHighlightBackground": "#ff7b00d0",
+        "editorGroup.border": "#f5f0b0",
+        "sash.hoverBorder": "#f5f0b0",
+        "titleBar.activeBackground": "#f0e883",
+        "titleBar.activeForeground": "#15202b",
+        "titleBar.inactiveBackground": "#f0e88399",
+        "titleBar.inactiveForeground": "#15202b99"
     },
     "python.formatting.provider": "black"
 }
