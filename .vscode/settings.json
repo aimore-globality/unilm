@@ -6,7 +6,9 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "jupyter.sendSelectionToInteractiveWindow": true,
-    "key": "shift+enter",           "command": "jupyter.execSelectionInteractive", "when": "editorTextFocus",
+    "key": "shift+enter",
+    "command": "jupyter.execSelectionInteractive",
+    "when": "editorTextFocus",
     "workbench.colorCustomizations": {
         "editor.selectionBackground": "#c26060c0",
         "editor.selectionHighlightBackground": "#00ff553a",
@@ -19,5 +21,7 @@
         "titleBar.inactiveBackground": "#f0e88399",
         "titleBar.inactiveForeground": "#15202b99"
     },
-    "python.formatting.provider": "black"
+    "vs-external-tools.externalCommand1.command": "/home/ubuntu/miniconda3/bin/globality-black",
+    "vs-external-tools.externalCommand1.args": ["$(ItemPath)"]
+
 }
