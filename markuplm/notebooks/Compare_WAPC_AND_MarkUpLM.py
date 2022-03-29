@@ -31,7 +31,7 @@ pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
 
 # %%
 segmenter_trained =["trained", "untrained", "extreme_untrained"][0]
-predict_and_segment = False
+predict_and_segment = True
 
 tag="PAST_CLIENT"
 negative_percentage = 0.1
@@ -41,6 +41,7 @@ negative_percentage = 0.1
 
 # %% tags=[]
 data_path = f"develop_{segmenter_trained}_WAPC.pkl"
+print(f"data_path: {data_path}")
 
 if predict_and_segment:
     # # ? Load Data
@@ -90,7 +91,7 @@ if predict_and_segment:
     # # ? Predict
     df['extracted_entities'] = pc.predict_batch(df.index, df['html'], df['content_type'])
 
-    df["WAPC-node_company_spam_taxonomy"] = df["extracted_entities"].apply(lambda extraction: [(y.text, y.text, y.taxonomy_uris[0]) for y in extraction]) #! If I change the way the extracted entities are generating `text`` I will have to change it here too
+    df["WAPC-node_company_span_taxonomy"] = df["extracted_entities"].apply(lambda extraction: [(y.text, y.text, y.taxonomy_uris[0]) for y in extraction]) #! If I change the way the extracted entities are generating `text`` I will have to change it here too
     
     df.to_pickle(data_path)
 else:
@@ -104,7 +105,7 @@ else:
 domain_metrics = get_reconciliations_metrics_for_all_domains(
     df = df,
     gt_col = f"{tag}-gt_value",
-    predicted_col = "WAPC-node_company_spam_taxonomy",
+    predicted_col = "WAPC-node_company_span_taxonomy",
     annotations_col = "PAST_CLIENT-annotations",
     negative_percentage = negative_percentage)
 average_domains_metrics(domain_metrics)
@@ -189,7 +190,9 @@ average_domains_metrics(domain_metrics)
 
 # %%
 classified_nodes_data_path = "results_classified_5_epoch.pkl"
-data_path = f"results_classified_5_epoch_segmented_{segmenter_trained}.pkl"
+data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
+print(f"data_path: {data_path}")
+
 if predict_and_segment:
     results = pd.read_pickle(classified_nodes_data_path)
     results = results.reset_index().drop('index', axis=1)
@@ -212,26 +215,30 @@ if predict_and_segment:
 
     print(len(gazetteer.segmenter))
     optimal_paral = OptimalParallel()
-    node_company_spam = optimal_paral.parallelize_optimally(
+    node_company_span = optimal_paral.parallelize_optimally(
         series=results["text"],
         series_measurement=results["text"].apply(len),
         function=gazetteer._segment_companies,
     )
 
-    node_company_spam = node_company_spam.fillna("").apply(list)
+    node_company_span = node_company_span.fillna("").apply(list)
 
     value_to_taxonomy_mappings = dict(
         [(company.name, company.uri) for company in graph.known_company_taxonomy]
     )
 
-    results["node_company_spam_taxonomy"] = node_company_spam.apply(lambda company_spam: [(x[0], x[1], value_to_taxonomy_mappings.get(x[0])) for x in company_spam])
+    results["node_company_span_taxonomy"] = node_company_span.apply(lambda company_span: [(x[0], x[1], value_to_taxonomy_mappings.get(x[0])) for x in company_span])
     
     results.to_pickle(data_path)
 else:
     results = pd.read_pickle(data_path)
 
 # %%
-# # ? Get the Segmentations (company_span)
+results = pd.read_pickle(classified_nodes_data_path)
+results
+
+# %%
+# # ? Get the Segmentations (company_span_taxonomy)
 mode_indices = dict(
     model=results[results["pred_type"] == "PAST_CLIENT"].index,
     ground_truth=results[results["truth"] == "PAST_CLIENT"].index,
@@ -244,23 +251,20 @@ for mode, index in mode_indices.items():
     results.loc[~results.index.isin(index), f"{mode}-node_company_span_taxonomy"] = ''
     results[f"{mode}-node_company_span_taxonomy"] = results[f"{mode}-node_company_span_taxonomy"].apply(list)
 
-# # ? 
 model_count = results['model-node_company_span_taxonomy'].apply(len).sum()
 ground_truth_count = results['ground_truth-node_company_span_taxonomy'].apply(len).sum()
 no_classification_count = results['no_classification-node_company_span_taxonomy'].apply(len).sum()
 print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {ground_truth_count}, no_classification_count: {no_classification_count}")
 
 # %%
-
-# %%
 # # ? Group reconciliations per node into reconciliation per page
 results_grouped = pd.DataFrame(
     results.groupby(by="html_path").agg(
         {
-            "node_company_spam_taxonomy": lambda x: combine_and_get_set(x), # TODO: Check how is this going to work
-            "model-node_company_spam_taxonomy": lambda x: combine_and_get_set(x),
-            "ground_truth-node_company_spam_taxonomy": lambda x: combine_and_get_set(x),
-            "no_classification-node_company_spam_taxonomy": lambda x: combine_and_get_set(x),
+            "node_company_span_taxonomy": lambda x: combine_and_get_set(x), 
+            "model-node_company_span_taxonomy": lambda x: combine_and_get_set(x),
+            "ground_truth-node_company_span_taxonomy": lambda x: combine_and_get_set(x),
+            "no_classification-node_company_span_taxonomy": lambda x: combine_and_get_set(x),
             "domain": lambda x: list(x)[0],
         }
     )
@@ -285,9 +289,9 @@ results_grouped = results_grouped.set_index("url")
 # %%
 merge = df.join(results_grouped).reset_index()
 
-merge["node_company_spam_taxonomy"] = merge["node_company_spam_taxonomy"].fillna("").apply(list)
+merge["node_company_span_taxonomy"] = merge["node_company_span_taxonomy"].fillna("").apply(list)
 for mode, index in mode_indices.items():
-    merge[f"{mode}-node_company_spam_taxonomy"] = merge[f"{mode}-node_company_spam_taxonomy"].fillna("").apply(list)
+    merge[f"{mode}-node_company_span_taxonomy"] = merge[f"{mode}-node_company_span_taxonomy"].fillna("").apply(list)
 
 # %% [markdown]
 # ### Compute Metrics
@@ -297,32 +301,20 @@ from pathlib import Path
 
 taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
 
-if trained:
-    print(f"Metrics with the Segmenter Trained!")
-elif extreme:
-    print(f"Metrics with the Segmenter Extreme Untrained!")
-else:
-    print(f"Metrics with the Segmenter Untrained!")
+print(f"Metrics with the Segmenter {segmenter_trained}!")
 
 for mode in ["WAPC"]+list(mode_indices.keys()):
     print(mode)
     domain_metrics = get_reconciliations_metrics_for_all_domains(
         df=merge,
         gt_col=f"{tag}-gt_value",
-        predicted_col=f"{mode}-node_company_spam_taxonomy",
+        predicted_col=f"{mode}-node_company_span_taxonomy",
         annotations_col="PAST_CLIENT-annotations",
         negative_percentage=negative_percentage,
     )
     display(calculate_metrics_for_dataset(domain_metrics))
 
-    folder_path = Path("/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer")
-    if trained:
-        folder_path = folder_path / "segmenter_trained"
-    elif extreme:
-        folder_path = folder_path / "segmenter_extreme_untrained"
-    else:
-        folder_path = folder_path / "segmenter_untrained"
-
+    folder_path = Path(f"/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer/segmenter_{segmenter_trained}")
     folder_path.mkdir(parents=True, exist_ok=True)
     folder_path = str(folder_path)
 
@@ -344,136 +336,11 @@ for mode in ["WAPC"]+list(mode_indices.keys()):
 print(folder_path)
 
 # %%
-from pathlib import Path
-
-taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
-
-if trained:
-    print(f"Metrics with the Segmenter Trained!")
-else:
-    print(f"Metrics with the Segmenter Untrained!")
-for mode in ["WAPC"]+list(mode_indices.keys()):
-    print(mode)
-    domain_metrics = get_reconciliations_metrics_for_all_domains(
-        df=merge,
-        gt_col=f"{tag}-gt_value",
-        predicted_col=f"{mode}-node_company_spam_taxonomy",
-        annotations_col="PAST_CLIENT-annotations",
-        negative_percentage=negative_percentage,
-    )
-    display(calculate_metrics_for_dataset(domain_metrics))
-
-    folder_path = Path("/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer")
-    if trained:
-        folder_path = folder_path / "segmenter_trained"
-    else:
-        folder_path = folder_path / "segmenter_untrained"
-
-    folder_path.mkdir(parents=True, exist_ok=True)
-    folder_path = str(folder_path)
-
-    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
-    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
-
-    fn = pd.DataFrame(domain_metrics["FN_seg"])
-    fn = fn["FN_seg"].explode().dropna()
-    fn_df = pd.DataFrame()
-    fn_df["FN_gt_value"] = fn_df.apply(lambda x: x[0])
-    fn_df["FN_gt_text"] = fn_df.apply(lambda x: x[1])
-    fn_df.value_counts()
-    fn_df = pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FN_pred"])).value_counts(), columns=["counts"]).reset_index()
-    fn_df["FN_company_name"] = fn_df["index"].apply(lambda x: taxonomy_to_value_mappings.get(x))
-    fn_df["company_name"] = fn_df["index"].apply(lambda x: taxonomy_to_value_mappings.get(x))
-    
-    fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
+# with pd.option_context('min_rows', 200, 'max_rows', 200, 'max_colwidth', 200): 
+#    display(pd.DataFrame(pd.Series([x for y in domain_metrics.FP_pred for x in y]).value_counts()))
 
 # %%
-from pathlib import Path
-
-taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
-
-if trained:
-    print(f"Metrics with the Segmenter Trained!")
-else:
-    print(f"Metrics with the Segmenter Untrained!")
-for mode in ["WAPC"]+list(mode_indices.keys()):
-    print(mode)
-    domain_metrics = get_reconciliations_metrics_for_all_domains(
-        df=merge,
-        gt_col=f"{tag}-gt_value",
-        predicted_col=f"{mode}-node_company_spam_taxonomy",
-        annotations_col="PAST_CLIENT-annotations",
-        negative_percentage=negative_percentage,
-    )
-    display(calculate_metrics_for_dataset(domain_metrics))
-
-    folder_path = Path("/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer")
-    if trained:
-        folder_path = folder_path / "segmenter_trained"
-    else:
-        folder_path = folder_path / "segmenter_untrained"
-
-    folder_path.mkdir(parents=True, exist_ok=True)
-    folder_path = str(folder_path)
-
-    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
-    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
-
-    fn_df = pd.DataFrame(domain_metrics["FN_seg"])
-    fn_df = fn_df["FN_seg"].explode().dropna()
-    fn_df["FN_gt_value"] = fn_df.apply(lambda x: x[0])
-    fn_df["FN_gt_text"] = fn_df.apply(lambda x: x[1])
-    fn_df.value_counts()
-    fn_df = pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FN_pred"])).value_counts(), columns=["counts"]).reset_index()
-    fn_df["FN_company_name"] = fn_df["index"].apply(lambda x: taxonomy_to_value_mappings.get(x))
-    fn_df["company_name"] = fn_df["index"].apply(lambda x: taxonomy_to_value_mappings.get(x))
-    
-    fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
-
-# %%
-from pathlib import Path
-
-taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
-
-if trained:
-    print(f"Metrics with the Segmenter Trained!")
-else:
-    print(f"Metrics with the Segmenter Untrained!")
-for mode in ["WAPC"]+list(mode_indices.keys()):
-    print(mode)
-    domain_metrics = get_reconciliations_metrics_for_all_domains(
-        df=merge,
-        gt_col=f"{tag}-gt_value",
-        predicted_col=f"{mode}-node_company_spam_taxonomy",
-        annotations_col="PAST_CLIENT-annotations",
-        negative_percentage=negative_percentage,
-    )
-    display(calculate_metrics_for_dataset(domain_metrics))
-
-    # folder_path = Path("/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer")
-    # if trained:
-    #     folder_path = folder_path / "segmenter_trained"
-    # else:
-    #     folder_path = folder_path / "segmenter_untrained"
-
-    # folder_path.mkdir(parents=True, exist_ok=True)
-    # folder_path = str(folder_path)
-
-    # pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
-    # pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
-    # fn_df = pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FN_pred"])).value_counts(), columns=["counts"]).reset_index()
-    # fn_df["company_name"] = fn_df["index"].apply(lambda x: taxonomy_to_value_mappings.get(x))
-    # fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
-
-# %%
-with pd.option_context('min_rows', 200, 'max_rows', 200, 'max_colwidth', 200): 
-   display(pd.DataFrame(pd.Series([x for y in domain_metrics.FP_pred for x in y]).value_counts()))
-
-# %% [markdown]
-# ---
-
-# %%
-domain_metrics.drop(["TP_pred","FP_pred","FN_pred","TP_seg","FP_seg","FN_seg"], axis=1)
+# domain_metrics.drop(["TP_pred","FP_pred","FN_pred","TP_seg","FP_seg","FN_seg"], axis=1)
 
 # %%
 # with pd.option_context("max_rows", 200, "min_rows", 200):
