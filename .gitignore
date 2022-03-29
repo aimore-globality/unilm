@@ -102,3 +102,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+markuplm/notebooks/develop_WAPC_cache/develop_extreme_untrained_WAPC.pkl
+markuplm/notebooks/develop_WAPC_cache/develop_trained_WAPC.pkl
+markuplm/notebooks/develop_WAPC_cache/develop_untrained_WAPC.pkl

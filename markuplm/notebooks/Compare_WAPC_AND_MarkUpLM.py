@@ -30,7 +30,7 @@ graph = create_object_graph('test')
 pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
 
 # %%
-segmenter_trained =["trained", "untrained", "extreme_untrained"][0]
+segmenter_trained =["trained", "untrained", "extreme_untrained"][2]
 predict_and_segment = True
 
 tag="PAST_CLIENT"
@@ -40,8 +40,9 @@ negative_percentage = 0.1
 # ## Load the SWDE-CF data
 
 # %% tags=[]
-data_path = f"develop_{segmenter_trained}_WAPC.pkl"
-print(f"data_path: {data_path}")
+save_load_data_path = Path(f"develop_WAPC_cache/develop_{segmenter_trained}_WAPC.pkl")
+save_load_data_path.mkdir(parents=True, exist_ok=True)
+print(f"save_load_data_path: {save_load_data_path}")
 
 if predict_and_segment:
     # # ? Load Data
@@ -93,9 +94,9 @@ if predict_and_segment:
 
     df["WAPC-node_company_span_taxonomy"] = df["extracted_entities"].apply(lambda extraction: [(y.text, y.text, y.taxonomy_uris[0]) for y in extraction]) #! If I change the way the extracted entities are generating `text`` I will have to change it here too
     
-    df.to_pickle(data_path)
+    df.to_pickle(save_load_data_path)
 else:
-    df = pd.read_pickle(data_path)
+    df = pd.read_pickle(save_load_data_path)
 
 
 # %% [markdown]
@@ -189,18 +190,19 @@ average_domains_metrics(domain_metrics)
 # # Load Results from MarkupLM Trained Model and display metrics 
 
 # %%
+classified_nodes_folder_root = Path("results_classified")
+classified_nodes_folder_root.mkdir(parents=True, exist_ok=True)
 classified_nodes_data_path = "results_classified_5_epoch.pkl"
-data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
-print(f"data_path: {data_path}")
+save_load_data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
+print(f"save_load_data_path: {save_load_data_path}")
 
 if predict_and_segment:
-    results = pd.read_pickle(classified_nodes_data_path)
+    results = pd.read_pickle(str(classified_nodes_folder_root / classified_nodes_data_path))
     results = results.reset_index().drop('index', axis=1)
     results["text"] = results["text"].apply(lambda x: f" {x} ")
 
     results["text"] = results["text"].str.replace("&amp;", "&")
     results["text"] = results["text"].str.replace("&AMP;", "&")
-    
 
     if segmenter_trained in ["trained"]:
         gazetteer = pc.segmenter_html
@@ -223,19 +225,13 @@ if predict_and_segment:
 
     node_company_span = node_company_span.fillna("").apply(list)
 
-    value_to_taxonomy_mappings = dict(
-        [(company.name, company.uri) for company in graph.known_company_taxonomy]
-    )
+    value_to_taxonomy_mappings = dict([(company.name, company.uri) for company in graph.known_company_taxonomy])
 
     results["node_company_span_taxonomy"] = node_company_span.apply(lambda company_span: [(x[0], x[1], value_to_taxonomy_mappings.get(x[0])) for x in company_span])
     
-    results.to_pickle(data_path)
+    results.to_pickle(save_load_data_path)
 else:
-    results = pd.read_pickle(data_path)
-
-# %%
-results = pd.read_pickle(classified_nodes_data_path)
-results
+    results = pd.read_pickle(save_load_data_path)
 
 # %%
 # # ? Get the Segmentations (company_span_taxonomy)
