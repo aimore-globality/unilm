@@ -2,10 +2,11 @@ from __future__ import absolute_import, division, print_function
 import multiprocessing as mp
 import argparse
 import collections
-# import copy
+import sys
 import glob
 import logging
 import os
+
 import random
 from pathlib import Path
 from typing import List
@@ -27,6 +28,8 @@ from markuplmft.models.markuplm import (
     MarkupLMTokenizer,
 )
 from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
+import wandb
+
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ def train(
     max_grad_norm,
     logging_steps,
     evaluate_during_training,
-    save_steps,
+    save_at_each_epoch,
     train_dataset, 
     model, 
     sub_output_dir, 
@@ -78,9 +81,17 @@ def train(
     Train the model
     """
     if local_rank in [-1, 0]:
-        tb_writer = SummaryWriter()
+        defaults = {}
+        resume = sys.argv[-1] == "--resume"
+        
+        run = wandb.init(
+            project="LanguageModel", config=defaults, resume=resume
+        )
+
+        # tb_writer = SummaryWriter()
     else:
-        tb_writer = None
+        # tb_writer = None
+        run = None
 
     train_batch_size = per_gpu_train_batch_size * max(1, n_gpu)
     train_sampler = RandomSampler(train_dataset) if local_rank == -1 else DistributedSampler(train_dataset)
@@ -99,7 +110,6 @@ def train(
         t_total = len(train_dataloader) // gradient_accumulation_steps * num_train_epochs
 
     # Prepare optimizer and schedule (linear warmup and decay)
-    # TODO (Aimore): Improve the name of these variables
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
         {
@@ -174,7 +184,7 @@ def train(
                 "labels": batch_list[5],
             }
 
-            outputs = model(**inputs)
+            outputs = model(**inputs) #? outputs = {'loss': 0.7894, 'logits': tensor.shape = [16, 384, 2]}
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
             if n_gpu > 1:
@@ -188,8 +198,9 @@ def train(
             else:
                 loss.backward()
 
-            tr_loss += loss.item()
-            if (step + 1) % gradient_accumulation_steps == 0:
+            tr_loss += loss.item() #? Convert tensort to float
+
+            if (step + 1) % gradient_accumulation_steps == 0: #? Does the optimization after a number of accumulated batch steps
                 if fp16:
                     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), max_grad_norm)
                 else:
@@ -211,27 +222,35 @@ def train(
                         # results = evaluate(args, model, tokenizer, prefix=str(global_step))
                         # for key, value in results.items():
                         #    tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                    tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar("loss", (tr_loss - logging_loss) / logging_steps, global_step)
-                    logging_loss = tr_loss
 
-                if (
-                    local_rank in [-1, 0]
-                    and save_steps > 0
-                    and global_step % save_steps == 0
-                ):
-                    # Save model checkpoint
-                    save_model(sub_output_dir, model, global_step)
+                    # tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
+                    # tb_writer.add_scalar("loss", (tr_loss - logging_loss) / logging_steps, global_step)
+
+                    wandb.log({"lr": scheduler.get_lr()[0], "global_step": global_step})
+                    wandb.log({"loss": (tr_loss - logging_loss) / logging_steps, "global_step": global_step})
+
+                    logging_loss = tr_loss
 
             if 0 < max_steps < global_step:
                 epoch_iterator.close()
                 break
+
         if 0 < max_steps < global_step:
             train_iterator.close()
             break
 
+        if (
+            local_rank in [-1, 0]
+            and save_at_each_epoch > 0
+            and global_step % save_at_each_epoch == 0
+        ):
+            # Save model checkpoint
+            save_model(sub_output_dir, model, global_step)
+
     if local_rank in [-1, 0]:
-        tb_writer.close()
+        wandb.run.save()
+        wandb.finish()
+        # tb_writer.close()
 
     return global_step, tr_loss / global_step
 
@@ -242,7 +261,7 @@ def save_model(sub_output_dir, model, global_step):
     model_to_save = model.module if hasattr(model, "module") else model
     # Take care of distributed/parallel training
     model_to_save.save_pretrained(output_dir)
-    torch.save(args, os.path.join(output_dir, "training_args.bin"))
+    # torch.save(args, os.path.join(output_dir, "training_args.bin")) #! The arguments are not being saved.
     logger.info(f"AIMORE - Saving model checkpoint to {output_dir}")
 
 def predict_on_website(per_gpu_eval_batch_size, n_gpu, local_rank, device, model, website):
@@ -487,7 +506,7 @@ def save_model_and_tokenizer(sub_output_dir, model, tokenizer, args):
     model_to_save = model.module if hasattr(model, "module") else model
     model_to_save.save_pretrained(sub_output_dir)
     tokenizer.save_pretrained(sub_output_dir)
-    torch.save(args, os.path.join(sub_output_dir, "training_args.bin"))
+    torch.save(args, os.path.join(sub_output_dir, "training_args.txt"))
 
 def do_something(train_websites, test_websites, args, config, tokenizer):
     # before each run, we reset the seed
@@ -544,7 +563,7 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
         model.to(args.device)
 
         result = evaluate(**args.__dict__, model=model, test_websites=test_websites)
-
+        
         logger.info(f"Results: {result}")
 
         return result
@@ -715,10 +734,10 @@ def main():
         help="Log every X updates steps.",
     )
     parser.add_argument(
-        "--save_steps",
+        "--save_at_each_epoch",
         type=int,
-        default=3000,
-        help="Save checkpoint every X updates steps.",
+        default=0,
+        help="Save checkpoint every X epoch updates.",
     )
     parser.add_argument(
         "--no_cuda",
@@ -829,7 +848,7 @@ def main():
     ]
 
     websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
-    # websites = websites[:10] #! Just for speed reasons
+    websites = websites[:10] #! Just for speed reasons
 
     train_websites = websites
     test_websites = websites
