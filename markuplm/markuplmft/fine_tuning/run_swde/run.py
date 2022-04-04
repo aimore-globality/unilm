@@ -800,18 +800,18 @@ def main():
     ):
         raise ValueError(f"Output directory ({args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome.")
 
-    # Setup CUDA, GPU & distributed training
+    #? Setup CUDA, GPU & distributed training
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         args.n_gpu = torch.cuda.device_count() if not args.no_cuda else 0
-    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+    else:  #? Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.cuda.set_device(args.local_rank)
         device = torch.device("cuda", args.local_rank)
         torch.distributed.init_process_group(backend="nccl")
         args.n_gpu = 1
     args.device = device
 
-    # Setup logging
+    #? Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -825,13 +825,13 @@ def main():
         f"16-bits training: {args.fp16}"
     )
 
-    # Set seed
+    #? Set seed
     set_seed(args.seed, args.n_gpu)
 
-    # Load pretrained model and tokenizer
+    #? Load pretrained model and tokenizer
     if args.local_rank not in [-1, 0]:
         torch.distributed.barrier()
-        # Make sure only the first process in distributed training will download model & vocab
+        #? Make sure only the first process in distributed training will download model & vocab
 
     config = MarkupLMConfig.from_pretrained(args.model_name_or_path)
     config_dict = config.to_dict()

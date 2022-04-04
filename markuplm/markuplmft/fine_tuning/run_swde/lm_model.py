@@ -97,7 +97,6 @@ class LModel():
 
         self.do_train = True
         self.parallelize = True
-        self.max_steps = -1
 
         #? Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
