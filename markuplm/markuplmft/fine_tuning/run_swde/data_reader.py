@@ -1,35 +1,24 @@
 from __future__ import absolute_import, division, print_function
 import multiprocessing as mp
-import argparse
-from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
 # import copy
 from pprint import pprint
-import collections
-import glob
 import logging
 import os
 import random
 from pathlib import Path
 from typing import List, Dict
-import pandas as pd
 import numpy as np
 import torch
 
 # from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torch.utils.data.distributed import DistributedSampler
-from tqdm import tqdm, trange
-from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
-from markuplmft.fine_tuning.run_swde.utils import SwdeDataset, get_swde_features
+from tqdm import tqdm
+from markuplmft.fine_tuning.run_swde.data_feature_utils import SwdeDataset, get_swde_features
 
-from markuplmft.fine_tuning.run_swde import constants
+from markuplmft.fine_tuning.run_swde.utils import set_seed, get_device_and_gpu_count
 from markuplmft.models.markuplm import (
-    MarkupLMConfig,
-    MarkupLMForTokenClassification,
     MarkupLMTokenizer,
 )
-from sklearn.metrics import confusion_matrix
 
 try:
     from apex import amp
@@ -41,29 +30,17 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def set_seed(n_gpu):
-    """
-    Fix the random seed for reproduction.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(seed)
-
-
-seed = 66  #! Set the seed like other modules
 DOC_STRIDE = 128
 MAX_SEQ_LENGTH = 384
 
 
 class DataReader:
     def __init__(self, **config):
-        self.no_cuda = False
+        no_cuda = False
         self.local_rank = -1
+
+        self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
+        set_seed(self.n_gpu)
 
         self.per_gpu_train_batch_size = 24
         self.per_gpu_eval_batch_size = 24
@@ -72,8 +49,8 @@ class DataReader:
 
         self.doc_stride = DOC_STRIDE
         self.max_seq_length = MAX_SEQ_LENGTH
-        self.overwrite_cache = False
-        self.save_features = False
+        self.overwrite_cache = config["overwrite_cache"]
+        self.save_features = config["save_features"]
         self.dataset, self.info = None, None
 
         self.parallelize = config["parallelize"]
@@ -204,36 +181,26 @@ class DataReader:
             [f.xpath_subs_seq for f in all_features], dtype=torch.long
         )
 
-        if evaluate:
-            # in evaluation, we do not add labels
-            dataset = SwdeDataset(
-                all_input_ids=all_input_ids,
-                all_attention_mask=all_attention_mask,
-                all_token_type_ids=all_token_type_ids,
-                all_xpath_tags_seq=all_xpath_tags_seq,
-                all_xpath_subs_seq=all_xpath_subs_seq,
+        #! Removed the evaluation from here so that all datasets have all_labels (loss) and info
+        all_labels = torch.tensor([f.labels for f in all_features], dtype=torch.long)
+        dataset = SwdeDataset(
+            all_input_ids=all_input_ids,
+            all_attention_mask=all_attention_mask,
+            all_token_type_ids=all_token_type_ids,
+            all_xpath_tags_seq=all_xpath_tags_seq,
+            all_xpath_subs_seq=all_xpath_subs_seq,
+            all_labels=all_labels,
+        )
+        info = [
+            (
+                f.html_path,  # ? '1820productions.com.pickle-0000.htm'
+                f.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
+                f.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
+                f.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
+                f.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
+                f.involved_first_tokens_gt_text,  # ?
             )
-            info = [
-                (
-                    f.html_path,  # ? '1820productions.com.pickle-0000.htm'
-                    f.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
-                    f.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
-                    f.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
-                    f.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
-                    f.involved_first_tokens_gt_text,  # ?
-                )
-                for f in all_features
-            ]
-        else:
-            all_labels = torch.tensor([f.labels for f in all_features], dtype=torch.long)
-            dataset = SwdeDataset(
-                all_input_ids=all_input_ids,
-                all_attention_mask=all_attention_mask,
-                all_token_type_ids=all_token_type_ids,
-                all_xpath_tags_seq=all_xpath_tags_seq,
-                all_xpath_subs_seq=all_xpath_subs_seq,
-                all_labels=all_labels,
-            )
-            info = None
+            for f in all_features
+        ]
         print("... Done!")
         return dataset, info  # ? This info is used for evaluation (store the groundtruth)

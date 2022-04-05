@@ -22,6 +22,5 @@
         "titleBar.inactiveForeground": "#15202b99"
     },
     "vs-external-tools.externalCommand1.command": "/home/ubuntu/miniconda3/bin/globality-black",
-    "vs-external-tools.externalCommand1.args": ["$(ItemPath)"]
-
+    "vs-external-tools.externalCommand1.args": ["$(ItemPath)"],
 }

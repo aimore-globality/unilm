@@ -9,6 +9,7 @@ import wandb
 from pprint import pprint
 from tqdm import tqdm, trange
 import collections
+from markuplmft.fine_tuning.run_swde import constants
 
 try:
     from apex import amp
@@ -25,27 +26,11 @@ from torch import nn
 from torch.functional import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from markuplmft.fine_tuning.run_swde.utils import set_seed, get_device_and_gpu_count
 from transformers import get_linear_schedule_with_warmup
 from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-
-
-def set_seed(n_gpu):
-    """
-    Fix the random seed for reproduction.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(seed)
-
-
-seed = 66  #! Set the seed like other modules
 
 
 class Trainer:
@@ -59,7 +44,7 @@ class Trainer:
         eval_batch_size: int,
         num_epochs: int,
         max_steps: int,
-        logging_steps: int,
+        logging_every_epoch: int,
         weight_decay,
         learning_rate,
         adam_epsilon,
@@ -71,11 +56,13 @@ class Trainer:
         fp16: bool = True,
         fp16_opt_level: str = "O1",
         overwrite_output_dir: bool = False,
+        evaluate_during_training: bool = False,
+        save_every_epoch: int = 1,
     ):
         self.local_rank = -1
         self.fp16 = fp16
-        self._setup_cuda_gpu(no_cuda)
-        set_seed(self.n_gpu)
+        self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
+        set_seed(self.n_gpu)  # ? For reproducibility
 
         # ? Setting Data
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
@@ -84,7 +71,6 @@ class Trainer:
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
-
         self.train_dataset, self.train_info = train_dataset_info
         self.develop_dataset, self.develop_info = develop_dataset_info
 
@@ -92,6 +78,7 @@ class Trainer:
         self.training_dataloader_train = self._get_dataloader(self.train_dataset, True)
 
         self.max_steps = max_steps
+        print(f"self.max_steps: {self.max_steps}")
         self.num_train_epochs = num_epochs
         if self.max_steps > 0:
             self.t_total = self.max_steps
@@ -111,7 +98,10 @@ class Trainer:
         self.model = model
         self.model.to(self.device)
         self.optimizer = self._prepare_optimizer(
-            self.model, weight_decay, learning_rate, adam_epsilon
+            self.model,
+            weight_decay,
+            learning_rate,
+            adam_epsilon,
         )
 
         self.warmup_ratio = warmup_ratio
@@ -120,7 +110,7 @@ class Trainer:
         # ? Set model to use fp16 and multi-gpu
         if self.fp16:
             self.model, self.optimizer = amp.initialize(
-                self.model, self.optimizer, opt_level=fp16_opt_level
+                models=self.model, optimizers=self.optimizer, opt_level=fp16_opt_level
             )
 
         # ? multi-gpu training (should be after apex fp16 initialization)
@@ -139,9 +129,9 @@ class Trainer:
         self.max_grad_norm = max_grad_norm
 
         # self.logging_epoch = 0
-        self.evaluate_during_training = False
-        self.logging_steps = logging_steps  #! Maybe change this to logging_epoch
-        self.save_steps = 1000
+        self.evaluate_during_training = evaluate_during_training
+        self.logging_every_epoch = logging_every_epoch  #! Maybe change this to logging_epoch
+        self.save_every_epoch = save_every_epoch
 
         self.verbose = verbose
 
@@ -158,19 +148,6 @@ class Trainer:
         #! < Maybe pass this to a function before training prepare_for_training
         if self.verbose:
             print("self.__dict__", pprint(self.__dict__))
-
-    def _setup_cuda_gpu(self, no_cuda):
-        # ? Setup CUDA, GPU & distributed training
-        if self.local_rank == -1 or no_cuda:
-            self.device = torch.device(
-                "cuda" if torch.cuda.is_available() and not no_cuda else "cpu"
-            )
-            self.n_gpu = torch.cuda.device_count() if not no_cuda else 0
-        else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
-            torch.cuda.set_device(self.local_rank)
-            self.device = torch.device("cuda", self.local_rank)
-            torch.distributed.init_process_group(backend="nccl")
-            self.n_gpu = 1
 
     def _prepare_optimizer(self, model, weight_decay, learning_rate, adam_epsilon):
         no_decay = ["bias", "LayerNorm.weight"]
@@ -240,9 +217,8 @@ class Trainer:
         return batch_list
 
     def train_epoch(self):
-        print(f"Starting epoch {self.logging_epoch}")
         self.model.train()
-
+        all_losses = []
         epoch_iterator = tqdm(
             self.training_dataloader_train, desc="Batch", disable=self.local_rank not in [-1, 0]
         )
@@ -270,7 +246,9 @@ class Trainer:
             else:
                 loss.backward()
 
-            self.tr_loss += loss.item()  # ? Sum up new loss value
+            # self.tr_loss += loss.item()  # ? Sum up new loss value
+            all_losses.append(loss.item())
+
             # ? Optimize (update weights)
             if (step + 1) % self.gradient_accumulation_steps == 0:
                 if self.fp16:
@@ -285,17 +263,19 @@ class Trainer:
                 self.model.zero_grad()
                 self.global_step += 1
 
-                if (
-                    self.local_rank in [-1, 0]
-                    and self.logging_steps > 0
-                    and self.global_step % self.logging_steps == 0
-                ):  # ? Log metrics only once, not in the first step and at every global step
-                    if self.local_rank == -1 and self.evaluate_during_training:
-                        raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
+                # !Uncomment this
+                # if (
+                #     self.local_rank in [-1, 0]
+                #     and self.logging_every_epoch > 0
+                #     and self.global_step % self.logging_every_epoch == 0
+                # ):  # ? Log metrics only once, not in the first step and at every global step
+                #     if self.local_rank == -1 and self.evaluate_during_training:
+                #         raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
 
-            if 0 < self.max_steps < self.global_step:
-                epoch_iterator.close()
-                break
+            # !Uncomment this
+            # if 0 < self.max_steps < self.global_step:
+            #     epoch_iterator.close()
+            #     break
 
         # if wandb.run:
         # wandb.log(
@@ -310,23 +290,25 @@ class Trainer:
         #     },
         #     prefix="train",
         # )
+        print(f"- Training Loss: {np.mean(all_losses)}")
 
     def evaluate(self, dataset, info) -> Dict[str, float]:
         self.eval_dataloader = self._get_dataloader(dataset, False)
-
-        print(f"***** Running evaluation *****")
-        # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
-        print(f"  Num examples for dataset = {len(self.eval_dataloader.dataset)}")
-        print(f"  Batch size = {self.eval_batch_size}")
+        if self.verbose:
+            print(f"***** Running evaluation *****")
+            # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
+            print(f"  Num examples for dataset = {len(self.eval_dataloader.dataset)}")
+            print(f"  Batch size = {self.eval_batch_size}")
         self.model.eval()
 
         with torch.no_grad():
             all_logits = []
+            all_losses = []
             tr_loss, logging_loss = 0.0, 0.0
-            epoch_iterator = tqdm(
-                self.eval_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0]
-            )
-            for step, batch in enumerate(epoch_iterator):
+            # epoch_iterator = tqdm(
+            #     , desc="Batch", disable=self.local_rank not in [-1, 0]
+            # )
+            for batch in self.eval_dataloader:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
                     "input_ids": batch_list[0],
@@ -334,7 +316,7 @@ class Trainer:
                     "token_type_ids": batch_list[2],
                     "xpath_tags_seq": batch_list[3],
                     "xpath_subs_seq": batch_list[4],
-                    "labels": batch_list[5], #? If you remove the labels the model won't report loss
+                    "labels": batch_list[5],  # ? Removing this won't report loss
                 }
                 outputs = self.model(**inputs)
                 loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
@@ -348,10 +330,9 @@ class Trainer:
                 # ! Not sure if I need this here to compute correctly the loss
                 # if self.gradient_accumulation_steps > 1:
                 #     loss = loss / self.gradient_accumulation_steps
+                all_losses.append(loss.item())
 
-                tr_loss += loss.item()
-
-        print(f"Evaluate Loss: {tr_loss / self.global_step}")
+        print(f"- Evaluation Loss: {np.mean(all_losses)}")
 
         return self.recreate_dataset(all_logits, info)
 
@@ -431,7 +412,7 @@ class Trainer:
         return result_df
 
     def train(self):
-        # develop_metrics = self.evaluate(self.develop_dataloader)
+
         # self._log_metrics(develop_metrics, "develop")
 
         print("***** Running training *****")
@@ -456,22 +437,25 @@ class Trainer:
             int(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
         for epoch in train_iterator:  # range(1, self.num_epochs + 1):
+            print(f"Epoch: {epoch}")
+            self.evaluate(self.develop_dataset, self.develop_info)
+
             if isinstance(self.training_dataloader_train, DataLoader) and isinstance(
                 self.training_dataloader_train.sampler, DistributedSampler
             ):
                 self.training_dataloader_train.sampler.set_epoch(epoch)
 
-            self.logging_epoch = epoch
             self.train_epoch()
-            print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
+            # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
+
+            #! Add evaluation here
+            # if self.evaluate_during_training:
+            #     self.evaluate(self.develop_dataset, self.develop_info)
+            # self._log_metrics(develop_metrics, prefix="develop")
 
             if self.global_step > self.max_steps:  #! I have changed this
                 train_iterator.close()
                 break
-
-            #! Add evaluation here
-            eval_metrics = self.evaluate(self.develop_dataset, self.develop_info)
-            # self._log_metrics(develop_metrics, prefix="develop")
 
         #!Add  # Save the trained model and the tokenizer
         # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -479,3 +463,6 @@ class Trainer:
 
         print("Done training")
         self.model.eval()
+
+        dataset_evaluated = self.evaluate(self.develop_dataset, self.develop_info)
+        return dataset_evaluated

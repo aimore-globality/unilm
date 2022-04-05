@@ -14,12 +14,11 @@ import pandas as pd
 import numpy as np
 import torch
 # from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
-from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
-from markuplmft.fine_tuning.run_swde.utils import SwdeDataset, get_swde_features
+from markuplmft.fine_tuning.run_swde.data_feature_utils import SwdeDataset, get_swde_features
 
 from markuplmft.fine_tuning.run_swde import constants
 from markuplmft.models.markuplm import (
