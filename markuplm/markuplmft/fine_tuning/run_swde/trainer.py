@@ -8,6 +8,7 @@ import torch
 import wandb
 from pprint import pprint
 from tqdm import tqdm, trange
+import collections
 
 try:
     from apex import amp
@@ -52,8 +53,8 @@ class Trainer:
         self,
         model,
         no_cuda: bool,
-        train_dataset,
-        develop_dataset,
+        train_dataset_info,
+        develop_dataset_info,
         per_gpu_train_batch_size: int,
         eval_batch_size: int,
         num_epochs: int,
@@ -83,22 +84,25 @@ class Trainer:
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
-        self.train_dataset = train_dataset
-        self.develop_dataset = develop_dataset
-        self.train_dataloader = self._get_dataloader(self.train_dataset, True)
-        # self.develop_dataloader = self._get_dataloader(self.develop_dataset, False)
+
+        self.train_dataset, self.train_info = train_dataset_info
+        self.develop_dataset, self.develop_info = develop_dataset_info
+
+        #! Maybe pass this to a function before training prepare_for_training >
+        self.training_dataloader_train = self._get_dataloader(self.train_dataset, True)
 
         self.max_steps = max_steps
         self.num_train_epochs = num_epochs
         if self.max_steps > 0:
             self.t_total = self.max_steps
             self.num_train_epochs = (
-                self.max_steps // (len(self.train_dataloader) // self.gradient_accumulation_steps)
+                self.max_steps
+                // (len(self.training_dataloader_train) // self.gradient_accumulation_steps)
                 + 1
             )
         else:
             self.t_total = (
-                len(self.train_dataloader)
+                len(self.training_dataloader_train)
                 // self.gradient_accumulation_steps
                 * self.num_train_epochs
             )
@@ -132,7 +136,6 @@ class Trainer:
                 find_unused_parameters=True,
             )
 
-
         self.max_grad_norm = max_grad_norm
 
         # self.logging_epoch = 0
@@ -152,7 +155,7 @@ class Trainer:
             raise ValueError(
                 f"Output directory ({self.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
             )
-
+        #! < Maybe pass this to a function before training prepare_for_training
         if self.verbose:
             print("self.__dict__", pprint(self.__dict__))
 
@@ -196,19 +199,19 @@ class Trainer:
             optimizer, num_warmup_steps=int(warmup_ratio * t_total), num_training_steps=t_total
         )
 
-    def _get_dataloader(self, dataset: pd.DataFrame, is_train: bool = True) -> DataLoader:
+    def _get_dataloader(self, dataset_info: pd.DataFrame, is_train: bool = True) -> DataLoader:
 
         if is_train:
-            sampler = RandomSampler(dataset)
+            sampler = RandomSampler(dataset_info)
             batch_size = self.train_batch_size
         else:
-            sampler = SequentialSampler(dataset)
+            sampler = SequentialSampler(dataset_info)
             batch_size = self.eval_batch_size
         if self.local_rank != -1:
-            sampler = DistributedSampler(dataset)
+            sampler = DistributedSampler(dataset_info)
 
         loader = DataLoader(
-            dataset=dataset,
+            dataset=dataset_info,
             sampler=sampler,
             batch_size=batch_size,
             pin_memory=True,
@@ -241,7 +244,7 @@ class Trainer:
         self.model.train()
 
         epoch_iterator = tqdm(
-            self.train_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0]
+            self.training_dataloader_train, desc="Batch", disable=self.local_rank not in [-1, 0]
         )
         for step, batch in enumerate(epoch_iterator):
             batch_list = self._batch_to_device(batch)
@@ -308,17 +311,21 @@ class Trainer:
         #     prefix="train",
         # )
 
-    def evaluate(self, data_loader: DataLoader) -> Dict[str, float]:
+    def evaluate(self, dataset, info) -> Dict[str, float]:
+        self.eval_dataloader = self._get_dataloader(dataset, False)
+
         print(f"***** Running evaluation *****")
         # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
-        print(f"  Num examples for dataset = {len(data_loader.dataset)}")
+        print(f"  Num examples for dataset = {len(self.eval_dataloader.dataset)}")
         print(f"  Batch size = {self.eval_batch_size}")
         self.model.eval()
 
-        all_logits = []
-        tr_loss, logging_loss = 0.0, 0.0
         with torch.no_grad():
-            epoch_iterator = tqdm(data_loader, desc="Batch", disable=self.local_rank not in [-1, 0])
+            all_logits = []
+            tr_loss, logging_loss = 0.0, 0.0
+            epoch_iterator = tqdm(
+                self.eval_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0]
+            )
             for step, batch in enumerate(epoch_iterator):
                 batch_list = self._batch_to_device(batch)
                 inputs = {
@@ -327,35 +334,101 @@ class Trainer:
                     "token_type_ids": batch_list[2],
                     "xpath_tags_seq": batch_list[3],
                     "xpath_subs_seq": batch_list[4],
-                    "labels": batch_list[5],
+                    "labels": batch_list[5], #? If you remove the labels the model won't report loss
                 }
                 outputs = self.model(**inputs)
-                loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+                loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
+                logits = outputs["logits"]  # which is (bs,seq_len,node_type)
+                all_logits.append(logits.detach().cpu())
 
                 if self.n_gpu > 1:
-                    loss = (
-                        loss.mean()
-                    )  # to average on multi-gpu parallel (not distributed) training
-                if self.gradient_accumulation_steps > 1:
-                    loss = loss / self.gradient_accumulation_steps
+                    # ? to average on multi-gpu parallel (not distributed) training
+                    loss = loss.mean()
 
-                if self.fp16:  # TODO (Aimore): Replace this with Accelerate
-                    with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                else:
-                    loss.backward()
+                # ! Not sure if I need this here to compute correctly the loss
+                # if self.gradient_accumulation_steps > 1:
+                #     loss = loss / self.gradient_accumulation_steps
 
                 tr_loss += loss.item()
-                if (step + 1) % self.gradient_accumulation_steps == 0:
-                    if self.fp16:
-                        torch.nn.utils.clip_grad_norm_(
-                            amp.master_params(self.optimizer), self.max_grad_norm
-                        )
-                    else:
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
-        #! Compute metrics and return them
-        # return metrics
+        print(f"Evaluate Loss: {tr_loss / self.global_step}")
+
+        return self.recreate_dataset(all_logits, info)
+
+    def recreate_dataset(self, all_logits, info):
+        all_probs = torch.softmax(
+            torch.cat(all_logits, dim=0), dim=2
+        )  # (all_samples, seq_len, node_type)
+
+        assert len(all_probs) == len(info)
+
+        all_res = collections.defaultdict(dict)
+
+        for sub_prob, sub_info in zip(all_probs, info):
+            (
+                html_path,
+                involved_first_tokens_pos,
+                involved_first_tokens_xpaths,
+                involved_first_tokens_types,
+                involved_first_tokens_text,
+                involved_first_tokens_gt_text,
+            ) = sub_info
+
+            for pos, xpath, type, text, gt_text in zip(
+                involved_first_tokens_pos,
+                involved_first_tokens_xpaths,
+                involved_first_tokens_types,
+                involved_first_tokens_text,
+                involved_first_tokens_gt_text,
+
+            ):
+
+                pred = sub_prob[pos]  # ? This gets the first logit of each respective node
+                # ? sub_prob = [tensor([0.0045, 0.9955]), ...], sub_prob.shape = [384, 2]
+                # ? pos = 14
+                # ? pred = tensor([0.0045, 0.9955])
+                if xpath not in all_res[html_path]:
+                    all_res[html_path][xpath] = {}
+                    all_res[html_path][xpath]["pred"] = pred
+                    all_res[html_path][xpath]["truth"] = type
+                    all_res[html_path][xpath]["text"] = text
+                    all_res[html_path][xpath]["gt_text"] = gt_text
+
+                else:
+                    all_res[html_path][xpath]["pred"] += pred
+                    assert all_res[html_path][xpath]["truth"] == type
+                    assert all_res[html_path][xpath]["text"] == text
+
+        lines = {
+            "html_path": [],
+            "xpath": [],
+            "text": [],
+            "gt_text": [],
+            "truth": [],
+            "pred_type": [],
+            "final_probs": [],
+        }
+
+        for html_path in all_res:
+            # E.g. all_res [dict] = {html_path = {xpath = {'pred': tensor([0.4181, 0.5819]), 'truth': 'PAST_CLIENT', 'text': 'A healthcare client gains control of their ACA processes | BerryDunn'},...}, ...}
+            for xpath in all_res[html_path]:
+                final_probs = all_res[html_path][xpath]["pred"] / torch.sum(
+                    all_res[html_path][xpath]["pred"]
+                )  # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then? Maybe in case of more than one label?
+                pred_id = torch.argmax(final_probs).item()
+                pred_type = constants.ATTRIBUTES_PLUS_NONE[pred_id]
+                final_probs = final_probs.numpy().tolist()
+
+                lines["html_path"].append(html_path)
+                lines["xpath"].append(xpath)
+                lines["gt_text"].append(all_res[html_path][xpath]["gt_text"])
+                lines["text"].append(all_res[html_path][xpath]["text"])
+                lines["truth"].append(all_res[html_path][xpath]["truth"])
+                lines["pred_type"].append(pred_type)
+                lines["final_probs"].append(final_probs)
+
+        result_df = pd.DataFrame(lines)
+        return result_df
 
     def train(self):
         # develop_metrics = self.evaluate(self.develop_dataloader)
@@ -383,21 +456,21 @@ class Trainer:
             int(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
         for epoch in train_iterator:  # range(1, self.num_epochs + 1):
-            if isinstance(self.train_dataloader, DataLoader) and isinstance(
-                self.train_dataloader.sampler, DistributedSampler
+            if isinstance(self.training_dataloader_train, DataLoader) and isinstance(
+                self.training_dataloader_train.sampler, DistributedSampler
             ):
-                self.train_dataloader.sampler.set_epoch(epoch)
+                self.training_dataloader_train.sampler.set_epoch(epoch)
 
             self.logging_epoch = epoch
             self.train_epoch()
-            print(f"Epoch: {epoch} - Loss: {self.tr_loss / self.global_step}")
+            print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
 
             if self.global_step > self.max_steps:  #! I have changed this
                 train_iterator.close()
                 break
 
             #! Add evaluation here
-            # develop_metrics = self.evaluate(self.train_dataloader)
+            eval_metrics = self.evaluate(self.develop_dataset, self.develop_info)
             # self._log_metrics(develop_metrics, prefix="develop")
 
         #!Add  # Save the trained model and the tokenizer
