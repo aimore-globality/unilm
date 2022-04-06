@@ -70,26 +70,32 @@ class Trainer:
         self.eval_batch_size = eval_batch_size
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
+        
+        self.verbose = verbose
+        
+        if self.verbose:
+            print(f"self.__dict__:\n {pprint(self.__dict__)}")
 
         self.train_dataset, self.train_info = train_dataset_info
         self.develop_dataset, self.develop_info = develop_dataset_info
 
+        self.train_dataloader = self._get_dataloader(self.train_dataset, is_train=True)
+        self.eval_dataloader = self._get_dataloader(self.develop_dataset, is_train=False)
         #! Maybe pass this to a function before training prepare_for_training >
-        self.training_dataloader_train = self._get_dataloader(self.train_dataset, True)
-
+ 
         self.max_steps = max_steps
         print(f"self.max_steps: {self.max_steps}")
         self.num_train_epochs = num_epochs
         if self.max_steps > 0:
             self.t_total = self.max_steps
-            self.num_train_epochs = (
+            self.num_train_epochs = int((
                 self.max_steps
-                // (len(self.training_dataloader_train) // self.gradient_accumulation_steps)
+                // (len(self.train_dataloader) // self.gradient_accumulation_steps)
                 + 1
-            )
+            ))
         else:
             self.t_total = (
-                len(self.training_dataloader_train)
+                len(self.train_dataloader)
                 // self.gradient_accumulation_steps
                 * self.num_train_epochs
             )
@@ -133,8 +139,6 @@ class Trainer:
         self.logging_every_epoch = logging_every_epoch  #! Maybe change this to logging_epoch
         self.save_every_epoch = save_every_epoch
 
-        self.verbose = verbose
-
         # ? Check if the folder exists
         self.output_dir = output_dir
         if (
@@ -145,9 +149,9 @@ class Trainer:
             raise ValueError(
                 f"Output directory ({self.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
             )
+
         #! < Maybe pass this to a function before training prepare_for_training
-        if self.verbose:
-            print("self.__dict__", pprint(self.__dict__))
+        print("Done")
 
     def _prepare_optimizer(self, model, weight_decay, learning_rate, adam_epsilon):
         no_decay = ["bias", "LayerNorm.weight"]
@@ -177,7 +181,7 @@ class Trainer:
         )
 
     def _get_dataloader(self, dataset_info: pd.DataFrame, is_train: bool = True) -> DataLoader:
-
+        print("_get_dataloader")
         if is_train:
             sampler = RandomSampler(dataset_info)
             batch_size = self.train_batch_size
@@ -219,10 +223,10 @@ class Trainer:
     def train_epoch(self):
         self.model.train()
         all_losses = []
-        epoch_iterator = tqdm(
-            self.training_dataloader_train, desc="Batch", disable=self.local_rank not in [-1, 0]
+        batch_iterator = tqdm(
+            self.train_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0]
         )
-        for step, batch in enumerate(epoch_iterator):
+        for step, batch in enumerate(batch_iterator):
             batch_list = self._batch_to_device(batch)
             inputs = {
                 "input_ids": batch_list[0],
@@ -277,23 +281,9 @@ class Trainer:
             #     epoch_iterator.close()
             #     break
 
-        # if wandb.run:
-        # wandb.log(
-        #     {"scores": wandb.Histogram(all_scores)},
-        #     step=self.logging_epoch,
-        # )
-        # self._log_metrics(
-        #     {
-        #         "loss": np.mean(batch_losses),
-        #         "current_lr": self.optimizer.param_groups[0]["lr"],
-        #         **metrics,
-        #     },
-        #     prefix="train",
-        # )
         print(f"- Training Loss: {np.mean(all_losses)}")
 
-    def evaluate(self, dataset, info) -> Dict[str, float]:
-        self.eval_dataloader = self._get_dataloader(dataset, False)
+    def evaluate(self, dataset, info) -> Dict[str, float]:        
         if self.verbose:
             print(f"***** Running evaluation *****")
             # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
@@ -337,6 +327,7 @@ class Trainer:
         return self.recreate_dataset(all_logits, info)
 
     def recreate_dataset(self, all_logits, info):
+        print("recreate_dataset")
         all_probs = torch.softmax(
             torch.cat(all_logits, dim=0), dim=2
         )  # (all_samples, seq_len, node_type)
@@ -433,28 +424,24 @@ class Trainer:
         self.global_step = 0
         self.tr_loss, self.logging_loss = 0.0, 0.0
 
-        train_iterator = trange(
-            int(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
+        epoch_iterator = trange(
+            self.num_train_epochs, desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
-        for epoch in train_iterator:  # range(1, self.num_epochs + 1):
-            print(f"Epoch: {epoch}")
-            self.evaluate(self.develop_dataset, self.develop_info)
+        for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
+            if self.evaluate_during_training:
+                self.evaluate(self.develop_dataset, self.develop_info)
 
-            if isinstance(self.training_dataloader_train, DataLoader) and isinstance(
-                self.training_dataloader_train.sampler, DistributedSampler
+            if isinstance(self.train_dataloader, DataLoader) and isinstance(
+                self.train_dataloader.sampler, DistributedSampler
             ):
-                self.training_dataloader_train.sampler.set_epoch(epoch)
+                self.train_dataloader.sampler.set_epoch(epoch)
 
             self.train_epoch()
             # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
 
-            #! Add evaluation here
-            # if self.evaluate_during_training:
-            #     self.evaluate(self.develop_dataset, self.develop_info)
-            # self._log_metrics(develop_metrics, prefix="develop")
-
+            print(f"self.global_step: {self.global_step}")
             if self.global_step > self.max_steps:  #! I have changed this
-                train_iterator.close()
+                epoch_iterator.close()
                 break
 
         #!Add  # Save the trained model and the tokenizer

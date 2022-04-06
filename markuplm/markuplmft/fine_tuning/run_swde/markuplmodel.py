@@ -30,11 +30,11 @@ class MarkupLModel:
         self,
         pre_trained_model_folder_path: str = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/286",
         verbose: bool = False,
+        no_cuda:bool = False
     ):
         self.model = None
         self.tokenizer = None
 
-        no_cuda = False
         self.local_rank = -1
 
         self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
@@ -42,14 +42,15 @@ class MarkupLModel:
 
         self.pre_trained_model_folder_path = pre_trained_model_folder_path
 
-        self.output_dir = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/"
+        # self.output_dir = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
-        self.model_name_or_path = "microsoft/markuplm-base"
-        self.save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/"
+        self.model_name_or_path = Path("microsoft/markuplm-base")
+        self.save_model_path = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
         self.doc_stride = 128
         self.max_seq_length = 384
-        self.overwrite_cache = False
+        
+        # self.overwrite_cache = False
 
         if verbose:
             print("self.__dict__", pprint(self.__dict__))
@@ -73,30 +74,28 @@ class MarkupLModel:
         )
         self.model.resize_token_embeddings(len(self.tokenizer))
 
-        # self.model.to(self.device) #! Move this to the training part at the correct place
-
-        # self.tokenizer.save_pretrained(sub_output_dir)
-
     def save_model_and_tokenizer(self):
-        # Create output directory if needed
-        if not os.path.exists(self.save_model_path) and self.local_rank in [-1, 0]:
-            os.makedirs(self.save_model_path)
+        # TODO (aimore): Replace os with Path [done - remove comment if passes]
+        # if not os.path.exists(self.save_model_path) and self.local_rank in [-1, 0]: 
+        #     os.makedirs(self.save_model_path)
+        if self.local_rank in [-1, 0]: 
+            self.save_model_path.mkdir(parents=True, exist_ok=False) #! Uncomment
 
         print(f"Saving model checkpoint to {self.save_model_path}")
-        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
-        # Take care of distributed/parallel training
+        #? Save a trained model, configuration and tokenizer using `save_pretrained()`.
+        #? They can then be reloaded using `from_pretrained()`
+        #? Take care of distributed/parallel training
         model_to_save = self.model.module if hasattr(self.model, "module") else self.model
         model_to_save.save_pretrained(self.save_model_path)
         self.tokenizer.save_pretrained(self.save_model_path)
-        #! Save the parameters: torch.save(self.__dict__, os.path.join(self.save_model_path, "training_args.bin"))
+        # TODO(aimore): Save the parameters: torch.save(self.__dict__, os.path.join(self.save_model_path, "training_args.bin"))
 
     def save_model(self, sub_output_dir, global_step):
-        output_dir = os.path.join(sub_output_dir, f"checkpoint-{global_step}")
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        output_dir = Path(sub_output_dir) / f"checkpoint-{global_step}"
+        output_dir.mkdir(parents=True, exist_ok=False)
+
         model_to_save = self.model.module if hasattr(self.model, "module") else self.model
-        # Take care of distributed/parallel training
+        #? Take care of distributed/parallel training
         model_to_save.save_pretrained(output_dir)
         #! Save the parameters: torch.save(self.__dict__, os.path.join(output_dir, "training_args.bin"))
         print(f"Saving model checkpoint to {output_dir}")

@@ -612,27 +612,22 @@ def main(_):
     websites = sorted([x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())])
 
     websites = websites[:] #! Limit the amount of websites
-
-    # websites = [x for x in websites if "ciphr.com" not in x] # TODO: Remove this website for now just because it is taking too long (+20min.) 
+    websites = [x for x in websites if "ciphr.com" not in x] #! Remove this website for now just because it is taking too long (+20min.) 
 
     print(f"Prepare Data: Websites {len(websites)} -\n {websites}")
 
-    # for website in websites[:]:
-    #     # if website in ['lernerdavid.com', 'awarehq.com', 'addleshagoddard.com']:
-    #     # if website in ['addleshawgoddard.com']:
-    #     if 'direct.com' in website: # TODO (AIMORE): Debug this page and understand why it doesn't have variable nodes
-    #         generate_nodes_seq_and_write_to_file(website)
-
-    # from p_tqdm import p_uimap
-    # iterator = p_uimap(generate_nodes_seq_and_write_to_file, websites)
-    # for e, result in enumerate(iterator):
-    #     print(e)
-
-    num_cores = mp.cpu_count()
-    with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
-        # for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
-        for res in pool.imap(generate_nodes_seq_and_write_to_file, websites):
-            t.update()
+    debug = False
+    if debug:
+        for website in websites[:]:
+            if website in ['canelamedia.com']: 
+            # if 'direct.com' in website: # TODO (AIMORE): Debug this page and understand why it doesn't have variable nodes
+                generate_nodes_seq_and_write_to_file(website)
+    else:
+        num_cores = mp.cpu_count()
+        with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
+            # for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):        
+            for res in pool.imap(generate_nodes_seq_and_write_to_file, websites):
+                t.update()
 
 
 if __name__ == "__main__":

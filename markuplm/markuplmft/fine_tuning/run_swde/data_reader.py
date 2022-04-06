@@ -36,22 +36,15 @@ MAX_SEQ_LENGTH = 384
 
 class DataReader:
     def __init__(self, **config):
-        no_cuda = False
         self.local_rank = -1
 
-        self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
-        set_seed(self.n_gpu)
-
-        self.per_gpu_train_batch_size = 24
-        self.per_gpu_eval_batch_size = 24
+        set_seed()
 
         self.tokenizer_dir = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/286"
 
         self.doc_stride = DOC_STRIDE
         self.max_seq_length = MAX_SEQ_LENGTH
         self.overwrite_cache = config["overwrite_cache"]
-        self.save_features = config["save_features"]
-        self.dataset, self.info = None, None
 
         self.parallelize = config["parallelize"]
         self.verbose = config["verbose"]
@@ -65,7 +58,6 @@ class DataReader:
         self,
         data_dir="/data/GIT/swde/my_data/train/my_CF_processed/",
         limit_data=False,
-        to_evaluate=False,
     ):
         self.data_dir = Path(data_dir)
         print(f"Loading data from: {self.data_dir}")
@@ -75,26 +67,25 @@ class DataReader:
             for file_path in list(self.data_dir.iterdir())
             if "cached" not in str(file_path)
         ]
-        self.websites = [
-            website
-            for website in websites
-            if "ciphr.com" not in website
-        ]  #! Remove this website for now just because it is taking too long (+20min.)
+
+        stop_websites = {
+            "ciphr.com.pickle",
+            "hawthorneadvertising.com.pickle",
+            "eng.it.pickle",
+        }  #! Remove this website for now just because it is taking too long (+20min.)
+        self.websites = sorted(list(set(websites) - stop_websites))
 
         if limit_data:
             self.websites = self.websites[:limit_data]  #! Just for speed reasons
 
-        if self.verbose:
-            print(f"\nWebsites ({len(self.websites)}):\n{self.websites}\n")
+        print(f"\nWebsites ({len(self.websites)}):\n{self.websites}\n")
 
         # ? Load all features for websites
         global feature_dicts
         feature_dicts = self.load_or_cache_websites(websites=self.websites)
 
-        self.dataset, self.info = self.get_dataset_and_info_for_websites(
-            self.websites, evaluate=to_evaluate
-        )
-        return self.dataset, self.info
+        dataset, info = self.get_dataset_and_info_for_websites(self.websites)
+        return dataset, info
 
     def load_or_cache_websites(self, websites: List[str]) -> Dict:
         if self.local_rank not in [-1, 0]:
@@ -104,39 +95,37 @@ class DataReader:
 
         if self.parallelize:
             num_cores = mp.cpu_count()
-            with mp.Pool(num_cores) as pool, tqdm(
-                total=len(websites), desc="Loading/Creating Features"
-            ) as t:
+            print(f"num_cores: {num_cores}")
+            with mp.Pool(num_cores) as pool, tqdm(total=len(websites)) as t:
                 for website, features_per_website in pool.imap_unordered(
                     self.load_or_cache_one_website_features, websites
                 ):
                     feature_dicts[website] = features_per_website
+                    t.update()
+                    t.set_description(f"Loading/Creating Features ({website})")
         else:
-            for website in websites:
-                features_per_website = self.load_or_cache_one_website_features(website)
-                feature_dicts[website] = features_per_website
+            for website in tqdm(websites):
+                feature_dicts[website] = self.load_or_cache_one_website_features(website)
 
-        print(f"Features size: {len(feature_dicts)}")
+        print(f"Number of feature for all websites: {len(feature_dicts)}")
         return feature_dicts
 
     def load_or_cache_one_website_features(self, website):
-        cached_features_file = os.path.join(
-            self.data_dir,
-            "cached",
-            website,
-            f"cached_markuplm_{str(self.max_seq_length)}",
+        cached_features_dir = (
+            self.data_dir / "cached" / f"cached_markuplm_{str(self.max_seq_length)}"
         )
+        cached_features_file = cached_features_dir / website
 
-        if not os.path.exists(os.path.dirname(cached_features_file)):
-            os.makedirs(os.path.dirname(cached_features_file))
+        if not cached_features_dir.exists():
+            cached_features_dir.mkdir(exist_ok=False, parents=True)
 
-        if os.path.exists(cached_features_file) and not self.overwrite_cache:
+        if cached_features_file.exists() and not self.overwrite_cache:
             if self.verbose:
                 print(f"Loading features from cached file: {cached_features_file}")
-            features = torch.load(cached_features_file)
-
+            features = torch.load(str(cached_features_file))
         else:
-            print(f"Creating features for: {website}")
+            if self.verbose:
+                print(f"Creating features: {cached_features_file}")
 
             features = get_swde_features(
                 root_dir=self.data_dir,
@@ -146,44 +135,26 @@ class DataReader:
                 max_length=self.max_seq_length,
             )
 
-            if self.local_rank in [-1, 0] and self.save_features:
+            if self.local_rank in [-1, 0]:
                 print(f"Saving features into cached file: {cached_features_file}\n")
-                torch.save(features, cached_features_file)
+                torch.save(features, str(cached_features_file))
 
         if self.parallelize:
             return website, features
         else:
             return features
 
-    def get_dataset_and_info_for_websites(self, websites: List, evaluate=False):
-        if self.verbose:
-            print("Getting data information for websites: ")
-        all_features = []
-
-        for website in websites:
-            if self.verbose:
-                print(website)
-            features_per_website = feature_dicts[website]
-            all_features += features_per_website
-
+    def get_dataset_and_info_for_website(self, features):
         # Convert to Tensors and build dataset
-        all_input_ids = torch.tensor([f.input_ids for f in all_features], dtype=torch.long)
-        all_attention_mask = torch.tensor(
-            [f.attention_mask for f in all_features], dtype=torch.long
-        )
-        all_token_type_ids = torch.tensor(
-            [f.token_type_ids for f in all_features], dtype=torch.long
-        )
-        all_xpath_tags_seq = torch.tensor(
-            [f.xpath_tags_seq for f in all_features], dtype=torch.long
-        )
-        all_xpath_subs_seq = torch.tensor(
-            [f.xpath_subs_seq for f in all_features], dtype=torch.long
-        )
+        all_input_ids = torch.tensor(features.input_ids, dtype=torch.long)
+        all_attention_mask = torch.tensor(features.attention_mask, dtype=torch.long)
+        all_token_type_ids = torch.tensor(features.token_type_ids, dtype=torch.long)
+        all_xpath_tags_seq = torch.tensor(features.xpath_tags_seq, dtype=torch.long)
+        all_xpath_subs_seq = torch.tensor(features.xpath_subs_seq, dtype=torch.long)
 
         #! Removed the evaluation from here so that all datasets have all_labels (loss) and info
-        all_labels = torch.tensor([f.labels for f in all_features], dtype=torch.long)
-        dataset = SwdeDataset(
+        all_labels = torch.tensor(features.labels, dtype=torch.long)
+        one_dataset = SwdeDataset(
             all_input_ids=all_input_ids,
             all_attention_mask=all_attention_mask,
             all_token_type_ids=all_token_type_ids,
@@ -191,16 +162,33 @@ class DataReader:
             all_xpath_subs_seq=all_xpath_subs_seq,
             all_labels=all_labels,
         )
-        info = [
-            (
-                f.html_path,  # ? '1820productions.com.pickle-0000.htm'
-                f.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
-                f.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
-                f.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
-                f.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
-                f.involved_first_tokens_gt_text,  # ?
-            )
-            for f in all_features
-        ]
+        one_info = (
+            features.html_path,  # ? '1820productions.com.pickle-0000.htm'
+            features.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
+            features.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
+            features.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
+            features.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
+            features.involved_first_tokens_gt_text,  # ?
+        )
+        return one_dataset, one_info
+
+    def get_dataset_and_info_for_websites(self, websites: List):
+        if self.verbose:
+            print("Getting data information for websites: ")
+
+        all_features = []
+        for website in tqdm(websites, leave=False):
+            if self.verbose:
+                print(website)
+            features_per_website = feature_dicts[website]
+            all_features += features_per_website
+
+        all_datasets, all_infos = np.array(
+            [
+                self.get_dataset_and_info_for_website(features)
+                for features in tqdm(all_features, total=len(all_features))
+            ]
+        ).T
+
         print("... Done!")
-        return dataset, info  # ? This info is used for evaluation (store the groundtruth)
+        return all_datasets, all_infos  # ? This info is used for evaluation (store the groundtruth)

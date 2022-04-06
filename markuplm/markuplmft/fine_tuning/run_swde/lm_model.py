@@ -126,7 +126,9 @@ class LModel():
             for file_path in list(swde_path.iterdir())
             if "cached" not in str(file_path)
         ]
-        self.websites = [website for website in websites if "ciphr.com" not in website] #! Remove this website for now just because it is taking too long (+20min.) 
+
+        stop_websites = {"hawthorneadvertising", "ciphr.com"} #! Remove this website for now just because it is taking too long (+20min.)         
+        self.websites = sorted(list(set(websites) - stop_websites))
 
         if limit_data:
             self.websites = self.websites[:limit_data] #! Just for speed reasons

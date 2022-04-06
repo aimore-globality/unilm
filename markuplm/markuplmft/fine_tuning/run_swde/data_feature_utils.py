@@ -149,7 +149,7 @@ def get_swde_features(
 
     # This loops goes over all the pages in a website
     for page_id in tqdm.tqdm(
-        raw_data, desc=f"Processing {website} features ..."
+        raw_data, desc=f"Processing {website} features ...", leave=False
     ):
         html_path = f"{website}-{page_id}.htm"
 

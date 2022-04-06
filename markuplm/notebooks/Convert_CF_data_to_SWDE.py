@@ -38,8 +38,6 @@ from ast import literal_eval
 from pathlib import Path
 from typing import List
 
-import os   
-import shutil
 from tqdm import tqdm
 from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 
@@ -47,8 +45,8 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # # Load
 
 # %% tags=[]
-# dataset = 'train'
-dataset = 'develop'
+dataset = 'train' #! Run this data preparation pipeline on a big machine 
+# dataset = 'develop'
 dataset
 
 # %% [markdown]
@@ -63,9 +61,6 @@ len(df)
 # %%
 # #? Remove hiphen of domain
 df["domain"] = df["domain"].apply(lambda x: x.replace('-', ''))
-
-# %%
-# [x for x in df["source_excel"].dropna().drop_duplicates().values if "aaz" in x]
 
 # %%
 from microcosm.api import create_object_graph
@@ -328,20 +323,23 @@ df_positives.to_pickle(save_path)
 # # Format and Save data
 
 # %% tags=[]
+import os
+import shutil
+
 pageid_url_mapping = {}
 
 raw_data_folder = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceCode'
 
-# if os.path.exists(raw_data_folder): #! Uncomment
-#     print(f'Are you sure you want to remove this folder? (y/n) \n{raw_data_folder}')
-#     # answer = input()
-#     answer = 'n'
-#     if answer == 'y':
-#         try:
-#             shutil.rmtree(raw_data_folder)
-#             print(f"REMOVED: {raw_data_folder}")
-#         except OSError as e:
-#             print ("Error: %s - %s." % (e.filename, e.strerror))
+if os.path.exists(raw_data_folder): #! Uncomment
+    print(f'Are you sure you want to remove this folder? (y/n) \n{raw_data_folder}')
+    # answer = input()
+    answer = 'y'
+    if answer == 'y':
+        try:
+            shutil.rmtree(raw_data_folder)
+            print(f"REMOVED: {raw_data_folder}")
+        except OSError as e:
+            print ("Error: %s - %s." % (e.filename, e.strerror))
 
 # else:
 #     print(f"File '{groundtruth_data_path}' not found in the directory")
@@ -349,7 +347,7 @@ raw_data_folder = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_sourceC
 domains = list(df_positives_negatives.domain.value_counts().index)
 
 groundtruth_data_path = raw_data_folder / 'groundtruth'
-# groundtruth_data_path.mkdir(parents=True, exist_ok=True) #! Uncomment
+groundtruth_data_path.mkdir(parents=True, exist_ok=True) #! Uncomment
 
 for e, domain in enumerate(domains):        
     df_domain = df_positives_negatives[df_positives_negatives.domain == domain]
@@ -372,9 +370,9 @@ for e, domain in enumerate(domains):
         url = df_page['url']
         pageid_url_mapping[pageid] = [url]
         
-        # Html_file = open(raw_data_path, "w") #! Uncomment
-        # Html_file.write(html)
-        # Html_file.close()
+        Html_file = open(raw_data_path, "w") #! Uncomment
+        Html_file.write(html)
+        Html_file.close()
         
         page_count += 1
 
@@ -396,7 +394,8 @@ for e, domain in enumerate(domains):
     # #? Save groundtruth    
     for tag, page_annotations in domain_annotations.items():
         groundtruth_data_tag_path = groundtruth_data_path / f"{domain}-{tag}.txt"
-        # print(groundtruth_data_tag_path)
+        # groundtruth_data_tag_path = groundtruth_data_path / f"{domain}-{tag}.csv" #! Uncomment once I change to CSV
+        print(groundtruth_data_tag_path)
 
         page_annotations_df = pd.DataFrame(page_annotations)
         
@@ -416,7 +415,7 @@ for e, domain in enumerate(domains):
         page_annotations_df.index = page_annotations_df.index + 1  # shifting index
         page_annotations_df = page_annotations_df.sort_index()
         
-        # page_annotations_df.to_csv(groundtruth_data_tag_path, sep="\t", index=False) #! Uncomment
+        page_annotations_df.to_csv(groundtruth_data_tag_path, sep="\t", index=False) #! Uncomment
 
 # %%
 pd.to_pickle(pageid_url_mapping, f"/data/GIT/swde/my_data/{dataset}/my_CF_sourceCode/pageid_url_mapping.pkl")
@@ -432,6 +431,9 @@ df_positives_negatives.domain.value_counts()
 
 # %% [markdown]
 # ## Number of Pages
+
+# %%
+df
 
 # %%
 current_annotations = len([y for x in df_positives_negatives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])

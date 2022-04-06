@@ -6,7 +6,7 @@ import random
 seed = 66  #! Set the seed like other modules
 
 
-def set_seed(n_gpu):
+def set_seed(n_gpu=0):
     """
     Fix the random seed for reproduction.
     """
