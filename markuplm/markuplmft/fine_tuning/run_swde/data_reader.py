@@ -144,17 +144,39 @@ class DataReader:
         else:
             return features
 
-    def get_dataset_and_info_for_website(self, features):
+
+    def get_dataset_and_info_for_websites(self, websites: List):
+        if self.verbose:
+            print("Getting data information for websites: ")
+        all_features = []
+
+        for website in websites:
+            if self.verbose:
+                print(website)
+            features_per_website = feature_dicts[website]
+            all_features += features_per_website
+
         # Convert to Tensors and build dataset
-        all_input_ids = torch.tensor(features.input_ids, dtype=torch.long)
-        all_attention_mask = torch.tensor(features.attention_mask, dtype=torch.long)
-        all_token_type_ids = torch.tensor(features.token_type_ids, dtype=torch.long)
-        all_xpath_tags_seq = torch.tensor(features.xpath_tags_seq, dtype=torch.long)
-        all_xpath_subs_seq = torch.tensor(features.xpath_subs_seq, dtype=torch.long)
+        all_input_ids = torch.tensor([f.input_ids for f in all_features], dtype=torch.long)
+        all_attention_mask = torch.tensor(
+            [f.attention_mask for f in all_features], dtype=torch.long
+        )
+        all_token_type_ids = torch.tensor(
+            [f.token_type_ids for f in all_features], dtype=torch.long
+        )
+        all_xpath_tags_seq = torch.tensor(
+            [f.xpath_tags_seq for f in all_features], dtype=torch.long
+        )
+        all_xpath_subs_seq = torch.tensor(
+            [f.xpath_subs_seq for f in all_features], dtype=torch.long
+        )
+
+        
+        # all_xpath_subs_seq
 
         #! Removed the evaluation from here so that all datasets have all_labels (loss) and info
-        all_labels = torch.tensor(features.labels, dtype=torch.long)
-        one_dataset = SwdeDataset(
+        all_labels = torch.tensor([f.labels for f in all_features], dtype=torch.long)
+        dataset = SwdeDataset(
             all_input_ids=all_input_ids,
             all_attention_mask=all_attention_mask,
             all_token_type_ids=all_token_type_ids,
@@ -162,33 +184,67 @@ class DataReader:
             all_xpath_subs_seq=all_xpath_subs_seq,
             all_labels=all_labels,
         )
-        one_info = (
-            features.html_path,  # ? '1820productions.com.pickle-0000.htm'
-            features.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
-            features.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
-            features.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
-            features.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
-            features.involved_first_tokens_gt_text,  # ?
-        )
-        return one_dataset, one_info
-
-    def get_dataset_and_info_for_websites(self, websites: List):
-        if self.verbose:
-            print("Getting data information for websites: ")
-
-        all_features = []
-        for website in tqdm(websites, leave=False):
-            if self.verbose:
-                print(website)
-            features_per_website = feature_dicts[website]
-            all_features += features_per_website
-
-        all_datasets, all_infos = np.array(
-            [
-                self.get_dataset_and_info_for_website(features)
-                for features in tqdm(all_features, total=len(all_features))
-            ]
-        ).T
+        info = [
+            (
+                f.html_path,  # ? '1820productions.com.pickle-0000.htm'
+                f.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
+                f.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
+                f.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
+                f.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
+                f.involved_first_tokens_gt_text,  # ?
+            )
+            for f in all_features
+        ]
 
         print("... Done!")
-        return all_datasets, all_infos  # ? This info is used for evaluation (store the groundtruth)
+        return dataset, info  # ? This info is used for evaluation (store the groundtruth)
+
+
+    # def get_dataset_and_info_for_website(self, features):
+    #     # Convert to Tensors and build dataset
+    #     all_input_ids = torch.tensor(features.input_ids, dtype=torch.long)
+    #     all_attention_mask = torch.tensor(features.attention_mask, dtype=torch.long)
+    #     all_token_type_ids = torch.tensor(features.token_type_ids, dtype=torch.long)
+    #     all_xpath_tags_seq = torch.tensor(features.xpath_tags_seq, dtype=torch.long)
+    #     all_xpath_subs_seq = torch.tensor(features.xpath_subs_seq, dtype=torch.long)
+
+    #     #! Removed the evaluation from here so that all datasets have all_labels (loss) and info
+    #     all_labels = torch.tensor(features.labels, dtype=torch.long)
+    #     one_dataset = SwdeDataset(
+    #         all_input_ids=all_input_ids,
+    #         all_attention_mask=all_attention_mask,
+    #         all_token_type_ids=all_token_type_ids,
+    #         all_xpath_tags_seq=all_xpath_tags_seq,
+    #         all_xpath_subs_seq=all_xpath_subs_seq,
+    #         all_labels=all_labels,
+    #     )
+    #     one_info = (
+    #         features.html_path,  # ? '1820productions.com.pickle-0000.htm'
+    #         features.involved_first_tokens_pos,  # ? [1, 1, 34, 70, 80]
+    #         features.involved_first_tokens_xpaths,  # ? ['/html/head', '/html/head/script[1]', '/html/head/script[2]', '/html/head/title', '/html/head/script[3]']
+    #         features.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
+    #         features.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
+    #         features.involved_first_tokens_gt_text,  # ?
+    #     )
+    #     return one_dataset, one_info
+
+    # def get_dataset_and_info_for_websites(self, websites: List):
+    #     if self.verbose:
+    #         print("Getting data information for websites: ")
+
+    #     all_features = []
+    #     for website in tqdm(websites, leave=False):
+    #         if self.verbose:
+    #             print(website)
+    #         features_per_website = feature_dicts[website]
+    #         all_features += features_per_website
+
+    #     all_datasets, all_infos = np.array(
+    #         [
+    #             self.get_dataset_and_info_for_website(features)
+    #             for features in tqdm(all_features, total=len(all_features))
+    #         ]
+    #     ).T
+
+    #     print("... Done!")
+    #     return all_datasets, all_infos  # ? This info is used for evaluation (store the groundtruth)

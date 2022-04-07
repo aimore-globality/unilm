@@ -1,5 +1,6 @@
 import json
 from logging import Logger
+import re
 from typing import Dict, List, Optional
 import os
 import numpy as np
@@ -10,6 +11,7 @@ from pprint import pprint
 from tqdm import tqdm, trange
 import collections
 from markuplmft.fine_tuning.run_swde import constants
+import wandb
 
 try:
     from apex import amp
@@ -18,6 +20,7 @@ except ImportError:
         "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
     )
 import random
+from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
 # from microcosm_logging.decorators import logger
 # from microcosm_sagemaker.metrics.experiment_metrics import ExperimentMetrics
@@ -31,7 +34,7 @@ from transformers import get_linear_schedule_with_warmup
 from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-
+import sys
 
 class Trainer:
     def __init__(
@@ -64,6 +67,17 @@ class Trainer:
         self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
         set_seed(self.n_gpu)  # ? For reproducibility
 
+        #? Setting WandB Log
+        if self.local_rank in [-1, 0]:
+            defaults = {}
+            resume = sys.argv[-1] == "--resume"
+            
+            self.run = wandb.init(
+                project="LanguageModel", config=defaults, resume=resume
+            )
+        else:
+            self.run = None
+
         # ? Setting Data
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
         self.train_batch_size = self.per_gpu_train_batch_size * max(1, self.n_gpu)
@@ -73,8 +87,8 @@ class Trainer:
         
         self.verbose = verbose
         
-        if self.verbose:
-            print(f"self.__dict__:\n {pprint(self.__dict__)}")
+        # if self.verbose:
+        #     print(f"self.__dict__:\n {pprint(self.__dict__)}")
 
         self.train_dataset, self.train_info = train_dataset_info
         self.develop_dataset, self.develop_info = develop_dataset_info
@@ -181,7 +195,7 @@ class Trainer:
         )
 
     def _get_dataloader(self, dataset_info: pd.DataFrame, is_train: bool = True) -> DataLoader:
-        print("_get_dataloader")
+        print(f"Get dataloader for dataset: {len(dataset_info[0])}")
         if is_train:
             sampler = RandomSampler(dataset_info)
             batch_size = self.train_batch_size
@@ -224,7 +238,7 @@ class Trainer:
         self.model.train()
         all_losses = []
         batch_iterator = tqdm(
-            self.train_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0]
+            self.train_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0], leave=False
         )
         for step, batch in enumerate(batch_iterator):
             batch_list = self._batch_to_device(batch)
@@ -252,6 +266,8 @@ class Trainer:
 
             # self.tr_loss += loss.item()  # ? Sum up new loss value
             all_losses.append(loss.item())
+            # t.update()
+            # t.set_description(f"Training on batch: {batch}")
 
             # ? Optimize (update weights)
             if (step + 1) % self.gradient_accumulation_steps == 0:
@@ -277,11 +293,15 @@ class Trainer:
                 #         raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
 
             # !Uncomment this
-            # if 0 < self.max_steps < self.global_step:
-            #     epoch_iterator.close()
-            #     break
+            if 0 < self.max_steps < self.global_step:
+                print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})")
+                batch_iterator.close()
+                break
 
         print(f"- Training Loss: {np.mean(all_losses)}")
+        if (self.local_rank in [-1, 0]):
+            wandb.log({"lr": self.scheduler.get_lr()[0], "global_step": self.global_step})
+            wandb.log({"Training Loss": np.mean(all_losses)})
 
     def evaluate(self, dataset, info) -> Dict[str, float]:        
         if self.verbose:
@@ -294,11 +314,8 @@ class Trainer:
         with torch.no_grad():
             all_logits = []
             all_losses = []
-            tr_loss, logging_loss = 0.0, 0.0
-            # epoch_iterator = tqdm(
-            #     , desc="Batch", disable=self.local_rank not in [-1, 0]
-            # )
-            for batch in self.eval_dataloader:
+            batch_iterator = tqdm(self.eval_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0])
+            for batch in batch_iterator:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
                     "input_ids": batch_list[0],
@@ -323,11 +340,13 @@ class Trainer:
                 all_losses.append(loss.item())
 
         print(f"- Evaluation Loss: {np.mean(all_losses)}")
+        if (self.local_rank in [-1, 0]):
+            wandb.log({"Evaluation Loss": np.mean(all_losses)})
 
-        return self.recreate_dataset(all_logits, info)
+        return self.recreate_dataset(all_logits, self.develop_info)
 
     def recreate_dataset(self, all_logits, info):
-        print("recreate_dataset")
+        print("Recreate dataset...")
         all_probs = torch.softmax(
             torch.cat(all_logits, dim=0), dim=2
         )  # (all_samples, seq_len, node_type)
@@ -398,12 +417,18 @@ class Trainer:
                 lines["truth"].append(all_res[html_path][xpath]["truth"])
                 lines["pred_type"].append(pred_type)
                 lines["final_probs"].append(final_probs)
-
+        
         result_df = pd.DataFrame(lines)
+        metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
+        if (self.local_rank in [-1, 0]):
+            metrics_per_dataset_tbl = wandb.Table(data=pd.DataFrame(metrics_per_dataset.items()))
+            cm_per_dataset_tbl = wandb.Table(data=pd.DataFrame(cm_per_dataset.items()))
+            wandb.log({"metrics_per_dataset": metrics_per_dataset_tbl})
+            wandb.log({"cm_per_dataset": cm_per_dataset_tbl})
+
         return result_df
 
     def train(self):
-
         # self._log_metrics(develop_metrics, "develop")
 
         print("***** Running training *****")
@@ -424,8 +449,8 @@ class Trainer:
         self.global_step = 0
         self.tr_loss, self.logging_loss = 0.0, 0.0
 
-        epoch_iterator = trange(
-            self.num_train_epochs, desc="Epoch", disable=self.local_rank not in [-1, 0]
+        epoch_iterator = tqdm(
+            range(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
         for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
             if self.evaluate_during_training:
@@ -438,18 +463,29 @@ class Trainer:
 
             self.train_epoch()
             # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
-
             print(f"self.global_step: {self.global_step}")
-            if self.global_step > self.max_steps:  #! I have changed this
-                epoch_iterator.close()
-                break
+            # if self.global_step > self.max_steps:  #! I have changed this
+            #     print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step}) 2")
+            #     epoch_iterator.close()
+            #     break
 
         #!Add  # Save the trained model and the tokenizer
         # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
         #     self.save_model_and_tokenizer()
 
-        print("Done training")
+        print(f"{'-'*100}\n...Done training!\n")
         self.model.eval()
 
         dataset_evaluated = self.evaluate(self.develop_dataset, self.develop_info)
+
+        if self.local_rank in [-1, 0]:
+            wandb.run.save()
+            wandb.finish()
         return dataset_evaluated
+    
+    def get_classification_metrics(self, dataset_predicted):
+        print("Compute Metrics:")
+        metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_predicted)
+
+        print(f"Node Classification Metrics per Dataset:\n {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}")
+        return metrics_per_dataset, cm_per_dataset
