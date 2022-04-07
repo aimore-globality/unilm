@@ -169,66 +169,66 @@ def match_value_node(
     return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
 
 
-def get_value_xpaths(
-    dom_tree,
-    truth_value,
-    overall_xpath_dict,
-):
-    """Gets a list of xpaths that contain a text truth_value in DOMTree objects.
+# def get_value_xpaths(
+#     dom_tree,
+#     truth_value,
+#     overall_xpath_dict,
+# ):
+#     """Gets a list of xpaths that contain a text truth_value in DOMTree objects.
 
-    Args:
-      dom_tree: the DOMTree object of a specific HTML page.
-      truth_value: a certain groundtruth value.
-      overall_xpath_dict: a dict maintaining all xpaths data of a website.
+#     Args:
+#       dom_tree: the DOMTree object of a specific HTML page.
+#       truth_value: a certain groundtruth value.
+#       overall_xpath_dict: a dict maintaining all xpaths data of a website.
 
-    Returns:
-      xpaths: a list of xpaths containing the truth_value exactly as inner texts.
-      current_xpath_data: the xpaths and corresponding values in this DOMTree.
-    """
+#     Returns:
+#       xpaths: a list of xpaths containing the truth_value exactly as inner texts.
+#       current_xpath_data: the xpaths and corresponding values in this DOMTree.
+#     """
 
-    matched_xpaths = []  # The resulting list of xpaths to be returned.
-    current_xpath_data = dict()  # The resulting dictionary to save all page data.
+#     matched_xpaths = []  # The resulting list of xpaths to be returned.
+#     current_xpath_data = dict()  # The resulting dictionary to save all page data.
 
-    current_page_nodes_in_order = []
-    is_truth_value_list = []
+#     current_page_nodes_in_order = []
+#     is_truth_value_list = []
 
-    # Some values contains HTML tags and special strings like "&nbsp;"
-    # So we need to escape the HTML by parsing and then extract the inner text.
-    value_dom = lxml.html.fromstring(truth_value)
-    value = " ".join(etree.XPath("//text()")(value_dom))
-    value = clean_spaces(value)
+#     # Some values contains HTML tags and special strings like "&nbsp;"
+#     # So we need to escape the HTML by parsing and then extract the inner text.
+#     value_dom = lxml.html.fromstring(truth_value)
+#     value = " ".join(etree.XPath("//text()")(value_dom))
+#     value = clean_spaces(value)
 
-    # Iterate all the nodes in the given DOMTree.
-    for node in dom_tree.iter():
-        # The value can only be matched in the text of the node or the tail.
-        if node.text:
-            current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
-                node=node,
-                node_text=node.text,
-                current_xpath_data=current_xpath_data,
-                overall_xpath_dict=overall_xpath_dict,
-                text_part_flag="node_text",
-                groundtruth_value=value,
-                matched_xpaths=matched_xpaths,
-                dom_tree=dom_tree,
-                current_page_nodes_in_order=current_page_nodes_in_order,
-                is_truth_value_list=is_truth_value_list,
-            )
-        if node.tail:
-            current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
-                node=node,
-                node_text=node.tail,
-                current_xpath_data=current_xpath_data,
-                overall_xpath_dict=overall_xpath_dict,
-                text_part_flag="node_tail_text",
-                groundtruth_value=value,
-                matched_xpaths=matched_xpaths,
-                dom_tree=dom_tree,
-                current_page_nodes_in_order=current_page_nodes_in_order,
-                is_truth_value_list=is_truth_value_list,
-            )
+#     # Iterate all the nodes in the given DOMTree.
+#     for node in dom_tree.iter():
+#         # The value can only be matched in the text of the node or the tail.
+#         if node.text:
+#             current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
+#                 node=node,
+#                 node_text=node.text,
+#                 current_xpath_data=current_xpath_data,
+#                 overall_xpath_dict=overall_xpath_dict,
+#                 text_part_flag="node_text",
+#                 groundtruth_value=value,
+#                 matched_xpaths=matched_xpaths,
+#                 dom_tree=dom_tree,
+#                 current_page_nodes_in_order=current_page_nodes_in_order,
+#                 is_truth_value_list=is_truth_value_list,
+#             )
+#         if node.tail:
+#             current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
+#                 node=node,
+#                 node_text=node.tail,
+#                 current_xpath_data=current_xpath_data,
+#                 overall_xpath_dict=overall_xpath_dict,
+#                 text_part_flag="node_tail_text",
+#                 groundtruth_value=value,
+#                 matched_xpaths=matched_xpaths,
+#                 dom_tree=dom_tree,
+#                 current_page_nodes_in_order=current_page_nodes_in_order,
+#                 is_truth_value_list=is_truth_value_list,
+#             )
 
-    return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
+#     return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
 
 
 def get_dom_tree(html, website):
@@ -412,6 +412,8 @@ def get_field_xpaths(
                             # where we need to split and create new tags of matched_xpaths.
                             # For example, "<div><span>asd<br/>qwe</span></div>"
 
+                            node_attribute = node.attrib.get('type', '') 
+
                             len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
                             for index, etext in enumerate(node_text.split("--BRRB--")):
                                 if text_part_flag == "node_text":
@@ -428,7 +430,7 @@ def get_field_xpaths(
                                 #? Update the dictionary.
                                 current_xpath_data[xpath] = clean_etext
                                 overall_xpath_dict[xpath].add(clean_etext)
-                                current_page_nodes_in_order.append((clean_etext, xpath))
+                                current_page_nodes_in_order.append((clean_etext, xpath, node_attribute))
 
                                 #? Clean the groundtruth and the node text. Check if the groundtruth is in the node text.                        
                                 clean_etext = clean_format_str(clean_etext)
@@ -583,16 +585,17 @@ def generate_nodes_seq_and_write_to_file(website):
                 field_info[doc_string_id] = field.split("-")[1]
         
         for id, doc_string in enumerate(doc_strings):
-            text, xpath = doc_string
+            text, xpath, node_attribute = doc_string
             is_variable = xpath in variable_nodes
             gt_text = gt_text_dict.get(xpath)
-            # Define Fixed-nodes
-            if not is_variable:
-                new_doc_strings.append((text, xpath, "fixed-node", gt_text)) #!Add here the gt_text
-            # Define Variable-nodes
-            else:
-                gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
-                new_doc_strings.append((text, xpath, gt_field, gt_text))
+
+            # # Define Fixed-nodes
+            # if not is_variable:
+            #     new_doc_strings.append((text, xpath, "fixed-node", gt_text)) #!Add here the gt_text
+            # # Define Variable-nodes
+            # else:
+            gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
+            new_doc_strings.append((text, xpath, gt_field, gt_text, node_attribute))
 
         cleaned_features_for_this_website[page_id] = new_doc_strings
 
@@ -620,7 +623,7 @@ def main(_):
     global min_node_text_size
     min_node_text_size = 2
 
-    debug = True
+    debug = False
     if debug:
         for website in websites[:]:
             if website in ['canelamedia.com']: 

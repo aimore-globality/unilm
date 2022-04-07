@@ -45,8 +45,8 @@ from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 # # Load
 
 # %% tags=[]
-dataset = 'train' #! Run this data preparation pipeline on a big machine 
-# dataset = 'develop'
+# dataset = 'train' #! Run this data preparation pipeline on a big machine 
+dataset = 'develop'
 dataset
 
 # %% [markdown]
