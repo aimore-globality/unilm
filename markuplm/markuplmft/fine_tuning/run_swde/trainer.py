@@ -43,7 +43,7 @@ class Trainer:
         model,
         no_cuda: bool,
         train_dataset_info,
-        develop_dataset_info,
+        evaluate_dataset_info,
         per_gpu_train_batch_size: int,
         eval_batch_size: int,
         num_epochs: int,
@@ -92,10 +92,10 @@ class Trainer:
         #     print(f"self.__dict__:\n {pprint(self.__dict__)}")
 
         self.train_dataset, self.train_info = train_dataset_info
-        self.develop_dataset, self.develop_info = develop_dataset_info
+        self.evaluate_dataset, self.evaluate_info = evaluate_dataset_info
 
         self.train_dataloader = self._get_dataloader(self.train_dataset, is_train=True)
-        self.eval_dataloader = self._get_dataloader(self.develop_dataset, is_train=False)
+        self.evaluate_dataloader = self._get_dataloader(self.evaluate_dataset, is_train=False)
         #! Maybe pass this to a function before training prepare_for_training >
  
         self.max_steps = max_steps
@@ -157,18 +157,18 @@ class Trainer:
         # ? Check if the folder exists
         self.overwrite_model = overwrite_model
 
-        self.save_model_path = Path(save_model_path) / str(self.num_train_epochs)
+        self.save_model_path = Path(save_model_path) / f"epochs_{str(self.num_train_epochs)}"
         if (
             self.save_model_path.exists()
-            and self.save_model_path.iterdir() # and os.listdir(self.save_model_path)
-            and not overwrite_model
+            and any(self.save_model_path.iterdir()) #? Check if the folder is empty
+            and not self.overwrite_model
         ):
             raise ValueError(
                 f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
             )
 
         #! < Maybe pass this to a function before training prepare_for_training
-        print("Done")
+        print("... Done!")
 
     def _prepare_optimizer(self, model, weight_decay, learning_rate, adam_epsilon):
         no_decay = ["bias", "LayerNorm.weight"]
@@ -300,18 +300,78 @@ class Trainer:
             wandb.log({"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step})
             wandb.log({"Training Loss": np.mean(all_losses)})
 
-    def evaluate(self, dataset, info) -> Dict[str, float]:        
+
+    def train(self):
+        print("***** Running training *****")
+        print(f"  Num examples = {len(self.train_dataset)}")
+        print(f"  Num Epochs = {self.num_train_epochs}")
+        print(f"  Instantaneous batch size per GPU = {self.per_gpu_train_batch_size}")
+        total_train_batch_size = (
+            self.train_batch_size
+            * self.gradient_accumulation_steps
+            * (torch.distributed.get_world_size() if self.local_rank != -1 else 1)
+        )
+        print(
+            f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}"
+        )
+        print(f"  Gradient Accumulation steps = {self.gradient_accumulation_steps}")
+        print(f"  Total optimization steps = {self.t_total}")
+
+        self.global_step = 0
+        self.tr_loss, self.logging_loss = 0.0, 0.0
+
+        epoch_iterator = tqdm(
+            range(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
+        )
+        for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
+            if self.evaluate_during_training:
+                self.evaluate(self.evaluate_dataloader, self.evaluate_dataset, self.evaluate_info)
+
+            if isinstance(self.train_dataloader, DataLoader) and isinstance(
+                self.train_dataloader.sampler, DistributedSampler
+            ):
+                self.train_dataloader.sampler.set_epoch(epoch)
+
+            self.train_epoch()
+            # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
+            # print(f"self.global_step: {self.global_step}")
+
+            # if self.global_step > self.max_steps:  #! I have changed this
+            #     print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step}) 2")
+            #     epoch_iterator.close()
+            #     break
+
+        #!Add  # Save the trained model and the tokenizer
+        # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
+        #     self.save_model_and_tokenizer()
+
+        print(f"{'-'*100}\n...Done training!\n")
+        self.model.net.eval()
+
+        dataset_evaluated = self.evaluate(self.evaluate_dataloader, self.evaluate_dataset, self.evaluate_info)
+
+        if self.local_rank in [-1, 0]:
+            wandb.run.save()
+            wandb.finish()
+
+            self.model.save_model(output_dir=self.save_model_path, epoch=self.num_train_epochs)
+
+        print(f"{'-'*100}\n...Done evaluating!\n")
+
+        return dataset_evaluated
+    
+    def evaluate(self, dataloader, dataset, info) -> Dict[str, float]:        
         if self.verbose:
             print(f"***** Running evaluation *****")
             # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
-            print(f"  Num examples for dataset = {len(self.eval_dataloader.dataset)}")
+            print(f"  Num examples for dataset = {len(dataset)}")
             print(f"  Batch size = {self.eval_batch_size}")
         self.model.net.eval()
 
         with torch.no_grad():
             all_logits = []
             all_losses = []
-            batch_iterator = tqdm(self.eval_dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0])
+            batch_iterator = tqdm(dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0])
             for batch in batch_iterator:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
@@ -340,7 +400,7 @@ class Trainer:
         if (self.local_rank in [-1, 0]):
             wandb.log({"Evaluation Loss": np.mean(all_losses)})
 
-        return self.recreate_dataset(all_logits, self.develop_info)
+        return self.recreate_dataset(all_logits, info)
 
     def recreate_dataset(self, all_logits, info):
         print("Recreate dataset...")
@@ -424,64 +484,6 @@ class Trainer:
             wandb.log({"cm_per_dataset": cm_per_dataset_tbl})
 
         return result_df
-
-    def train(self):
-        print("***** Running training *****")
-        print(f"  Num examples = {len(self.train_dataset)}")
-        print(f"  Num Epochs = {self.num_train_epochs}")
-        print(f"  Instantaneous batch size per GPU = {self.per_gpu_train_batch_size}")
-        total_train_batch_size = (
-            self.train_batch_size
-            * self.gradient_accumulation_steps
-            * (torch.distributed.get_world_size() if self.local_rank != -1 else 1)
-        )
-        print(
-            f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}"
-        )
-        print(f"  Gradient Accumulation steps = {self.gradient_accumulation_steps}")
-        print(f"  Total optimization steps = {self.t_total}")
-
-        self.global_step = 0
-        self.tr_loss, self.logging_loss = 0.0, 0.0
-
-        epoch_iterator = tqdm(
-            range(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
-        )
-        for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
-            if self.evaluate_during_training:
-                self.evaluate(self.develop_dataset, self.develop_info)
-
-            if isinstance(self.train_dataloader, DataLoader) and isinstance(
-                self.train_dataloader.sampler, DistributedSampler
-            ):
-                self.train_dataloader.sampler.set_epoch(epoch)
-
-            self.train_epoch()
-            # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
-            # print(f"self.global_step: {self.global_step}")
-
-            # if self.global_step > self.max_steps:  #! I have changed this
-            #     print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step}) 2")
-            #     epoch_iterator.close()
-            #     break
-
-        #!Add  # Save the trained model and the tokenizer
-        # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
-        #     self.save_model_and_tokenizer()
-
-        print(f"{'-'*100}\n...Done training!\n")
-        self.model.net.eval()
-
-        dataset_evaluated = self.evaluate(self.develop_dataset, self.develop_info)
-
-        if self.local_rank in [-1, 0]:
-            wandb.run.save()
-            wandb.finish()
-
-        self.model.save_model(output_dir=self.save_model_path, epoch=self.num_train_epochs)
-
-        return dataset_evaluated
-    
     def get_classification_metrics(self, dataset_predicted):
         print("Compute Metrics:")
         metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_predicted)

@@ -44,7 +44,7 @@ class MarkupLModel:
 
         # self.output_dir = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
-        self.model_name_or_path = Path("microsoft/markuplm-base")
+        self.original_model_dir = Path("microsoft/markuplm-base")
         self.save_model_path = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
         self.doc_stride = 128
@@ -55,24 +55,32 @@ class MarkupLModel:
         if verbose:
             print("self.__dict__", pprint(self.__dict__))
 
-    def load_pretrained_tokenizer(self):
-        self.tokenizer = MarkupLMTokenizer.from_pretrained(self.model_name_or_path)
-
-    def load_pretrained_model(self, local_rank):
+    def load_pretrained_model_and_tokenizer(self, local_rank):
         # ? Load pretrained model and tokenizer
         if local_rank not in [-1, 0]:
             torch.distributed.barrier()
             # ? Make sure only the first process in distributed training will download model & vocab
+        self.tokenizer = MarkupLMTokenizer.from_pretrained(self.original_model_dir)
 
-        config = MarkupLMConfig.from_pretrained(self.pre_trained_model_folder_path)
+        config = MarkupLMConfig.from_pretrained(self.original_model_dir)
         config_dict = config.to_dict()
         config_dict.update({"node_type_size": len(constants.ATTRIBUTES_PLUS_NONE)})
         config = MarkupLMConfig.from_dict(config_dict)
 
         self.net = MarkupLMForTokenClassification.from_pretrained(
-            self.model_name_or_path, config=config
+            self.original_model_dir, config=config
         )
         self.net.resize_token_embeddings(len(self.tokenizer))
+
+    def load_trained_model(self, 
+        config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/", 
+        tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/", 
+        net_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/1/checkpoint-1"):
+
+        config = MarkupLMConfig.from_pretrained(config_path)
+        self.tokenizer = MarkupLMTokenizer.from_pretrained(tokenizer_path)
+        self.net = MarkupLMForTokenClassification.from_pretrained(net_path, config=config)
+        self.net.to(self.device)
 
     def save_model_and_tokenizer(self):
         # TODO (aimore): Replace os with Path [done - remove comment if passes]
@@ -92,18 +100,14 @@ class MarkupLModel:
 
     def save_model(self, output_dir, epoch):
         output_dir = Path(output_dir) / f"checkpoint-{epoch}"
-        output_dir.mkdir(parents=True, exist_ok=False)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         model_to_save = self.net.module if hasattr(self.net, "module") else self.net
         #? Take care of distributed/parallel training
         model_to_save.save_pretrained(output_dir)
         #! Save the parameters: torch.save(self.__dict__, os.path.join(output_dir, "training_args.bin"))
-        print(f"Saving model checkpoint to {output_dir}")
+        if output_dir.exists():
+            print(f"Overwriting model checkpoint: {output_dir}")
+        else:
+            print(f"Saving model checkpoint to: {output_dir}")
 
-    def load_model(self):
-        config = MarkupLMConfig.from_pretrained(self.pre_trained_model_folder_path)
-        self.tokenizer = MarkupLMTokenizer.from_pretrained(self.pre_trained_model_folder_path)
-        self.net = MarkupLMForTokenClassification.from_pretrained(
-            self.pre_trained_model_folder_path, config=config
-        )
-        self.net.to(self.device)
