@@ -35,6 +35,7 @@ from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import sys
+from pathlib import Path
 
 class Trainer:
     def __init__(
@@ -55,10 +56,10 @@ class Trainer:
         verbose: bool,
         gradient_accumulation_steps: int,
         max_grad_norm: float,
-        output_dir: str,
+        save_model_path: str,
+        overwrite_model: bool = False,
         fp16: bool = True,
         fp16_opt_level: str = "O1",
-        overwrite_output_dir: bool = False,
         evaluate_during_training: bool = False,
         save_every_epoch: int = 1,
     ):
@@ -116,9 +117,9 @@ class Trainer:
 
         # ? Setting Model
         self.model = model
-        self.model.to(self.device)
+        self.model.net.to(self.device)
         self.optimizer = self._prepare_optimizer(
-            self.model,
+            self.model.net,
             weight_decay,
             learning_rate,
             adam_epsilon,
@@ -129,18 +130,18 @@ class Trainer:
 
         # ? Set model to use fp16 and multi-gpu
         if self.fp16:
-            self.model, self.optimizer = amp.initialize(
-                models=self.model, optimizers=self.optimizer, opt_level=fp16_opt_level
+            self.model.net, self.optimizer = amp.initialize(
+                models=self.model.net, optimizers=self.optimizer, opt_level=fp16_opt_level
             )
 
         # ? multi-gpu training (should be after apex fp16 initialization)
-        if self.n_gpu > 1 and not isinstance(self.model, torch.nn.DataParallel):
-            self.model = torch.nn.DataParallel(self.model)
+        if self.n_gpu > 1 and not isinstance(self.model.net, torch.nn.DataParallel):
+            self.model.net = torch.nn.DataParallel(self.model.net)
 
         # ? Distributed training (should be after apex fp16 initialization)
         if self.local_rank != -1:
-            self.model = torch.nn.parallel.DistributedDataParallel(
-                self.model,
+            self.model.net = torch.nn.parallel.DistributedDataParallel(
+                self.model.net,
                 device_ids=[self.local_rank],
                 output_device=self.local_rank,
                 find_unused_parameters=True,
@@ -154,14 +155,16 @@ class Trainer:
         self.save_every_epoch = save_every_epoch
 
         # ? Check if the folder exists
-        self.output_dir = output_dir
+        self.overwrite_model = overwrite_model
+
+        self.save_model_path = Path(save_model_path) / str(self.num_train_epochs)
         if (
-            os.path.exists(self.output_dir)
-            and os.listdir(self.output_dir)
-            and not overwrite_output_dir
+            self.save_model_path.exists()
+            and self.save_model_path.iterdir() # and os.listdir(self.save_model_path)
+            and not overwrite_model
         ):
             raise ValueError(
-                f"Output directory ({self.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
+                f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
             )
 
         #! < Maybe pass this to a function before training prepare_for_training
@@ -195,7 +198,7 @@ class Trainer:
         )
 
     def _get_dataloader(self, dataset_info: pd.DataFrame, is_train: bool = True) -> DataLoader:
-        print(f"Get dataloader for dataset: {len(dataset_info[0])}")
+        print(f"Get dataloader for dataset: {len(dataset_info)}")
         if is_train:
             sampler = RandomSampler(dataset_info)
             batch_size = self.train_batch_size
@@ -224,21 +227,15 @@ class Trainer:
         if self.metrics_store:
             self.metrics_store.log_timeseries(**metrics, step=self.logging_epoch)
 
-    def _to_device(self, tensors: Dict[str, Tensor]) -> Dict[str, Tensor]:
-        return {
-            key: tensor.to(self.device)
-            for key, tensor in tensors.items()
-        }
-
     def _batch_to_device(self, batch_list):
         batch_list = tuple(batch.to(self.device) for batch in batch_list)
         return batch_list
 
     def train_epoch(self):
-        self.model.train()
+        self.model.net.train()
         all_losses = []
         batch_iterator = tqdm(
-            self.train_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0], leave=False
+            self.train_dataloader, desc="Train - Batch", disable=self.local_rank not in [-1, 0]
         )
         for step, batch in enumerate(batch_iterator):
             batch_list = self._batch_to_device(batch)
@@ -250,11 +247,12 @@ class Trainer:
                 "xpath_subs_seq": batch_list[4],
                 "labels": batch_list[5],
             }
-            outputs = self.model(**inputs)
+            outputs = self.model.net(**inputs)
             loss = outputs[0]  # ? model outputs are always tuple in transformers (see doc)
 
             if self.n_gpu > 1:
                 loss = loss.mean()  # ? to average on multi-gpu parallel (not distributed) training
+                # loss = loss.sum() / len(batch) #! See this to understand that loss.mean() is not optimal: https://discuss.pytorch.org/t/how-to-fix-gathering-dim-0-warning-in-multi-gpu-dataparallel-setting/41733/2#:~:text=Actually%2C%20just%20re,sizes%20as%20well).
             if self.gradient_accumulation_steps > 1:
                 loss = loss / self.gradient_accumulation_steps
 
@@ -263,7 +261,6 @@ class Trainer:
                     scaled_loss.backward()
             else:
                 loss.backward()
-
             # self.tr_loss += loss.item()  # ? Sum up new loss value
             all_losses.append(loss.item())
             # t.update()
@@ -276,11 +273,11 @@ class Trainer:
                         amp.master_params(self.optimizer), self.max_grad_norm
                     )
                 else:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.model.net.parameters(), self.max_grad_norm)
 
                 self.optimizer.step()
                 self.scheduler.step()  # Update learning rate schedule
-                self.model.zero_grad()
+                self.model.net.zero_grad()
                 self.global_step += 1
 
                 # !Uncomment this
@@ -300,7 +297,7 @@ class Trainer:
 
         print(f"- Training Loss: {np.mean(all_losses)}")
         if (self.local_rank in [-1, 0]):
-            wandb.log({"lr": self.scheduler.get_lr()[0], "global_step": self.global_step})
+            wandb.log({"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step})
             wandb.log({"Training Loss": np.mean(all_losses)})
 
     def evaluate(self, dataset, info) -> Dict[str, float]:        
@@ -309,12 +306,12 @@ class Trainer:
             # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
             print(f"  Num examples for dataset = {len(self.eval_dataloader.dataset)}")
             print(f"  Batch size = {self.eval_batch_size}")
-        self.model.eval()
+        self.model.net.eval()
 
         with torch.no_grad():
             all_logits = []
             all_losses = []
-            batch_iterator = tqdm(self.eval_dataloader, desc="Batch", disable=self.local_rank not in [-1, 0])
+            batch_iterator = tqdm(self.eval_dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0])
             for batch in batch_iterator:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
@@ -325,7 +322,7 @@ class Trainer:
                     "xpath_subs_seq": batch_list[4],
                     "labels": batch_list[5],  # ? Removing this won't report loss
                 }
-                outputs = self.model(**inputs)
+                outputs = self.model.net(**inputs)
                 loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
                 logits = outputs["logits"]  # which is (bs,seq_len,node_type)
                 all_logits.append(logits.detach().cpu())
@@ -429,8 +426,6 @@ class Trainer:
         return result_df
 
     def train(self):
-        # self._log_metrics(develop_metrics, "develop")
-
         print("***** Running training *****")
         print(f"  Num examples = {len(self.train_dataset)}")
         print(f"  Num Epochs = {self.num_train_epochs}")
@@ -463,7 +458,8 @@ class Trainer:
 
             self.train_epoch()
             # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
-            print(f"self.global_step: {self.global_step}")
+            # print(f"self.global_step: {self.global_step}")
+
             # if self.global_step > self.max_steps:  #! I have changed this
             #     print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step}) 2")
             #     epoch_iterator.close()
@@ -474,13 +470,16 @@ class Trainer:
         #     self.save_model_and_tokenizer()
 
         print(f"{'-'*100}\n...Done training!\n")
-        self.model.eval()
+        self.model.net.eval()
 
         dataset_evaluated = self.evaluate(self.develop_dataset, self.develop_info)
 
         if self.local_rank in [-1, 0]:
             wandb.run.save()
             wandb.finish()
+
+        self.model.save_model(output_dir=self.save_model_path, epoch=self.num_train_epochs)
+
         return dataset_evaluated
     
     def get_classification_metrics(self, dataset_predicted):

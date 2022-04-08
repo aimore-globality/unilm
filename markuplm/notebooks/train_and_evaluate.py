@@ -58,7 +58,7 @@ trainer_config = dict(
     verbose=False
     )
 
-model = markup_model.model
+model = markup_model.net
 per_gpu_train_batch_size = 16
 eval_batch_size = 16
 num_epochs = 1

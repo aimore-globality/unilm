@@ -32,7 +32,7 @@ class MarkupLModel:
         verbose: bool = False,
         no_cuda:bool = False
     ):
-        self.model = None
+        self.net = None
         self.tokenizer = None
 
         self.local_rank = -1
@@ -69,10 +69,10 @@ class MarkupLModel:
         config_dict.update({"node_type_size": len(constants.ATTRIBUTES_PLUS_NONE)})
         config = MarkupLMConfig.from_dict(config_dict)
 
-        self.model = MarkupLMForTokenClassification.from_pretrained(
+        self.net = MarkupLMForTokenClassification.from_pretrained(
             self.model_name_or_path, config=config
         )
-        self.model.resize_token_embeddings(len(self.tokenizer))
+        self.net.resize_token_embeddings(len(self.tokenizer))
 
     def save_model_and_tokenizer(self):
         # TODO (aimore): Replace os with Path [done - remove comment if passes]
@@ -85,16 +85,16 @@ class MarkupLModel:
         #? Save a trained model, configuration and tokenizer using `save_pretrained()`.
         #? They can then be reloaded using `from_pretrained()`
         #? Take care of distributed/parallel training
-        model_to_save = self.model.module if hasattr(self.model, "module") else self.model
+        model_to_save = self.net.module if hasattr(self.net, "module") else self.net
         model_to_save.save_pretrained(self.save_model_path)
         self.tokenizer.save_pretrained(self.save_model_path)
         # TODO(aimore): Save the parameters: torch.save(self.__dict__, os.path.join(self.save_model_path, "training_args.bin"))
 
-    def save_model(self, sub_output_dir, global_step):
-        output_dir = Path(sub_output_dir) / f"checkpoint-{global_step}"
+    def save_model(self, output_dir, epoch):
+        output_dir = Path(output_dir) / f"checkpoint-{epoch}"
         output_dir.mkdir(parents=True, exist_ok=False)
 
-        model_to_save = self.model.module if hasattr(self.model, "module") else self.model
+        model_to_save = self.net.module if hasattr(self.net, "module") else self.net
         #? Take care of distributed/parallel training
         model_to_save.save_pretrained(output_dir)
         #! Save the parameters: torch.save(self.__dict__, os.path.join(output_dir, "training_args.bin"))
@@ -103,7 +103,7 @@ class MarkupLModel:
     def load_model(self):
         config = MarkupLMConfig.from_pretrained(self.pre_trained_model_folder_path)
         self.tokenizer = MarkupLMTokenizer.from_pretrained(self.pre_trained_model_folder_path)
-        self.model = MarkupLMForTokenClassification.from_pretrained(
+        self.net = MarkupLMForTokenClassification.from_pretrained(
             self.pre_trained_model_folder_path, config=config
         )
-        self.model.to(self.device)
+        self.net.to(self.device)
