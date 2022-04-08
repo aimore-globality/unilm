@@ -1,10 +1,11 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
-#       format_name: light
-#       format_version: '1.5'
+#       format_name: percent
+#       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: Python 3.7.11 ('markuplmft')
@@ -12,27 +13,29 @@
 #     name: python3
 # ---
 
+# %%
 import wandb
 import pprint
 
+# %%
 defaults = dict(
     learning_rate=1e-5, 
     adam_epsilon=1e-8
 )
 
-# +
+# %%
 wandb.init(project="LanguageModel", config=defaults, resume=True)
 
 wandb.login()
 config = dict(wandb.config)
 print("Configurations from WandB: ")
 print(config)
-# -
 
+# %%
 learning_rate = config["learning_rate"]
 adam_epsilon = config["adam_epsilon"]
 
-# +
+# %%
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 
 data_reader_config = dict(
@@ -56,14 +59,15 @@ develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/
 # #?  Generate all features
 # train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=False)
 # develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=False)
-# -
 
+# %%
 print(f"train_dataset_info: {len(train_dataset_info[0])}")
 print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 
+# %% [markdown]
 # # Train
 
-# +
+# %%
 from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 markup_model = MarkupLModel()
@@ -72,7 +76,7 @@ markup_model.load_pretrained_model_and_tokenizer(-1)
 # markup_model.tokenizer
 # markup_model.model
 
-# +
+# %%
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
 trainer_config = dict(
@@ -122,13 +126,14 @@ trainer = Trainer(
     evaluate_during_training=evaluate_during_training,
     **trainer_config,
 )
-# -
 
+# %%
 dataset_nodes_predicted = trainer.train()
 
+# %% [markdown]
 # # Infer
 
-# +
+# %%
 # from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 # markup_model = MarkupLModel()
@@ -139,7 +144,7 @@ dataset_nodes_predicted = trainer.train()
 # )
 # markup_model
 
-# +
+# %%
 # from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
 # trainer_config = dict(
@@ -190,8 +195,7 @@ dataset_nodes_predicted = trainer.train()
 #     **trainer_config,
 # )
 
-# +
+# %%
 # dataset_nodes_predicted = trainer.evaluate(trainer.evaluate_dataloader, trainer.evaluate_dataset, trainer.evaluate_info)
-# -
 
-
+# %%
