@@ -22,9 +22,10 @@
 import pandas as pd
 from pathlib import Path
 from tqdm.notebook import tqdm
+pd.set_option("min_rows",5, "max_rows", 5)
 
 # %% tags=[]
-dataset = 'develop'
+dataset = 'train'
 
 # %% [markdown]
 # # Packed Data (Data after pack_data.py)
@@ -112,9 +113,9 @@ for website_path in websites_iterator:
     no_past_client_pages = []
     
     for page_index in website_data.keys():
-        # website = str(website_path.parts[-1]).split('.pickle')[0]
-        # websites.append(website)
-        # pages.append(page_index)
+        website = str(website_path.parts[-1]).split('.pickle')[0]
+        websites.append(website)
+        pages.append(page_index)
         
         df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
         if len(df) > 0:
@@ -160,16 +161,45 @@ for website_path in websites_iterator:
 
     # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
 
+
 # %%
-all_df['node_attribute'].value_counts()
+def read_data(website_path):
+    dfs = pd.DataFrame()
+    website_data = pd.read_pickle(website_path)
+    for page_index in website_data.keys():
+        website = str(website_path.parts[-1]).split('.pickle')[0]
+        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
+        if len(df) > 0:
+            df["website"] = website
+            dfs = dfs.append(df)
+    return dfs
+
+import multiprocess as mp 
+
+p = mp.Pool(mp.cpu_count())
+all_dfs = pd.DataFrame()
+
+for dfs in p.imap(read_data, websites_data_path):
+    all_dfs = all_dfs.append(dfs)
+
+len(all_dfs)
+
+# %%
+all_dfs
 
 # %%
 print(len(all_df))
 all_df['node_attribute'].value_counts()
 
 # %%
+all_dfs[all_dfs["gt_field"] == 'PAST_CLIENT']["node_attribute"].value_counts()
+
+# %%
+all_dfs[all_dfs["gt_field"] == 'PAST_CLIENT']["xpath"].value_counts()
+
+# %%
 all_df['text_len'] = all_df['text'].apply(len)
-all_df.groupby("node_attribute")['text_len'].describe()
+all_df.groupby("node_attribute")['text_len'].describe().sort_values("count", ascending=False)
 
 # %%
 import collections
@@ -184,8 +214,8 @@ for x in attributes:
 
 # %%
 dd = pd.DataFrame([attributes, past_client_counts, none_counts]).T
-dd.columns = ["attribute", "past_clients", "none"]
-dd
+dd.columns = ["xpath", "past_clients", "none"]
+dd.sort_values("past_clients",ascending=False)["past_clients"].value_counts()
 
 # %%
 for df in positive_dfs[:10]:
