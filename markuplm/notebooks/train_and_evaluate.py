@@ -3,8 +3,8 @@
 #   jupytext:
 #     text_representation:
 #       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
+#       format_name: light
+#       format_version: '1.5'
 #       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: Python 3.7.11 ('markuplmft')
@@ -12,45 +12,74 @@
 #     name: python3
 # ---
 
-# %%
+import wandb
+import pprint
+
+defaults = dict(
+    learning_rate=1e-5, 
+    adam_epsilon=1e-8
+)
+
+# +
+wandb.init(project="LanguageModel", config=defaults, resume=True)
+
+wandb.login()
+config = dict(wandb.config)
+print("Configurations from WandB: ")
+print(config)
+# -
+
+learning_rate = config["learning_rate"]
+adam_epsilon = config["adam_epsilon"]
+
+# +
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 
-config = dict(
-    overwrite_cache=True,
-    save_features=True,
+data_reader_config = dict(
+    overwrite_cache=False,
     parallelize=False, 
     verbose=False)
-dr = DataReader(**config)
+dr = DataReader(**data_reader_config)
 
-# train_dataset, train_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=3, to_evaluate=False)
-# develop_dataset, develop_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=3, to_evaluate=True)
+# #?  Debug
+train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=2)
+develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=2)
 
+# #?  I will use 24 websites to train and 8 websites to evaluate
+# train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=24)
+# develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=8)
 
-# #! Trying to use only develop_dataset_info because it has info and loss 
-# train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=3, to_evaluate=True)
-develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=3, to_evaluate=True)
+# # ? Using half of the data just to speed up for few improvements
+# train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=12)
+# develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=4)
 
-# %%
+# #?  Generate all features
+# train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=False)
+# develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=False)
+# -
+
+print(f"train_dataset_info: {len(train_dataset_info[0])}")
+print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
+
+# # Train
+
+# +
 from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 markup_model = MarkupLModel()
 
-# %%
-markup_model.load_pretrained_tokenizer()
+markup_model.load_pretrained_model_and_tokenizer(-1)
 # markup_model.tokenizer
-
-# %%
-markup_model.load_pretrained_model(-1)
 # markup_model.model
 
-# %%
+# +
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
 trainer_config = dict(
     # # ? Optimizer
     weight_decay= 0.0, 
-    learning_rate= 1e-5,
-    adam_epsilon=1e-8,
+    learning_rate= learning_rate,
+    adam_epsilon=adam_epsilon,
 
     # # ? Scheduler
     warmup_ratio=0.0,
@@ -58,26 +87,26 @@ trainer_config = dict(
     verbose=False
     )
 
-model = markup_model.net
 per_gpu_train_batch_size = 16
-eval_batch_size = 16
-num_epochs = 1
-max_steps=20
+eval_batch_size = 256
+num_epochs = 3
+max_steps=0
 logging_every_epoch=1
 trainer_config = trainer_config
-gradient_accumulation_steps=1
-output_dir="/data/GIT/unilm/markuplm/markuplmft/models/markuplm/"
+gradient_accumulation_steps=1 # For the short test I did, increasing this doesn't change the time and reduce performance
 fp16=True
 no_cuda=False
 fp16_opt_level="O1"
-overwrite_output_dir=True
 max_grad_norm=1.0
 evaluate_during_training = False
 
+save_model_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models"
+overwrite_model=True
+
 trainer = Trainer(
-    model=model,
+    model=markup_model,
     no_cuda=no_cuda,
-    train_dataset_info=develop_dataset_info,
+    train_dataset_info=train_dataset_info,
     evaluate_dataset_info=develop_dataset_info,
     per_gpu_train_batch_size=per_gpu_train_batch_size,
     eval_batch_size=eval_batch_size,
@@ -86,37 +115,83 @@ trainer = Trainer(
     logging_every_epoch=logging_every_epoch,
     gradient_accumulation_steps=gradient_accumulation_steps,
     max_grad_norm=max_grad_norm,
-    output_dir=output_dir,
+    save_model_path=save_model_path,
+    overwrite_model=overwrite_model,
     fp16=fp16,
     fp16_opt_level=fp16_opt_level,
-    overwrite_output_dir=overwrite_output_dir,
     evaluate_during_training=evaluate_during_training,
     **trainer_config,
 )
+# -
 
-# %%
 dataset_nodes_predicted = trainer.train()
 
-# %%
-# dataset_nodes_predicted
+# # Infer
 
-# %%
-# train_dataloader = trainer._get_dataloader(trainer.train_dataset, True)
-# eval_dataloader = trainer._get_dataloader(trainer.develop_dataset, False)
+# +
+# from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
-# %%
-# for x in train_dataloader:
-#     print(len(x))
-# # for x in eval_dataloader:
-# #     print(len(x))
+# markup_model = MarkupLModel()
+# markup_model.load_trained_model(
+#     config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#     tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#     net_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_3/checkpoint-3",
+# )
+# markup_model
 
-# %%
-# from markuplmft.fine_tuning.run_swde.lm_model import LModel
-# lm = LModel()
-# lm.parallelize = False
-# lm.load_data(dataset='train', limit_data=10)
+# +
+# from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
-# %%
-# lm.load_data(dataset='develop', limit_data=10)
-# lm.prepare_model_to_train()
-# lm.fit()
+# trainer_config = dict(
+#     # ? Optimizer
+#     weight_decay= 0.0, 
+#     learning_rate= 1e-5,
+#     adam_epsilon=1e-8,
+
+#     # ? Scheduler
+#     warmup_ratio=0.0,
+
+#     verbose=False
+#     )
+
+# per_gpu_train_batch_size = 16
+# eval_batch_size = 64
+# num_epochs = 1
+# max_steps=0
+# logging_every_epoch=1
+# trainer_config = trainer_config
+# gradient_accumulation_steps=1 # For the short test I did, increasing this doesn't change the time and reduce performance
+# fp16=True
+# no_cuda=False
+# fp16_opt_level="O1"
+# max_grad_norm=1.0
+# evaluate_during_training = False
+
+# save_model_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models"
+# overwrite_model=True
+
+# trainer = Trainer(
+#     model=markup_model,
+#     no_cuda=no_cuda,
+#     train_dataset_info=train_dataset_info,
+#     evaluate_dataset_info=train_dataset_info,
+#     per_gpu_train_batch_size=per_gpu_train_batch_size,
+#     eval_batch_size=eval_batch_size,
+#     num_epochs=num_epochs,
+#     max_steps=max_steps,
+#     logging_every_epoch=logging_every_epoch,
+#     gradient_accumulation_steps=gradient_accumulation_steps,
+#     max_grad_norm=max_grad_norm,
+#     save_model_path=save_model_path,
+#     overwrite_model=overwrite_model,
+#     fp16=fp16,
+#     fp16_opt_level=fp16_opt_level,
+#     evaluate_during_training=evaluate_during_training,
+#     **trainer_config,
+# )
+
+# +
+# dataset_nodes_predicted = trainer.evaluate(trainer.evaluate_dataloader, trainer.evaluate_dataset, trainer.evaluate_info)
+# -
+
+

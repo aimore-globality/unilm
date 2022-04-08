@@ -1,0 +1,8 @@
+method: grid
+metric:
+  goal: minimize
+  name: Evaluation_Loss
+parameters:
+  learning_rate:
+    values: [0.1, 0.0001]    
+program: /data/GIT/unilm/markuplm/notebooks/train_and_evaluate.py

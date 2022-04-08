@@ -298,7 +298,7 @@ class Trainer:
         print(f"- Training Loss: {np.mean(all_losses)}")
         if (self.local_rank in [-1, 0]):
             wandb.log({"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step})
-            wandb.log({"Training Loss": np.mean(all_losses)})
+            wandb.log({"Training_Loss": np.mean(all_losses)})
 
 
     def train(self):
@@ -398,7 +398,7 @@ class Trainer:
 
         print(f"- Evaluation Loss: {np.mean(all_losses)}")
         if (self.local_rank in [-1, 0]):
-            wandb.log({"Evaluation Loss": np.mean(all_losses)})
+            wandb.log({"Evaluation_Loss": np.mean(all_losses)})
 
         return self.recreate_dataset(all_logits, info)
 
