@@ -233,9 +233,9 @@ def get_swde_features(
 
         # TODO (Aimore): Check if the nodes are being dropped somehow. It seems there are less nodes than it should be?
         while True:
-            # This loop goes over all_token_ids_seq in a stride manner.
-            # The first step is to get the features for the window.
-            # invloved is [ start_pos , end_pos )
+            #? This loop goes over all_token_ids_seq in a stride manner.
+            #? The first step is to get the features for the window.
+            #? invloved is [ start_pos , end_pos )
 
             token_type_ids = [0] * max_length  # that is always this
 
@@ -246,11 +246,11 @@ def get_swde_features(
                 + all_token_ids_seq[start_pos:end_pos]
                 + [tokenizer.sep_token_id]
             )
-            # tokenizer.cls_token_id = 0
-            # tokenizer.sep_token_id = 2
-            # Gets a subset of the all_token_ids_seq and appends cls_token_id(0) to beginning and cls_token_id(2) to end.
-            # The length of the subset is given by the real_max_token_num 382.
-            # E.g. splited_token_ids_seq [len(382)] = [42996, 4, 23687, 48159, 5457, 2931, ...]
+            #? tokenizer.cls_token_id = 0
+            #? tokenizer.sep_token_id = 2
+            #? Gets a subset of the all_token_ids_seq and appends cls_token_id(0) to beginning and cls_token_id(2) to end.
+            #? The length of the subset is given by the real_max_token_num 382.
+            #? E.g. splited_token_ids_seq [len(382)] = [42996, 4, 23687, 48159, 5457, 2931, ...]
 
             splited_xpath_tags_seq = (
                 [padded_xpath_tags_seq]
@@ -264,7 +264,7 @@ def get_swde_features(
             )
             splited_labels_seq = [-100] + all_labels_seq[start_pos:end_pos] + [-100]
 
-            # locate first-tokens in them
+            #? locate first-tokens in them
             involved_first_tokens_pos = []
             involved_first_tokens_xpaths = []
             involved_first_tokens_types = []
@@ -274,11 +274,11 @@ def get_swde_features(
             while (
                 curr_first_token_index < len(first_token_pos)
                 and end_pos > first_token_pos[curr_first_token_index] >= start_pos
-            ):  # This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
-                # This while loops over the first_token_pos and breaks if first_token_pos is higher than the end_pos
+            ):  #? This while doesn't run if first_token_pos[curr_first_token_index] is very high (above 382)
+                #? This while loops over the first_token_pos and breaks if first_token_pos is higher than the end_pos
                 involved_first_tokens_pos.append(
                     first_token_pos[curr_first_token_index] - start_pos + 1
-                )  # +1 for [cls]
+                )  #? +1 for [cls]
                 involved_first_tokens_xpaths.append(first_token_xpaths[curr_first_token_index])
                 involved_first_tokens_types.append(first_token_type[curr_first_token_index])
                 involved_first_tokens_text.append(first_token_text[curr_first_token_index])
@@ -287,9 +287,9 @@ def get_swde_features(
                 curr_first_token_index += 1
 
             if end_pos >= len(all_token_ids_seq):
-                # This will be the last time of this loop.
+                #? This will be the last time of this loop.
                 flag = True
-                # which means we need to pad in this feature
+                #? which means we need to pad in this feature
                 current_len = len(splited_token_ids_seq)
                 splited_token_ids_seq += [tokenizer.pad_token_id] * (max_length - current_len)
                 splited_xpath_tags_seq += [padded_xpath_tags_seq] * (max_length - current_len)
@@ -298,7 +298,7 @@ def get_swde_features(
                 attention_mask = [1] * current_len + [0] * (max_length - current_len)
 
             else:
-                # no need to pad, the splited seq is exactly with the length `max_length`
+                #? no need to pad, the splited seq is exactly with the length `max_length`
                 assert len(splited_token_ids_seq) == max_length
                 attention_mask = [1] * max_length
 
@@ -319,9 +319,9 @@ def get_swde_features(
                 )
             )
             # TODO (aimore): It seems that the stride is implemented wrong here.
-            #  Instead of doing start_pos += doc_stride.
-            #  In this way the stride will be 254, instead of 128.
-            #  So the first time is from 0 to 386, Then 508
+            #?  Instead of doing start_pos += doc_stride.
+            #?  In this way the stride will be 254, instead of 128.
+            #?  So the first time is from 0 to 386, Then 508
 
             start_pos = end_pos - doc_stride
 
@@ -329,4 +329,4 @@ def get_swde_features(
                 break
 
     return features
-    # features = [swde_feature_1, swde_feature_2, ...]
+    #? features = [swde_feature_1, swde_feature_2, ...]

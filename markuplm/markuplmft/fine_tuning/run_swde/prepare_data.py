@@ -96,77 +96,77 @@ def clean_format_str(text):
     return text
 
 
-def match_value_node(
-    node,
-    node_text,
-    current_xpath_data,
-    overall_xpath_dict,
-    text_part_flag,
-    groundtruth_value,
-    matched_xpaths,
-    dom_tree,
-    current_page_nodes_in_order,
-    is_truth_value_list,
-):
-    """Matches the ground truth value with a specific node in the domtree.
+# def match_value_node(
+#     node,
+#     node_text,
+#     current_xpath_data,
+#     overall_xpath_dict,
+#     text_part_flag,
+#     groundtruth_value,
+#     matched_xpaths,
+#     dom_tree,
+#     current_page_nodes_in_order,
+#     is_truth_value_list,
+# ):
+#     """Matches the ground truth value with a specific node in the domtree.
 
-    In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths
-    will be updated.
+#     In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths
+#     will be updated.
 
-    Args:
-      is_truth_value_list: [], indicate which node is the truth-value
-      current_page_nodes_in_order: [(text, xpath)] seq
-      node: the node on the domtree that we are going to match.
-      node_text: the text inside this node.
-      current_xpath_data: the dictionary of the xpaths of the current domtree.
-      overall_xpath_dict: the dictionary of the xpaths of the current website.
-      text_part_flag: to match the "text" or the "tail" part of the node.
-      groundtruth_value: the value of our interest to match.
-      matched_xpaths: the existing matched xpaths list for this value on domtree.
-      website: the website where the value is from.
-      field: the field where the value is from.
-      dom_tree: the current domtree object, used for getting paths.
-    """
-    assert text_part_flag in ["node_text", "node_tail_text"]
-    # Dealing with the cases with multiple <br>s in the node text,
-    # where we need to split and create new tags of matched_xpaths.
-    # For example, "<div><span>asd<br/>qwe</span></div>"
-    len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
-    for index, etext in enumerate(node_text.split("--BRRB--")):
-        if text_part_flag == "node_text":
-            xpath = dom_tree.getpath(node)
-        elif text_part_flag == "node_tail_text":
-            # TODO (aimore): I am not sure why they make the distinction of the
-            #  xpath being the text or tail. That increases complexity of xpath and
-            #  might not help during generalization.
-            xpath = dom_tree.getpath(node) + "/tail"
-        if len_brs >= 2:
-            xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
-        clean_etext = clean_spaces(etext)
+#     Args:
+#       is_truth_value_list: [], indicate which node is the truth-value
+#       current_page_nodes_in_order: [(text, xpath)] seq
+#       node: the node on the domtree that we are going to match.
+#       node_text: the text inside this node.
+#       current_xpath_data: the dictionary of the xpaths of the current domtree.
+#       overall_xpath_dict: the dictionary of the xpaths of the current website.
+#       text_part_flag: to match the "text" or the "tail" part of the node.
+#       groundtruth_value: the value of our interest to match.
+#       matched_xpaths: the existing matched xpaths list for this value on domtree.
+#       website: the website where the value is from.
+#       field: the field where the value is from.
+#       dom_tree: the current domtree object, used for getting paths.
+#     """
+#     assert text_part_flag in ["node_text", "node_tail_text"]
+#     # Dealing with the cases with multiple <br>s in the node text,
+#     # where we need to split and create new tags of matched_xpaths.
+#     # For example, "<div><span>asd<br/>qwe</span></div>"
+#     len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
+#     for index, etext in enumerate(node_text.split("--BRRB--")):
+#         if text_part_flag == "node_text":
+#             xpath = dom_tree.getpath(node)
+#         elif text_part_flag == "node_tail_text":
+#             # TODO (aimore): I am not sure why they make the distinction of the
+#             #  xpath being the text or tail. That increases complexity of xpath and
+#             #  might not help during generalization.
+#             xpath = dom_tree.getpath(node) + "/tail"
+#         if len_brs >= 2:
+#             xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
+#         clean_etext = clean_spaces(etext)
 
-        # Update the dictionary.
-        current_xpath_data[xpath] = clean_etext
-        overall_xpath_dict[xpath].add(clean_etext)
-        current_page_nodes_in_order.append((clean_etext, xpath))
+#         # Update the dictionary.
+#         current_xpath_data[xpath] = clean_etext
+#         overall_xpath_dict[xpath].add(clean_etext)
+#         current_page_nodes_in_order.append((clean_etext, xpath))
 
-        # Clean the groundtruth and the node text. Check if the groundtruth is in the node text.
-        groundtruth_value = clean_format_str(groundtruth_value)
-        clean_etext = clean_format_str(clean_etext)
+#         # Clean the groundtruth and the node text. Check if the groundtruth is in the node text.
+#         groundtruth_value = clean_format_str(groundtruth_value)
+#         clean_etext = clean_format_str(clean_etext)
 
-        if groundtruth_value.strip() in clean_etext.strip():
-            matched_xpaths.append(xpath)
-            is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
+#         if groundtruth_value.strip() in clean_etext.strip():
+#             matched_xpaths.append(xpath)
+#             is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
 
-        # 这里我们更新三样东西 (Here we update three things)
-        # 如果当前节点与truth_value一致 (If the current node is consistent with truth_value)，
-        # 则将当前xpath加入matched_xpaths (Add the current xpath to matched_xpaths)
-        # 此外，还需要 current_xpath_data[xpath] = clean_etext,即记录当前页面 该xpath对应的文字
-        # (In addition, current_xpath_data[xpath] = clean_etext is also required,
-        # that is, the text corresponding to the xpath of the current page is recorded)
-        # 以及 overall_xpath_dict[xpath].add(clean_etext)，即记录当前网址上该xpath对应的文字，以add加入集合
-        # (And overall_xpath_dict[xpath].add(clean_etext), that is,
-        # record the text corresponding to the xpath on the current URL, and add it to the set)
-    return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
+#         # 这里我们更新三样东西 (Here we update three things)
+#         # 如果当前节点与truth_value一致 (If the current node is consistent with truth_value)，
+#         # 则将当前xpath加入matched_xpaths (Add the current xpath to matched_xpaths)
+#         # 此外，还需要 current_xpath_data[xpath] = clean_etext,即记录当前页面 该xpath对应的文字
+#         # (In addition, current_xpath_data[xpath] = clean_etext is also required,
+#         # that is, the text corresponding to the xpath of the current page is recorded)
+#         # 以及 overall_xpath_dict[xpath].add(clean_etext)，即记录当前网址上该xpath对应的文字，以add加入集合
+#         # (And overall_xpath_dict[xpath].add(clean_etext), that is,
+#         # record the text corresponding to the xpath on the current URL, and add it to the set)
+#     return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
 
 
 # def get_value_xpaths(
@@ -382,14 +382,14 @@ def get_field_xpaths(
             is_truth_value_list = []
 
 
-            # Iterate all the nodes in the given DOMTree.
+            #? Iterate all the nodes in the given DOMTree.
             for node in dom_tree.iter():
                 # The value can only be matched in the text of the node or the tail.
-                node_text_dict = {"node_text": node.text, "node_tail_text": node.tail}
+                node_text_dict = {"node_text": node.text, "node_tail_text": node.tail} #?The only nodes that are considered here are the node.text and node.tail
                 
                 for text_part_flag, node_text in node_text_dict.items():
                     if node_text:
-                        if len(node_text.strip()) >= min_node_text_size and 'javascript' not in node.attrib.get('type', ''): #! Remove java/script and min_node_text
+                        if node.tag != 'script' and len(node_text.strip()) >= min_node_text_size and 'javascript' not in node.attrib.get('type', '') and len(node_text.strip()) < max_node_text_size: #! Remove java/script and min_node_text
                             # """Matches the ground truth value with a specific node in the domtree.
 
                             # In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths will be updated.
@@ -412,7 +412,8 @@ def get_field_xpaths(
                             # where we need to split and create new tags of matched_xpaths.
                             # For example, "<div><span>asd<br/>qwe</span></div>"
 
-                            node_attribute = node.attrib.get('type', '') 
+                            node_attribute = node.attrib.get('type', '')
+                            node_tag = node.tag                            
 
                             len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
                             for index, etext in enumerate(node_text.split("--BRRB--")):
@@ -430,7 +431,7 @@ def get_field_xpaths(
                                 #? Update the dictionary.
                                 current_xpath_data[xpath] = clean_etext
                                 overall_xpath_dict[xpath].add(clean_etext)
-                                current_page_nodes_in_order.append((clean_etext, xpath, node_attribute))
+                                current_page_nodes_in_order.append((clean_etext, xpath, node_attribute, node_tag))
 
                                 #? Clean the groundtruth and the node text. Check if the groundtruth is in the node text.                        
                                 clean_etext = clean_format_str(clean_etext)
@@ -585,7 +586,7 @@ def generate_nodes_seq_and_write_to_file(website):
                 field_info[doc_string_id] = field.split("-")[1]
         
         for id, doc_string in enumerate(doc_strings):
-            text, xpath, node_attribute = doc_string
+            text, xpath, node_attribute, node_tag = doc_string
             is_variable = xpath in variable_nodes
             gt_text = gt_text_dict.get(xpath)
 
@@ -595,7 +596,7 @@ def generate_nodes_seq_and_write_to_file(website):
             # # Define Variable-nodes
             # else:
             gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
-            new_doc_strings.append((text, xpath, gt_field, gt_text, node_attribute))
+            new_doc_strings.append((text, xpath, gt_field, gt_text, node_attribute, node_tag))
 
         cleaned_features_for_this_website[page_id] = new_doc_strings
 
@@ -622,6 +623,8 @@ def main(_):
 
     global min_node_text_size
     min_node_text_size = 2
+    global max_node_text_size
+    max_node_text_size = 10_000
 
     debug = False
     if debug:

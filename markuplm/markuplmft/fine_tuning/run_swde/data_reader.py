@@ -83,6 +83,7 @@ class DataReader:
         # ? Load all features for websites
         global feature_dicts
         feature_dicts = self.load_or_cache_websites(websites=self.websites)
+        print("...Loaded/Created feature_dicts Done!")
 
         dataset, info = self.get_dataset_and_info_for_websites(self.websites)
         return dataset, info
@@ -97,7 +98,7 @@ class DataReader:
             num_cores = mp.cpu_count()
             print(f"num_cores: {num_cores}")
             with mp.Pool(num_cores) as pool, tqdm(total=len(websites)) as t:
-                for website, features_per_website in pool.imap_unordered(
+                for website, features_per_website in pool.imap(
                     self.load_or_cache_one_website_features, websites
                 ):
                     feature_dicts[website] = features_per_website
@@ -107,7 +108,6 @@ class DataReader:
             for website in tqdm(websites):
                 feature_dicts[website] = self.load_or_cache_one_website_features(website)
 
-        print(f"Number of feature for all websites: {len(feature_dicts)}")
         return feature_dicts
 
     def load_or_cache_one_website_features(self, website):
@@ -146,8 +146,7 @@ class DataReader:
 
 
     def get_dataset_and_info_for_websites(self, websites: List):
-        if self.verbose:
-            print("Getting data information for websites: ")
+        print("Getting data information for websites: ")
         all_features = []
 
         for website in websites:

@@ -25,12 +25,12 @@ from web_annotation_extractor.bundles.past_client.bundle import PastClientBundle
 from web_annotation_extractor.bundles.past_client.segmentation import *
 from web_annotation_extractor.evaluations.metric_functions import get_reconciliations_metrics_for_all_domains, average_domains_metrics, calculate_metrics_for_dataset, combine_and_get_set, combine_and_get_sorted_list
 from web_annotation_extractor.evaluations.visualization_functions import plot_performance
-
+from pathlib import Path
 graph = create_object_graph('test')
-pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
+# pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
 
 # %%
-segmenter_trained =["trained", "untrained", "extreme_untrained"][2]
+segmenter_trained =["trained", "untrained", "extreme_untrained"][0]
 predict_and_segment = True
 
 tag="PAST_CLIENT"
@@ -41,10 +41,12 @@ negative_percentage = 0.1
 
 # %% tags=[]
 save_load_data_path = Path(f"develop_WAPC_cache/develop_{segmenter_trained}_WAPC.pkl")
-save_load_data_path.mkdir(parents=True, exist_ok=True)
-print(f"save_load_data_path: {save_load_data_path}")
 
 if predict_and_segment:
+    if not save_load_data_path.exists():
+        save_load_data_path.mkdir(parents=True, exist_ok=True)
+    print(f"save_load_data_path: {save_load_data_path}")
+    
     # # ? Load Data
     dataset = 'develop'
     print(dataset)
@@ -191,8 +193,14 @@ average_domains_metrics(domain_metrics)
 
 # %%
 classified_nodes_folder_root = Path("results_classified")
-classified_nodes_folder_root.mkdir(parents=True, exist_ok=True)
-classified_nodes_data_path = "results_classified_5_epoch.pkl"
+
+if not classified_nodes_folder_root.exists():
+    classified_nodes_folder_root.mkdir(parents=True, exist_ok=True)
+
+# #? Put the predictions of the model inside the folder above and select the file with `classified_nodes_data_path`
+# classified_nodes_data_path = "results_classified_5_epoch.pkl"
+classified_nodes_data_path = "develop_set_nodes_classified_epoch_10.pkl"
+
 save_load_data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
 print(f"save_load_data_path: {save_load_data_path}")
 
@@ -253,6 +261,12 @@ no_classification_count = results['no_classification-node_company_span_taxonomy'
 print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {ground_truth_count}, no_classification_count: {no_classification_count}")
 
 # %%
+results["domain"] = results["html_path"].apply(lambda x: x.split(".pickle-0000.htm")[0])
+
+# %%
+results
+
+# %%
 # # ? Group reconciliations per node into reconciliation per page
 results_grouped = pd.DataFrame(
     results.groupby(by="html_path").agg(
@@ -291,6 +305,84 @@ for mode, index in mode_indices.items():
 
 # %% [markdown]
 # ### Compute Metrics
+
+# %%
+from pathlib import Path
+
+taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
+
+print(f"Metrics with the Segmenter {segmenter_trained}!")
+
+for mode in ["WAPC"]+list(mode_indices.keys()):
+    print(mode)
+    domain_metrics = get_reconciliations_metrics_for_all_domains(
+        df=merge,
+        gt_col=f"{tag}-gt_value",
+        predicted_col=f"{mode}-node_company_span_taxonomy",
+        annotations_col="PAST_CLIENT-annotations",
+        negative_percentage=negative_percentage,
+    )
+    display(calculate_metrics_for_dataset(domain_metrics))
+
+    folder_path = Path(f"/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer/segmenter_{segmenter_trained}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = str(folder_path)
+
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
+
+    fn = pd.DataFrame(domain_metrics["FN_seg"])
+    fn = fn["FN_seg"].explode().dropna()
+    fn_df = pd.DataFrame()
+    fn_df["FN_gt_value"] = fn.apply(lambda x: x[0])
+    fn_df["FN_gt_text"] = fn.apply(lambda x: x[1])
+    fn_df = pd.DataFrame(fn_df.groupby("FN_gt_value").aggregate('FN_gt_text'))
+    fn_df.columns = ["FN_gt_value", "FN_gt_text_list"]
+    fn_df["FN_gt_text_list"] = fn_df["FN_gt_text_list"].apply(list)
+    fn_df["FN_gt_text_len"] = fn_df["FN_gt_text_list"].apply(len)
+    fn_df = fn_df.sort_values("FN_gt_text_len", ascending=False)
+    
+    fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
+print(folder_path)
+
+# %%
+from pathlib import Path
+
+taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
+
+print(f"Metrics with the Segmenter {segmenter_trained}!")
+
+for mode in ["WAPC"]+list(mode_indices.keys()):
+    print(mode)
+    domain_metrics = get_reconciliations_metrics_for_all_domains(
+        df=merge,
+        gt_col=f"{tag}-gt_value",
+        predicted_col=f"{mode}-node_company_span_taxonomy",
+        annotations_col="PAST_CLIENT-annotations",
+        negative_percentage=negative_percentage,
+    )
+    display(calculate_metrics_for_dataset(domain_metrics))
+
+    folder_path = Path(f"/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer/segmenter_{segmenter_trained}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = str(folder_path)
+
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
+
+    fn = pd.DataFrame(domain_metrics["FN_seg"])
+    fn = fn["FN_seg"].explode().dropna()
+    fn_df = pd.DataFrame()
+    fn_df["FN_gt_value"] = fn.apply(lambda x: x[0])
+    fn_df["FN_gt_text"] = fn.apply(lambda x: x[1])
+    fn_df = pd.DataFrame(fn_df.groupby("FN_gt_value").aggregate('FN_gt_text'))
+    fn_df.columns = ["FN_gt_value", "FN_gt_text_list"]
+    fn_df["FN_gt_text_list"] = fn_df["FN_gt_text_list"].apply(list)
+    fn_df["FN_gt_text_len"] = fn_df["FN_gt_text_list"].apply(len)
+    fn_df = fn_df.sort_values("FN_gt_text_len", ascending=False)
+    
+    fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
+print(folder_path)
 
 # %%
 from pathlib import Path

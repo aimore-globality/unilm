@@ -37,6 +37,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import sys
 from pathlib import Path
 
+
 class Trainer:
     def __init__(
         self,
@@ -49,10 +50,10 @@ class Trainer:
         num_epochs: int,
         max_steps: int,
         logging_every_epoch: int,
-        weight_decay,
-        learning_rate,
-        adam_epsilon,
-        warmup_ratio,
+        weight_decay: float,
+        learning_rate: float,
+        adam_epsilon: float,
+        warmup_ratio: float,
         verbose: bool,
         gradient_accumulation_steps: int,
         max_grad_norm: float,
@@ -68,14 +69,12 @@ class Trainer:
         self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
         set_seed(self.n_gpu)  # ? For reproducibility
 
-        #? Setting WandB Log
+        # ? Setting WandB Log
         if self.local_rank in [-1, 0]:
             defaults = {}
             resume = sys.argv[-1] == "--resume"
-            
-            self.run = wandb.init(
-                project="LanguageModel", config=defaults, resume=resume
-            )
+
+            self.run = wandb.init(project="LanguageModel", config=defaults, resume=resume)
         else:
             self.run = None
 
@@ -85,9 +84,9 @@ class Trainer:
         self.eval_batch_size = eval_batch_size
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
-        
+
         self.verbose = verbose
-        
+
         # if self.verbose:
         #     print(f"self.__dict__:\n {pprint(self.__dict__)}")
 
@@ -97,17 +96,19 @@ class Trainer:
         self.train_dataloader = self._get_dataloader(self.train_dataset, is_train=True)
         self.evaluate_dataloader = self._get_dataloader(self.evaluate_dataset, is_train=False)
         #! Maybe pass this to a function before training prepare_for_training >
- 
+
         self.max_steps = max_steps
         print(f"self.max_steps: {self.max_steps}")
         self.num_train_epochs = num_epochs
         if self.max_steps > 0:
             self.t_total = self.max_steps
-            self.num_train_epochs = int((
-                self.max_steps
-                // (len(self.train_dataloader) // self.gradient_accumulation_steps)
-                + 1
-            ))
+            self.num_train_epochs = int(
+                (
+                    self.max_steps
+                    // (len(self.train_dataloader) // self.gradient_accumulation_steps)
+                    + 1
+                )
+            )
         else:
             self.t_total = (
                 len(self.train_dataloader)
@@ -160,13 +161,23 @@ class Trainer:
         self.save_model_path = Path(save_model_path) / f"epochs_{str(self.num_train_epochs)}"
         if (
             self.save_model_path.exists()
-            and any(self.save_model_path.iterdir()) #? Check if the folder is empty
+            and any(self.save_model_path.iterdir())  # ? Check if the folder is empty
             and not self.overwrite_model
         ):
             raise ValueError(
                 f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
             )
 
+        self.logging_epoch = 0
+
+        training_samples = len(train_dataset_info[0])
+        evaluation_samples = len(evaluate_dataset_info[0])
+
+        wandb.log({"training_samples": training_samples, "evaluation_samples": evaluation_samples})
+
+        print(f"training_samples: {training_samples}")
+        print(f"evaluation_samples: {evaluation_samples}")
+        print(f"learning_rate: {learning_rate}")
         #! < Maybe pass this to a function before training prepare_for_training
         print("... Done!")
 
@@ -197,35 +208,36 @@ class Trainer:
             optimizer, num_warmup_steps=int(warmup_ratio * t_total), num_training_steps=t_total
         )
 
-    def _get_dataloader(self, dataset_info: pd.DataFrame, is_train: bool = True) -> DataLoader:
-        print(f"Get dataloader for dataset: {len(dataset_info)}")
+    def _get_dataloader(self, dataset: pd.DataFrame, is_train: bool = True) -> DataLoader:
+        print(f"Get dataloader for dataset: {len(dataset)}")
         if is_train:
-            sampler = RandomSampler(dataset_info)
+            sampler = RandomSampler(dataset)
             batch_size = self.train_batch_size
         else:
-            sampler = SequentialSampler(dataset_info)
+            sampler = SequentialSampler(dataset)
             batch_size = self.eval_batch_size
         if self.local_rank != -1:
-            sampler = DistributedSampler(dataset_info)
+            sampler = DistributedSampler(dataset)
 
         loader = DataLoader(
-            dataset=dataset_info,
+            dataset=dataset,
             sampler=sampler,
             batch_size=batch_size,
             pin_memory=True,
+            num_workers=64 # ? Check for it
         )
         return loader
 
-    def _log_metrics(self, metrics: Dict[str, float], prefix: str = "") -> None:
-        print(f"Logs for epoch={self.logging_epoch}")
-        if prefix:
-            metrics = {
-                f"{prefix}_{metric}": value
-                for metric, value in metrics.items()
-            }
-        print(json.dumps(metrics, indent=4))
-        if self.metrics_store:
-            self.metrics_store.log_timeseries(**metrics, step=self.logging_epoch)
+    # def _log_metrics(self, metrics: Dict[str, float], prefix: str = "") -> None:
+    #     print(f"Logs for epoch={self.logging_epoch}")
+    #     if prefix:
+    #         metrics = {
+    #             f"{prefix}_{metric}": value
+    #             for metric, value in metrics.items()
+    #         }
+    #     print(json.dumps(metrics, indent=4))
+    #     if self.metrics_store:
+    #         self.metrics_store.log_timeseries(**metrics, step=self.logging_epoch)
 
     def _batch_to_device(self, batch_list):
         batch_list = tuple(batch.to(self.device) for batch in batch_list)
@@ -291,15 +303,20 @@ class Trainer:
 
             # !Uncomment this
             if 0 < self.max_steps < self.global_step:
-                print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})")
+                print(
+                    "Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})"
+                )
                 batch_iterator.close()
                 break
 
         print(f"- Training Loss: {np.mean(all_losses)}")
-        if (self.local_rank in [-1, 0]):
-            wandb.log({"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step})
-            wandb.log({"Training_Loss": np.mean(all_losses)})
-
+        if self.local_rank in [-1, 0]:
+            self.logging_epoch += 1
+            wandb.log(
+                {"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step},
+                step=self.logging_epoch,
+            )
+            wandb.log({"Training_Loss": np.mean(all_losses)}, step=self.logging_epoch)
 
     def train(self):
         print("***** Running training *****")
@@ -318,6 +335,7 @@ class Trainer:
         print(f"  Total optimization steps = {self.t_total}")
 
         self.global_step = 0
+        self.logging_epoch = 0
         self.tr_loss, self.logging_loss = 0.0, 0.0
 
         epoch_iterator = tqdm(
@@ -325,7 +343,7 @@ class Trainer:
         )
         for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
             if self.evaluate_during_training:
-                self.evaluate(self.evaluate_dataloader, self.evaluate_dataset, self.evaluate_info)
+                self.evaluate("develop")
 
             if isinstance(self.train_dataloader, DataLoader) and isinstance(
                 self.train_dataloader.sampler, DistributedSampler
@@ -333,13 +351,12 @@ class Trainer:
                 self.train_dataloader.sampler.set_epoch(epoch)
 
             self.train_epoch()
-            # print(f"Epoch: {epoch} - Train Loss: {self.tr_loss / self.global_step}")
-            # print(f"self.global_step: {self.global_step}")
 
             # if self.global_step > self.max_steps:  #! I have changed this
             #     print("Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step}) 2")
             #     epoch_iterator.close()
             #     break
+            self.logging_epoch += 1
 
         #!Add  # Save the trained model and the tokenizer
         # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -348,30 +365,39 @@ class Trainer:
         print(f"{'-'*100}\n...Done training!\n")
         self.model.net.eval()
 
-        dataset_evaluated = self.evaluate(self.evaluate_dataloader, self.evaluate_dataset, self.evaluate_info)
+        dataset_evaluated = self.evaluate("develop")
 
         if self.local_rank in [-1, 0]:
-            wandb.run.save()
-            wandb.finish()
-
-            self.model.save_model(output_dir=self.save_model_path, epoch=self.num_train_epochs)
+            self.model.save_model(save_dir=self.save_model_path, epoch=self.num_train_epochs)
 
         print(f"{'-'*100}\n...Done evaluating!\n")
 
         return dataset_evaluated
-    
-    def evaluate(self, dataloader, dataset, info) -> Dict[str, float]:        
+
+    def evaluate(self, dataset_name="develop") -> Dict[str, float]:
+        if dataset_name == "train":
+            dataloader, dataset, info = self._get_dataloader(self.train_dataset, is_train=False), self.train_dataset, self.train_info
+        else:
+            dataloader, dataset, info = (
+                self.evaluate_dataloader,
+                self.evaluate_dataset,
+                self.evaluate_info,
+            )
+
         if self.verbose:
             print(f"***** Running evaluation *****")
             # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
             print(f"  Num examples for dataset = {len(dataset)}")
             print(f"  Batch size = {self.eval_batch_size}")
+
         self.model.net.eval()
 
         with torch.no_grad():
             all_logits = []
             all_losses = []
-            batch_iterator = tqdm(dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0])
+            batch_iterator = tqdm(
+                dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0]
+            )
             for batch in batch_iterator:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
@@ -397,8 +423,8 @@ class Trainer:
                 all_losses.append(loss.item())
 
         print(f"- Evaluation Loss: {np.mean(all_losses)}")
-        if (self.local_rank in [-1, 0]):
-            wandb.log({"Evaluation_Loss": np.mean(all_losses)})
+        if self.local_rank in [-1, 0]:
+            wandb.log({f"{dataset_name}_Evaluation_Loss": np.mean(all_losses)})
 
         return self.recreate_dataset(all_logits, info)
 
@@ -474,19 +500,24 @@ class Trainer:
                 lines["truth"].append(all_res[html_path][xpath]["truth"])
                 lines["pred_type"].append(pred_type)
                 lines["final_probs"].append(final_probs)
-        
+
         result_df = pd.DataFrame(lines)
         metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
-        if (self.local_rank in [-1, 0]):
-            metrics_per_dataset_tbl = wandb.Table(data=pd.DataFrame(metrics_per_dataset.items()))
-            cm_per_dataset_tbl = wandb.Table(data=pd.DataFrame(cm_per_dataset.items()))
-            wandb.log({"metrics_per_dataset": metrics_per_dataset_tbl})
-            wandb.log({"cm_per_dataset": cm_per_dataset_tbl})
+        if self.local_rank in [-1, 0]:
+            self.log_metrics(metrics_per_dataset)
+            self.log_metrics(cm_per_dataset)
 
         return result_df
+
+    def log_metrics(self, metric):
+        for key, value in metric.items():
+            wandb.log({key: value}, step=self.logging_epoch)
+
     def get_classification_metrics(self, dataset_predicted):
         print("Compute Metrics:")
         metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_predicted)
 
-        print(f"Node Classification Metrics per Dataset:\n {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}")
+        print(
+            f"Node Classification Metrics per Dataset:\n {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}"
+        )
         return metrics_per_dataset, cm_per_dataset

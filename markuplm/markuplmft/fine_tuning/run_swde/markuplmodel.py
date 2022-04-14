@@ -98,16 +98,16 @@ class MarkupLModel:
         self.tokenizer.save_pretrained(self.save_model_path)
         # TODO(aimore): Save the parameters: torch.save(self.__dict__, os.path.join(self.save_model_path, "training_args.bin"))
 
-    def save_model(self, output_dir, epoch):
-        output_dir = Path(output_dir) / f"checkpoint-{epoch}"
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def save_model(self, save_dir, epoch):
+        self.save_path = Path(save_dir) / f"checkpoint-{epoch}"
+        self.save_path.mkdir(parents=True, exist_ok=True)
 
         model_to_save = self.net.module if hasattr(self.net, "module") else self.net
         #? Take care of distributed/parallel training
-        model_to_save.save_pretrained(output_dir)
+        model_to_save.save_pretrained(self.save_path)
         #! Save the parameters: torch.save(self.__dict__, os.path.join(output_dir, "training_args.bin"))
-        if output_dir.exists():
-            print(f"Overwriting model checkpoint: {output_dir}")
+        if self.save_path.exists():
+            print(f"Overwriting model checkpoint: {self.save_path}")
         else:
-            print(f"Saving model checkpoint to: {output_dir}")
+            print(f"Saving model checkpoint to: {self.save_path}")
 

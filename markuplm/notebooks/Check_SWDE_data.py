@@ -18,6 +18,8 @@
 # 1. This notebook checks if the format of the data and groundtruth is ok.
 # 2. It does some stats on the 'none' and 'PAST_CLIENT' nodes 
 
+# %%
+
 # %% tags=[]
 import pandas as pd
 from pathlib import Path
@@ -161,20 +163,21 @@ for website_path in websites_iterator:
 
     # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
 
-
 # %%
+print(len(websites_data_path))
+
 def read_data(website_path):
     dfs = pd.DataFrame()
     website_data = pd.read_pickle(website_path)
     for page_index in website_data.keys():
         website = str(website_path.parts[-1]).split('.pickle')[0]
-        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
+        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute', 'node_tag'])
         if len(df) > 0:
             df["website"] = website
             dfs = dfs.append(df)
     return dfs
 
-import multiprocess as mp 
+import multiprocess as mp
 
 p = mp.Pool(mp.cpu_count())
 all_dfs = pd.DataFrame()
@@ -185,61 +188,106 @@ for dfs in p.imap(read_data, websites_data_path):
 len(all_dfs)
 
 # %%
-all_dfs
+all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
+all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len) 
+
+# %% [markdown]
+# # Label Analysis
+# ## _node_tag_ and _node_attribute_
+# By identified where it is not likely a positive label to appear we should remove those cases and limit the scope of the data in order to:
+# - Reduce time in all stages 
+# - Remove noisy data
 
 # %%
-print(len(all_df))
-all_df['node_attribute'].value_counts()
+print(all_dfs.columns.values)
+
 
 # %%
-all_dfs[all_dfs["gt_field"] == 'PAST_CLIENT']["node_attribute"].value_counts()
+def node_analysis(all_dfs, col:str):
+    all_data_size = len(all_dfs)
+    positives = all_dfs[all_dfs["gt_text_len"] > 0]
+    negatives = all_dfs[all_dfs["gt_text_len"] == 0]
+
+    positives_col = positives[col].value_counts()
+    negatives_col = negatives[col].value_counts()
+    diff_col_set = set(negatives_col.index) - set(positives_col.index)
+    print(f"positives_col: {len(positives_col)}")
+    print(f"negatives_col: {len(negatives_col)}")
+    print(f"diff_col_set: {len(diff_col_set)}")
+    negatives_col.loc[list(diff_col_set)]
+
+    diff_nodes = all_dfs[all_dfs[col].isin(diff_col_set)]
+    print(f"Number of nodes containing this difference: {len(diff_nodes)} ({100*len(diff_nodes)/all_data_size:.2f}% of the total)")
+    print(f"% of the memory that represents: {diff_nodes['text_len'].sum()} ({100*diff_nodes['text_len'].sum()/all_dfs['text_len'].sum():.2f}% of the total)")
+
+    distribution = pd.DataFrame(positives_col).join(pd.DataFrame(negatives_col),how="outer",  lsuffix='_pos', rsuffix='_neg')
+    with pd.option_context("min_rows", 30, "max_rows", 30):
+        print(distribution.sort_values(f"{col}_neg", ascending=False))
+
 
 # %%
-all_dfs[all_dfs["gt_field"] == 'PAST_CLIENT']["xpath"].value_counts()
+node_analysis(all_dfs, "node_tag")
 
 # %%
-all_df['text_len'] = all_df['text'].apply(len)
-all_df.groupby("node_attribute")['text_len'].describe().sort_values("count", ascending=False)
+node_analysis(all_dfs, "node_attribute")
 
 # %%
-import collections
-counts = collections.defaultdict()
-none_counts = []
-past_client_counts = []
-attributes = all_df['node_attribute'].value_counts().index
-for x in attributes:
-    counts = all_df[all_df['node_attribute'] == x]["gt_field"].value_counts()
-    past_client_counts.append(counts.get('PAST_CLIENT'))
-    none_counts.append(counts.get('none'))
+all_dfs["node_attribute"].value_counts()
+
+# %% [markdown]
+# ## Understand the difference between the positive and negative node text length distribution
 
 # %%
-dd = pd.DataFrame([attributes, past_client_counts, none_counts]).T
-dd.columns = ["xpath", "past_clients", "none"]
-dd.sort_values("past_clients",ascending=False)["past_clients"].value_counts()
+print("Positive node text length distribution:")
+pd.DataFrame(all_dfs[all_dfs['gt_text_len']>0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
 
 # %%
-for df in positive_dfs[:10]:
-    display(df[df['gt_field'] == "PAST_CLIENT"])
-    print('-'*100)
+print("Negative node text length distribution:")
+pd.DataFrame(all_dfs[all_dfs['gt_text_len']==0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
 
-# %% tags=[]
-df_analysis = pd.DataFrame({'websites':websites, 'pages':pages})
+# %% [markdown]
+# ## Check how long the node text can be in order to remove high memorydata
+#
 
-df_analysis['avg_text_length-none'] = text_length['none']
-df_analysis['avg_text_length-PAST_CLIENT'] = text_length['PAST_CLIENT']
+# %%
+max_len = 10000
+all_gt = all_dfs["gt_text_len"].sum()
+gt_numb = all_dfs[all_dfs["text_len"] > max_len]["gt_text_len"].sum()
+data_numb = len(all_dfs[all_dfs["text_len"] > max_len]) 
+all_data = len(all_dfs)
 
-df_analysis['node_count-none'] = node_count['none']
-df_analysis['node_count-nonempty-none'] = node_count['nonempty-none']
-df_analysis['node_count-PAST_CLIENT'] = node_count['PAST_CLIENT']
+text_len = all_dfs[all_dfs["text_len"] > max_len]["text_len"].sum()
+all_text_len = all_dfs["text_len"].sum()
 
-df_analysis
+print(f"gt_numb: {gt_numb}")
+print(f"data_numb: {data_numb}")
+print(f"ratio:\n gt_numb_ratio: {100*gt_numb/all_gt:.2f} %\n data_numb_ratio: {100*data_numb/all_data:.2f} %\n text_len_ratio: {100*text_len/all_text_len:.2f} %")
 
-# %% tags=[]
-pd.options.display.float_format = '{:,.1f}'.format
-df_analysis.describe()
+# %%
+# all_dfs
 
-# %% tags=[]
-df[df['node-type']=='none']['text'][df[df['node-type']=='none']['text'] != ''].sort_values()
+# %%
+print(f" Empty text nodes: {len(all_dfs[all_dfs['text_len'] <= 1])}")
+
+# %%
+# all_dfs['text_len'] = all_dfs['text'].apply(len)
+# all_dfs.groupby("node_attribute")['text_len'].describe().sort_values("count", ascending=False)
+
+# %%
+# import collections
+# counts = collections.defaultdict()
+# none_counts = []
+# past_client_counts = []
+# attributes = all_dfs['node_attribute'].value_counts().index
+# for x in attributes:
+#     counts = all_dfs[all_dfs['node_attribute'] == x]["gt_field"].value_counts()
+#     past_client_counts.append(counts.get('PAST_CLIENT'))
+#     none_counts.append(counts.get('none'))
+
+# %%
+# dd = pd.DataFrame([attributes, past_client_counts, none_counts]).T
+# dd.columns = ["xpath", "past_clients", "none"]
+# dd.sort_values("past_clients",ascending=False)["past_clients"].value_counts()
 
 # %% [markdown]
 # ---

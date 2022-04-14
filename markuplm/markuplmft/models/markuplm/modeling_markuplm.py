@@ -43,6 +43,7 @@ from transformers.modeling_utils import (
 )
 from transformers.utils import logging
 from .configuration_markuplm import MarkupLMConfig
+from focal_loss.focal_loss import FocalLoss
 
 from typing import Optional, Union
 
@@ -1113,6 +1114,25 @@ class MarkupLMOnlyTokenClassificationHead(nn.Module):
         # (bs,seq_len,node_type_size) here node_type_size is real+none
         return output_res
 
+import torch.nn.functional as F
+import torch.nn as nn
+
+# class FocalLoss(CrossEntropyLoss):
+#     def __init__(self, alpha=1, gamma=2):
+#         super(FocalLoss, self).__init__()
+#         self.alpha = alpha
+#         self.gamma = gamma
+
+#     @decorate
+#     def forward(self, bce_loss):        
+#         loss = self.alpha * (1 - torch.exp(-bce_loss)) ** self.gamma * bce_loss
+#         return loss
+
+#     def forward(self, inputs, targets):
+#         bce_loss = F.binary_cross_entropy(inputs.squeeze(),  targets.float())
+#         loss = self.alpha * (1 - torch.exp(-bce_loss)) ** self.gamma * bce_loss
+#         return loss
+
 
 @add_start_docstrings(
     """MarkupLM Model with a `token_classification` head on top. """, MARKUPLM_START_DOCSTRING
@@ -1177,7 +1197,9 @@ class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
 
         token_cls_loss = None
         if labels is not None:
+            # loss_fct = FocalLoss() # TODO (AIMORE): Modify this Loss function 
             loss_fct = CrossEntropyLoss()
+            
             token_cls_loss = loss_fct(
                 prediction_scores.view(-1, self.config.node_type_size),
                 labels.view(-1),
