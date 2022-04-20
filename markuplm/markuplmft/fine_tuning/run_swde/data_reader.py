@@ -4,8 +4,6 @@ import multiprocessing as mp
 # import copy
 from pprint import pprint
 import logging
-import os
-import random
 from pathlib import Path
 from typing import List, Dict
 import numpy as np
@@ -15,7 +13,7 @@ import torch
 from tqdm import tqdm
 from markuplmft.fine_tuning.run_swde.data_feature_utils import SwdeDataset, get_swde_features
 
-from markuplmft.fine_tuning.run_swde.utils import set_seed, get_device_and_gpu_count
+from markuplmft.fine_tuning.run_swde.utils import set_seed
 from markuplmft.models.markuplm import (
     MarkupLMTokenizer,
 )
@@ -35,10 +33,10 @@ MAX_SEQ_LENGTH = 384
 
 
 class DataReader:
-    def __init__(self, **config):
-        self.local_rank = -1
+    def __init__(self, local_rank, n_gpu, **config):
+        self.local_rank = local_rank
 
-        set_seed()
+        # set_seed(n_gpu=n_gpu)
 
         self.tokenizer_dir = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/286"
 
@@ -97,7 +95,7 @@ class DataReader:
         if self.parallelize:
             num_cores = mp.cpu_count()
             print(f"num_cores: {num_cores}")
-            with mp.Pool(num_cores) as pool, tqdm(total=len(websites)) as t:
+            with mp.Pool(num_cores) as pool, tqdm(total=len(websites), disable=self.local_rank not in [-1, 0]) as t:
                 for website, features_per_website in pool.imap(
                     self.load_or_cache_one_website_features, websites
                 ):
@@ -105,8 +103,11 @@ class DataReader:
                     t.update()
                     t.set_description(f"Loading/Creating Features ({website})")
         else:
-            for website in tqdm(websites):
+            for website in tqdm(websites, disable=self.local_rank not in [-1, 0]):
                 feature_dicts[website] = self.load_or_cache_one_website_features(website)
+
+        if self.local_rank == 0: # !Remove
+            torch.distributed.barrier()
 
         return feature_dicts
 

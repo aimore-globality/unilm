@@ -109,3 +109,5 @@ markuplm/notebooks/develop_dataset_info_2.pkl
 markuplm/notebooks/develop_dataset_info.pkl
 .gitignore
 markuplm/notebooks/train_dataset_info_2.pkl
+*.pkl
+*.onnx

@@ -520,8 +520,8 @@ def do_something(train_websites, test_websites, args, config, tokenizer):
         str(len(train_websites))
     )
 
-    # if args.local_rank == 0:
-    #     torch.distributed.barrier()
+    if args.local_rank == 0:
+        torch.distributed.barrier()
     # Make sure only the first process in distributed training will download model & vocab
 
     model.to(args.device)

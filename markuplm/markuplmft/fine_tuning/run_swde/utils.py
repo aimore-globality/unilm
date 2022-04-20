@@ -24,9 +24,10 @@ def get_device_and_gpu_count(no_cuda, local_rank):
     if local_rank == -1 or no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not no_cuda else "cpu")
         n_gpu = torch.cuda.device_count() if not no_cuda else 0
-    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+    else:  #? Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
         torch.distributed.init_process_group(backend="nccl")
+        n_gpu = torch.cuda.device_count() if not no_cuda else 0
         n_gpu = 1
     return device, n_gpu

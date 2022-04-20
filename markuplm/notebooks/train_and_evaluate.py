@@ -13,23 +13,42 @@
 #     name: python3
 # ---
 
+# +
 import wandb
+import os
 from pprint import pprint
+import torch
+
+from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
+
+from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
+
 
 # +
-# Argparse here get
-# local_rank and pass to the trainer 
+try:
+    local_rank = int(os.environ["LOCAL_RANK"])
+except:
+    local_rank=-1
+
+print(f"local_rank: {local_rank}")
+
+os.environ["WANDB_START_METHOD"] = "thread"
+os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
 # -
 
-trainer_defaults = dict(
+no_cuda = False
+device, n_gpu = get_device_and_gpu_count(no_cuda, local_rank)
+
+
+trainer_config = dict(
     # # ? Optimizer
     weight_decay= 0.0, #? Default: 0.0
-    learning_rate=2e-6,  #? Default: 2e-6
+    learning_rate=1e-05,  #? Default: 1e-05
     adam_epsilon=1e-8, #? Default: 1e-8
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 1e-8
     # # ? Others
-    num_epochs = 10, 
+    num_epochs = 2, 
     logging_every_epoch = 1,
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0,
@@ -38,32 +57,46 @@ trainer_defaults = dict(
     max_grad_norm = 1.0,
     verbose = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-    per_gpu_train_batch_size = 34 ,#? 34 Max with the big machine 
+    # per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+    # per_gpu_train_batch_size = 16, #? Max with the big machine 
     eval_batch_size = 1024, #? 1024 Max with the big machine 
+    # eval_batch_size = 32, #?  Max with the big machine 
     overwrite_model = True,
-    evaluate_during_training = True,
+    evaluate_during_training = False,
     no_cuda = False,
     freeze_body = False,
-    dataset_to_use='all',
+    dataset_to_use='debug',
+    # # ? Data Reader
+    overwrite_cache=False, 
+    parallelize=False, 
 )
 
-wandb.init(project="LanguageModel", config=trainer_defaults, resume=True)
-wandb.login()
-trainer_config = dict(wandb.config)
-print("Training configurations from WandB: ")
-pprint(trainer_config)
+# +
+print(f"local_rank: {local_rank}")
 
-datareader_config = dict(
-    overwrite_cache=False,
-    parallelize=False, 
-    verbose=False)
+if local_rank in [-1, 0]:
+    print("Initializing WandB...")
+    run = wandb.init(project="LanguageModel", config=trainer_config, resume=True)
+    trainer_config = dict(run.config)
+    print("Training configurations from WandB: ")
+    pprint(trainer_config)
+else:
+    run = None    
 
 # +
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 
-dr = DataReader(**datareader_config)
+dr = DataReader(
+    local_rank=local_rank, 
+    overwrite_cache=trainer_config.pop("overwrite_cache"), 
+    parallelize=trainer_config.pop("parallelize"),
+    verbose=trainer_config.get("verbose"), 
+    n_gpu=n_gpu)
+
 dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
 
+print(f"{local_rank} - Start for Data Reader")
 # #?  Debug
 if dataset_to_use == "debug":
     train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=2)
@@ -80,17 +113,7 @@ elif dataset_to_use == "all":
     develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=False)
 else:
     pass
-
-# +
-# dataset, info = train_dataset_info
-
-# import pandas as pd
-# info_df = pd.DataFrame(info)
-# all_text = [y for x in info_df[4] for y in x]
-# all_text_no_empty = info_df[4].apply(lambda x: [y for y in x if len(y) > 0])
-# all_text_no_empty = [y for x in all_text_no_empty for y in x]
-# len(all_text) - len(all_text_no_empty)
-# len(all_text)
+print(f"{local_rank} - Start for Data Completed")
 # -
 
 print(f"train_dataset_info: {len(train_dataset_info[0])}")
@@ -99,111 +122,86 @@ print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 # # Train
 
 # +
-from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
-
-markup_model = MarkupLModel()
-markup_model.load_pretrained_model_and_tokenizer(-1)
-# -
-
-# ### Freeze layers
+print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
+markup_model = MarkupLModel(local_rank=local_rank, device=device, n_gpu=n_gpu)
+markup_model.load_pretrained_model_and_tokenizer()
 
 if trainer_config.pop("freeze_body", False):
-    for name, module in markup_model.net.named_modules():
-        if name in ['token_cls', 'token_cls.dense', 'token_cls.LayerNorm', 'token_cls.decoder']:
-            if name == 'token_cls':
-                for param in module.parameters():
-                    param.requires_grad = True
-        else:
-            for param in module.parameters():
-                param.requires_grad = True
-
-        print(f"{name}:  {module.parameters}")
-        print()
-
-# +
-# for name, module in markup_model.net.named_modules():
-#     if name in ['token_cls', 'token_cls.dense', 'token_cls.LayerNorm', 'token_cls.decoder']:
-#         print(f"{name}:  {module.parameters}")
-#         print()
-
-# # import torch.onnx
-# # from torchviz import make_dot
-# # make_dot(yhat, params=dict(list(markup_model.net.named_parameters()))).render("rnn_torchviz", format="png")
-# import torch
-# import torchvision
-
-# # dummy_input = torch.randn(10, 3, 224, 224, device="cuda")
-# batch = next(iter(trainer.train_dataloader))
-# # model = torchvision.models.alexnet(pretrained=True).cuda()
-# model = markup_model.net
-
-# # yhat = markup_model.net(batch.text)
-
-# # Providing input and output names sets the display names for values
-# # within the model's graph. Setting these does not change the semantics
-# # of the graph; it is only for readability.
-# #
-# # The inputs to the network consist of the flat list of inputs (i.e.
-# # the values you would pass to the forward() method) followed by the
-# # flat list of parameters. You can partially specify names, i.e. provide
-# # a list here shorter than the number of inputs to the model, and we will
-# # only set that subset of names, starting from the beginning.
-# input_names = [ "actual_input_1" ] + [ f"learned_{i}" for i in range(16) ]
-# output_names = [ "output1" ]
-
-# torch.onnx.export(model, dummy_input, "markuplm.onnx", verbose=True, input_names=input_names, output_names=output_names)
-
-# +
-# # modules = []
-# for enum, x in enumerate(markup_model.net.named_modules()):
-#     modules.append(x)
-
-# # print(enum)
-# # print(modules[4].)
-# modules
-# # for x in m:
-# #     print(x)
-
-# +
-# markup_model.net.token_cls
+    markup_model.freeze_body()
 
 # +
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
+
+print(f"\n{local_rank} - Preparing Trainer...")
+# #? Leave this barrier here because it unlocks
+# #? the other GPUs that were waiting at: 
+# #? load_or_cache_websites in DataReader
+if local_rank == 0: 
+    torch.distributed.barrier()
 
 trainer = Trainer(
     model = markup_model,
     train_dataset_info = train_dataset_info,
     evaluate_dataset_info = develop_dataset_info,
+    local_rank=local_rank,
+    device=device, 
+    n_gpu=n_gpu,
+    run=run,
     **trainer_config,
 )
 # -
 
+print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
-load_model_path = markup_model.save_path
 
 # # Infer
 
-from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
-print(f"load_model_path: {load_model_path}")
-markup_model = MarkupLModel()
-markup_model.load_trained_model(
-    config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-    tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-    net_path=load_model_path,
-)
-markup_model
+# +
+if local_rank not in [-1, 0]:
+    torch.distributed.barrier()
 
-train_set_nodes_predicted = trainer.evaluate(dataset_name="train")
-len(train_set_nodes_predicted)
+if local_rank in [-1, 0]:
+    load_model_path = markup_model.save_path
+    # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_3/checkpoint-3"
+    
+    del markup_model
+    torch.cuda.empty_cache()
 
-develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
-len(develop_set_nodes_predicted)
+    from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
-save_path = f"develop_set_nodes_classified_epoch_{trainer_defaults['num_epochs']}.pkl"
-print(save_path)
-develop_set_nodes_predicted.to_pickle(save_path)
+    print(f"load_model_path: {load_model_path}")
 
-wandb.run.save()
-wandb.finish()
+    trained_markup_model = MarkupLModel(local_rank=local_rank, device=device, n_gpu=n_gpu)
+    trained_markup_model.load_trained_model(
+        config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+        tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+        net_path=load_model_path,
+    )
+    # print(trained_markup_model)
 
+    trainer = Trainer(
+        model = trained_markup_model,
+        train_dataset_info = train_dataset_info,
+        evaluate_dataset_info = develop_dataset_info,
+        local_rank=local_rank,
+        device=device, 
+        n_gpu=n_gpu,
+        run=run,
+        **trainer_config,
+    )
 
+    train_set_nodes_predicted = trainer.evaluate(dataset_name="train")
+    print(f"Train dataset predicted size: {len(train_set_nodes_predicted)}")
+
+    develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
+    print(f"Develop dataset predicted size: {len(develop_set_nodes_predicted)}")
+
+    save_path = f"develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}.pkl"
+    print(save_path)
+    develop_set_nodes_predicted.to_pickle(save_path)
+
+    run.save()
+    run.finish()
+
+if local_rank not in [-1, 0]:
+    torch.distributed.barrier()

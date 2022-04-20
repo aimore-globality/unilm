@@ -63,20 +63,28 @@ class Trainer:
         fp16_opt_level: str = "O1",
         evaluate_during_training: bool = False,
         save_every_epoch: int = 1,
+        local_rank: int = -1,
+        device=None,
+        n_gpu: int = 0,
+        run=None,
     ):
-        self.local_rank = -1
+        self.local_rank = local_rank
         self.fp16 = fp16
-        self.device, self.n_gpu = get_device_and_gpu_count(no_cuda, self.local_rank)
+        self.device = device
+        self.n_gpu = n_gpu
         set_seed(self.n_gpu)  # ? For reproducibility
 
         # ? Setting WandB Log
-        if self.local_rank in [-1, 0]:
-            defaults = {}
-            resume = sys.argv[-1] == "--resume"
-
-            self.run = wandb.init(project="LanguageModel", config=defaults, resume=resume)
+        if run:
+            self.run = run
         else:
-            self.run = None
+            if self.local_rank in [-1, 0]:
+                defaults = {}
+                resume = sys.argv[-1] == "--resume"
+
+                self.run = wandb.init(project="LanguageModel", config=defaults, resume=resume)
+            else:
+                self.run = None
 
         # ? Setting Data
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
@@ -172,8 +180,10 @@ class Trainer:
 
         training_samples = len(train_dataset_info[0])
         evaluation_samples = len(evaluate_dataset_info[0])
-
-        wandb.log({"training_samples": training_samples, "evaluation_samples": evaluation_samples})
+        if self.run:
+            self.run.log(
+                {"training_samples": training_samples, "evaluation_samples": evaluation_samples}
+            )
 
         print(f"training_samples: {training_samples}")
         print(f"evaluation_samples: {evaluation_samples}")
@@ -224,7 +234,9 @@ class Trainer:
             sampler=sampler,
             batch_size=batch_size,
             pin_memory=True,
-            num_workers=64 # ? Check for it
+            num_workers=8,  # ? Check for it
+            # generator="forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
+            # multiprocessing_context= "forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
         )
         return loader
 
@@ -249,7 +261,11 @@ class Trainer:
         batch_iterator = tqdm(
             self.train_dataloader, desc="Train - Batch", disable=self.local_rank not in [-1, 0]
         )
+        print(f"train_epoch = self.local_rank: {self.local_rank}")
+
         for step, batch in enumerate(batch_iterator):
+            print(f"step = {step} | self.local_rank: {self.local_rank}")
+
             batch_list = self._batch_to_device(batch)
             inputs = {
                 "input_ids": batch_list[0],
@@ -292,7 +308,7 @@ class Trainer:
                 self.model.net.zero_grad()
                 self.global_step += 1
 
-                # !Uncomment this
+                # # !Uncomment this
                 # if (
                 #     self.local_rank in [-1, 0]
                 #     and self.logging_every_epoch > 0
@@ -312,11 +328,11 @@ class Trainer:
         print(f"- Training Loss: {np.mean(all_losses)}")
         if self.local_rank in [-1, 0]:
             self.logging_epoch += 1
-            wandb.log(
+            self.run.log(
                 {"lr": self.scheduler.get_last_lr()[0], "global_step": self.global_step},
                 step=self.logging_epoch,
             )
-            wandb.log({"Training_Loss": np.mean(all_losses)}, step=self.logging_epoch)
+            self.run.log({"Training_Loss": np.mean(all_losses)}, step=self.logging_epoch)
 
     def train(self):
         print("***** Running training *****")
@@ -342,8 +358,10 @@ class Trainer:
             range(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
         for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
-            if self.evaluate_during_training:
+            if self.evaluate_during_training and self.local_rank in [-1, 0]:
+                torch.distributed.barrier()
                 self.evaluate("develop")
+                torch.distributed.barrier()
 
             if isinstance(self.train_dataloader, DataLoader) and isinstance(
                 self.train_dataloader.sampler, DistributedSampler
@@ -365,18 +383,22 @@ class Trainer:
         print(f"{'-'*100}\n...Done training!\n")
         self.model.net.eval()
 
-        dataset_evaluated = self.evaluate("develop")
+        dataset_evaluated = None
 
         if self.local_rank in [-1, 0]:
             self.model.save_model(save_dir=self.save_model_path, epoch=self.num_train_epochs)
-
-        print(f"{'-'*100}\n...Done evaluating!\n")
+            dataset_evaluated = self.evaluate("develop")
+            print(f"{'-'*100}\n...Done evaluating!\n")
 
         return dataset_evaluated
 
     def evaluate(self, dataset_name="develop") -> Dict[str, float]:
         if dataset_name == "train":
-            dataloader, dataset, info = self._get_dataloader(self.train_dataset, is_train=False), self.train_dataset, self.train_info
+            dataloader, dataset, info = (
+                self._get_dataloader(self.train_dataset, is_train=False),
+                self.train_dataset,
+                self.train_info,
+            )
         else:
             dataloader, dataset, info = (
                 self.evaluate_dataloader,
@@ -395,9 +417,7 @@ class Trainer:
         with torch.no_grad():
             all_logits = []
             all_losses = []
-            batch_iterator = tqdm(
-                dataloader, desc="Eval - Batch", disable=self.local_rank not in [-1, 0]
-            )
+            batch_iterator = tqdm(dataloader, desc="Eval - Batch")
             for batch in batch_iterator:
                 batch_list = self._batch_to_device(batch)
                 inputs = {
@@ -423,17 +443,25 @@ class Trainer:
                 all_losses.append(loss.item())
 
         print(f"- Evaluation Loss: {np.mean(all_losses)}")
-        if self.local_rank in [-1, 0]:
-            wandb.log({f"{dataset_name}_Evaluation_Loss": np.mean(all_losses)})
+        if self.run:
+            self.run.log({f"{dataset_name}_Evaluation_Loss": np.mean(all_losses)})
 
         return self.recreate_dataset(all_logits, info)
 
     def recreate_dataset(self, all_logits, info):
+        # TODO(Aimore): This is very inneficient specially when evaluating at each epoch
         print("Recreate dataset...")
+
+        # print(f"\nlen(all_logits): {len(all_logits)}")
+        # print(f"\nall_logits: {all_logits}")
+        # print(f"\nall_logits[0].shape: {all_logits[0].shape}")
+        # print(f"\nall_logits[0]: {all_logits[0]}")
+
         all_probs = torch.softmax(
             torch.cat(all_logits, dim=0), dim=2
         )  # (all_samples, seq_len, node_type)
 
+        print(len(all_probs), len(info))
         assert len(all_probs) == len(info)
 
         all_res = collections.defaultdict(dict)
@@ -503,7 +531,7 @@ class Trainer:
 
         result_df = pd.DataFrame(lines)
         metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
-        if self.local_rank in [-1, 0]:
+        if self.run:
             self.log_metrics(metrics_per_dataset)
             self.log_metrics(cm_per_dataset)
 
@@ -511,7 +539,7 @@ class Trainer:
 
     def log_metrics(self, metric):
         for key, value in metric.items():
-            wandb.log({key: value}, step=self.logging_epoch)
+            self.run.log({key: value}, step=self.logging_epoch)
 
     def get_classification_metrics(self, dataset_predicted):
         print("Compute Metrics:")
