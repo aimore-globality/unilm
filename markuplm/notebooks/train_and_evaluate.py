@@ -1,11 +1,11 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
-#       format_name: light
-#       format_version: '1.5'
+#       format_name: percent
+#       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: Python 3.7.11 ('markuplmft')
@@ -13,7 +13,7 @@
 #     name: python3
 # ---
 
-# +
+# %%
 import wandb
 import os
 from pprint import pprint
@@ -24,7 +24,7 @@ from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
 from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 
-# +
+# %%
 try:
     local_rank = int(os.environ["LOCAL_RANK"])
 except:
@@ -34,45 +34,48 @@ print(f"local_rank: {local_rank}")
 
 os.environ["WANDB_START_METHOD"] = "thread"
 os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
-# -
 
+# %%
 no_cuda = False
 device, n_gpu = get_device_and_gpu_count(no_cuda, local_rank)
 
 
+# %%
 trainer_config = dict(
     # # ? Optimizer
-    weight_decay= 0.0, #? Default: 0.0
+    weight_decay= 0.9, #? Default: 0.0
     learning_rate=1e-05,  #? Default: 1e-05
     adam_epsilon=1e-8, #? Default: 1e-8
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 1e-8
     # # ? Others
-    num_epochs = 2, 
+    num_epochs = 3, 
     logging_every_epoch = 1,
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0,
     fp16 = True,
     fp16_opt_level = "O1",
     max_grad_norm = 1.0,
+    label_smoothing=0.9,
     verbose = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-    # per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
     # per_gpu_train_batch_size = 16, #? Max with the big machine 
     eval_batch_size = 1024, #? 1024 Max with the big machine 
     # eval_batch_size = 32, #?  Max with the big machine 
     overwrite_model = True,
     evaluate_during_training = False,
-    no_cuda = False,
+    no_cuda = no_cuda,
     freeze_body = False,
-    dataset_to_use='debug',
+    dataset_to_use='all',
     # # ? Data Reader
     overwrite_cache=False, 
     parallelize=False, 
+    loss_function = "FocalLoss",
 )
+if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 
-# +
+# %%
 print(f"local_rank: {local_rank}")
 
 if local_rank in [-1, 0]:
@@ -82,9 +85,11 @@ if local_rank in [-1, 0]:
     print("Training configurations from WandB: ")
     pprint(trainer_config)
 else:
-    run = None    
+    run = None   
 
-# +
+loss_function = trainer_config.pop("loss_function") 
+
+# %%
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 
 dr = DataReader(
@@ -114,22 +119,23 @@ elif dataset_to_use == "all":
 else:
     pass
 print(f"{local_rank} - Start for Data Completed")
-# -
 
+# %%
 print(f"train_dataset_info: {len(train_dataset_info[0])}")
 print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 
+# %% [markdown]
 # # Train
 
-# +
+# %%
 print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
-markup_model = MarkupLModel(local_rank=local_rank, device=device, n_gpu=n_gpu)
+markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, device=device, n_gpu=n_gpu)
 markup_model.load_pretrained_model_and_tokenizer()
 
 if trainer_config.pop("freeze_body", False):
     markup_model.freeze_body()
 
-# +
+# %%
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
 print(f"\n{local_rank} - Preparing Trainer...")
@@ -149,14 +155,15 @@ trainer = Trainer(
     run=run,
     **trainer_config,
 )
-# -
 
+# %%
 print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
 
+# %% [markdown]
 # # Infer
 
-# +
+# %%
 if local_rank not in [-1, 0]:
     torch.distributed.barrier()
 
@@ -205,3 +212,7 @@ if local_rank in [-1, 0]:
 
 if local_rank not in [-1, 0]:
     torch.distributed.barrier()
+
+# %%
+
+# %%

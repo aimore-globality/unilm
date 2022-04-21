@@ -58,6 +58,7 @@ class Trainer:
         gradient_accumulation_steps: int,
         max_grad_norm: float,
         save_model_path: str,
+        label_smoothing:float=1,
         overwrite_model: bool = False,
         fp16: bool = True,
         fp16_opt_level: str = "O1",
@@ -68,6 +69,7 @@ class Trainer:
         n_gpu: int = 0,
         run=None,
     ):
+        self.no_cuda = no_cuda
         self.local_rank = local_rank
         self.fp16 = fp16
         self.device = device
@@ -126,6 +128,7 @@ class Trainer:
 
         # ? Setting Model
         self.model = model
+        print(f"self.device:{self.device}")
         self.model.net.to(self.device)
         self.optimizer = self._prepare_optimizer(
             self.model.net,
@@ -138,7 +141,7 @@ class Trainer:
         self.scheduler = self._prepare_scheduler(self.optimizer, self.warmup_ratio, self.t_total)
 
         # ? Set model to use fp16 and multi-gpu
-        if self.fp16:
+        if self.fp16 and not self.no_cuda:
             self.model.net, self.optimizer = amp.initialize(
                 models=self.model.net, optimizers=self.optimizer, opt_level=fp16_opt_level
             )
@@ -259,12 +262,13 @@ class Trainer:
         self.model.net.train()
         all_losses = []
         batch_iterator = tqdm(
-            self.train_dataloader, desc="Train - Batch", disable=self.local_rank not in [-1, 0]
+            self.train_dataloader, desc="Train - Batch"
         )
-        print(f"train_epoch = self.local_rank: {self.local_rank}")
 
         for step, batch in enumerate(batch_iterator):
-            print(f"step = {step} | self.local_rank: {self.local_rank}")
+            batch_iterator.update()
+            batch_iterator.set_description(f"Training on step: {step}")
+            # print(f"step = {step} | self.local_rank: {self.local_rank}")
 
             batch_list = self._batch_to_device(batch)
             inputs = {
@@ -284,19 +288,17 @@ class Trainer:
             if self.gradient_accumulation_steps > 1:
                 loss = loss / self.gradient_accumulation_steps
 
-            if self.fp16:  # TODO (Aimore): Replace this with Accelerate
+            if self.fp16 and not self.no_cuda:  # TODO (Aimore): Replace this with Accelerate
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
                 loss.backward()
             # self.tr_loss += loss.item()  # ? Sum up new loss value
             all_losses.append(loss.item())
-            # t.update()
-            # t.set_description(f"Training on batch: {batch}")
 
             # ? Optimize (update weights)
             if (step + 1) % self.gradient_accumulation_steps == 0:
-                if self.fp16:
+                if self.fp16 and not self.no_cuda:
                     torch.nn.utils.clip_grad_norm_(
                         amp.master_params(self.optimizer), self.max_grad_norm
                     )

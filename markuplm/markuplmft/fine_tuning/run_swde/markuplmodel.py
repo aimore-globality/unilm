@@ -31,12 +31,14 @@ class MarkupLModel:
         pre_trained_model_folder_path: str = "/data/GIT/unilm/markuplm/markuplmft/models/markuplm/286",
         verbose: bool = False,
         local_rank: int = -1,
-        device = None,
+        device=None,
         n_gpu: int = -1,
+        label_smoothing: float = 1,
+        loss_function="CrossEntropy"
     ):
         self.net = None
         self.tokenizer = None
-
+        self.label_smoothing = label_smoothing
         self.local_rank = local_rank
 
         self.device = device
@@ -52,6 +54,8 @@ class MarkupLModel:
 
         self.doc_stride = 128
         self.max_seq_length = 384
+
+        self.loss_function=loss_function
 
         # self.overwrite_cache = False
 
@@ -72,7 +76,10 @@ class MarkupLModel:
         config = MarkupLMConfig.from_dict(config_dict)
 
         self.net = MarkupLMForTokenClassification.from_pretrained(
-            self.original_model_dir, config=config
+            self.original_model_dir,
+            label_smoothing=self.label_smoothing,
+            loss_function=self.loss_function,
+            config=config,
         )
         self.net.resize_token_embeddings(len(self.tokenizer))
 
@@ -85,7 +92,12 @@ class MarkupLModel:
 
         config = MarkupLMConfig.from_pretrained(config_path)
         self.tokenizer = MarkupLMTokenizer.from_pretrained(tokenizer_path)
-        self.net = MarkupLMForTokenClassification.from_pretrained(net_path, config=config)
+        self.net = MarkupLMForTokenClassification.from_pretrained(
+            net_path,
+            label_smoothing=self.label_smoothing,
+            loss_function=self.loss_function,
+            config=config,
+        )
         self.net.to(self.device)
 
     def save_model_and_tokenizer(self):
@@ -128,8 +140,8 @@ class MarkupLModel:
     def freeze_body(self):
         print("Freezing Model's Body")
         for name, module in self.net.named_modules():
-            if name in ['token_cls', 'token_cls.dense', 'token_cls.LayerNorm', 'token_cls.decoder']:
-                if name == 'token_cls':
+            if name in ["token_cls", "token_cls.dense", "token_cls.LayerNorm", "token_cls.decoder"]:
+                if name == "token_cls":
                     for param in module.parameters():
                         param.requires_grad = True
             else:
