@@ -1114,6 +1114,7 @@ class MarkupLMOnlyTokenClassificationHead(nn.Module):
         # (bs,seq_len,node_type_size) here node_type_size is real+none
         return output_res
 
+
 import torch.nn.functional as F
 import torch.nn as nn
 
@@ -1124,7 +1125,7 @@ import torch.nn as nn
 #         self.gamma = gamma
 
 #     @decorate
-#     def forward(self, bce_loss):        
+#     def forward(self, bce_loss):
 #         loss = self.alpha * (1 - torch.exp(-bce_loss)) ** self.gamma * bce_loss
 #         return loss
 
@@ -1133,11 +1134,13 @@ import torch.nn as nn
 #         loss = self.alpha * (1 - torch.exp(-bce_loss)) ** self.gamma * bce_loss
 #         return loss
 
+
 class WeightedFocalLoss(nn.Module):
     "Non weighted version of Focal Loss"
-    def __init__(self, alpha=.25, gamma=2, label_smoothing=1):
+
+    def __init__(self, alpha: float = 0.25, gamma: float = 2, label_smoothing: float = 0.0):
         super(WeightedFocalLoss, self).__init__()
-        self.alpha = torch.tensor([alpha, 1-alpha])
+        self.alpha = torch.tensor([alpha, 1 - alpha])
         self.gamma = gamma
         self.label_smoothing = label_smoothing
 
@@ -1146,37 +1149,28 @@ class WeightedFocalLoss(nn.Module):
         return inputs
 
     def forward(self, inputs, targets):
-
-        # inputs = self.format_inputs(inputs.type(torch.float))
-
-        # targets = targets.type(torch.float)
-
-        # targets = targets.clip(0)  #? Change -100 to 0
-
-        # BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
-        
-
-        BCE_loss = F.cross_entropy(inputs, targets, reduction='none', label_smoothing=self.label_smoothing)
-        # print("BCE_loss: ", BCE_loss)
+        BCE_loss = F.cross_entropy(
+            inputs, targets, reduction="none", label_smoothing=self.label_smoothing
+        )
 
         targets = targets.type(torch.long)
         self.alpha = self.alpha.to(device=inputs.device)
-        
+
         at = self.alpha.gather(0, targets.clip(0).data.view(-1))
 
         pt = torch.exp(-BCE_loss)
-        F_loss = at*(1-pt)**self.gamma * BCE_loss
-        # print("F_loss: ",F_loss)
-        # print("F_loss_mean: ", F_loss.mean()) #!Maybe add here a Raise Error in case the loss is inf
-        return F_loss.mean()
+        F_loss = at * (1 - pt) ** self.gamma * BCE_loss
 
+        F_loss = F_loss[F_loss.nonzero()].mean() #? I added this because labels contain many -100, besides 0 and 1, and that turns to be zero in F_loss, and they affect the mean, making it smaller than it should.
+
+        return F_loss.mean()
 
 
 @add_start_docstrings(
     """MarkupLM Model with a `token_classification` head on top. """, MARKUPLM_START_DOCSTRING
 )
 class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
-    def __init__(self, config, label_smoothing=1, loss_function="CrossEntropy"):
+    def __init__(self, config, label_smoothing=0.0, loss_function="CrossEntropy"):
         super().__init__(config)
 
         self.markuplm = MarkupLMModel(config, add_pooling_layer=False)
@@ -1231,8 +1225,12 @@ class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
             return_dict=return_dict,
         )
 
-        sequence_output = outputs[0] #? sequence_output [34, 384, 768] = [batch_size, tokens_on_window, token_embedding]
-        prediction_scores = self.token_cls(sequence_output)  #  #? prediction_scores [34, 384, 2] = [batch_size, tokens_on_window, node_type_logits]        
+        sequence_output = outputs[
+            0
+        ]  # ? sequence_output [34, 384, 768] = [batch_size, tokens_on_window, token_embedding]
+        prediction_scores = self.token_cls(
+            sequence_output
+        )  #  #? prediction_scores [34, 384, 2] = [batch_size, tokens_on_window, node_type_logits]
         # pred_node_types = torch.argmax(prediction_scores,dim=2) # (bs,seq)
 
         token_cls_loss = None
@@ -1241,10 +1239,14 @@ class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
                 loss_fct = CrossEntropyLoss(label_smoothing=self.label_smoothing)
             else:
                 loss_fct = WeightedFocalLoss(label_smoothing=self.label_smoothing)
-            
+
             token_cls_loss = loss_fct(
-                prediction_scores.view(-1, self.config.node_type_size), #? prediction_scores.view(-1, self.config.node_type_size) = [13056, 2] [all_labels, logit_per_labels] 
-                labels.view(-1), #? labels = [34, 384] [batch_size, labels] (one per token) -> labels.view(-1) = [13056] [all_labels]
+                prediction_scores.view(
+                    -1, self.config.node_type_size
+                ),  # ? prediction_scores.view(-1, self.config.node_type_size) = [13056, 2] [all_labels, logit_per_labels]
+                labels.view(
+                    -1
+                ),  # ? labels = [34, 384] [batch_size, labels] (one per token) -> labels.view(-1) = [13056] [all_labels]
             )
 
         if not return_dict:

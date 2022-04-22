@@ -1,20 +1,12 @@
 from __future__ import absolute_import, division, print_function
 
-# import copy
 from pprint import pprint
-import collections
-import glob
 import logging
-import os
-import random
 from pathlib import Path
 from typing import List, Dict
-import pandas as pd
-import numpy as np
 import torch
 
-# from markuplmft.fine_tuning.run_swde.eval_utils import page_level_constraint
-from markuplmft.fine_tuning.run_swde.utils import set_seed, get_device_and_gpu_count
+from markuplmft.fine_tuning.run_swde.utils import set_seed
 from markuplmft.fine_tuning.run_swde import constants
 from markuplmft.models.markuplm import (
     MarkupLMConfig,
@@ -33,8 +25,8 @@ class MarkupLModel:
         local_rank: int = -1,
         device=None,
         n_gpu: int = -1,
-        label_smoothing: float = 1,
-        loss_function="CrossEntropy"
+        label_smoothing: float = 0.0,
+        loss_function="CrossEntropy",
     ):
         self.net = None
         self.tokenizer = None
@@ -55,9 +47,7 @@ class MarkupLModel:
         self.doc_stride = 128
         self.max_seq_length = 384
 
-        self.loss_function=loss_function
-
-        # self.overwrite_cache = False
+        self.loss_function = loss_function
 
         if verbose:
             print("self.__dict__", pprint(self.__dict__))

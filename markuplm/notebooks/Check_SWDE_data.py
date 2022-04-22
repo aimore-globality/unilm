@@ -18,8 +18,6 @@
 # 1. This notebook checks if the format of the data and groundtruth is ok.
 # 2. It does some stats on the 'none' and 'PAST_CLIENT' nodes 
 
-# %%
-
 # %% tags=[]
 import pandas as pd
 from pathlib import Path
@@ -190,6 +188,9 @@ len(all_dfs)
 # %%
 all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
 all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len) 
+
+# %%
+all_dfs
 
 # %% [markdown]
 # # Label Analysis

@@ -1,14 +1,10 @@
-import json
-from logging import Logger
-import re
-from typing import Dict, List, Optional
-import os
+from typing import Dict
 import numpy as np
 import pandas as pd
 import torch
 import wandb
 from pprint import pprint
-from tqdm import tqdm, trange
+from tqdm import tqdm
 import collections
 from markuplmft.fine_tuning.run_swde import constants
 import wandb
@@ -19,24 +15,19 @@ except ImportError:
     raise ImportError(
         "Please install apex from https://www.github.com/nvidia/apex to use fp16 training."
     )
-import random
 from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
-# from microcosm_logging.decorators import logger
-# from microcosm_sagemaker.metrics.experiment_metrics import ExperimentMetrics
-from sklearn.preprocessing import MultiLabelBinarizer
-from torch import nn
 from torch.functional import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from markuplmft.fine_tuning.run_swde.utils import set_seed, get_device_and_gpu_count
+from markuplmft.fine_tuning.run_swde.utils import set_seed
 from transformers import get_linear_schedule_with_warmup
 from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import sys
 from pathlib import Path
-
+import multiprocess as mp
 
 class Trainer:
     def __init__(
@@ -58,7 +49,6 @@ class Trainer:
         gradient_accumulation_steps: int,
         max_grad_norm: float,
         save_model_path: str,
-        label_smoothing:float=1,
         overwrite_model: bool = False,
         fp16: bool = True,
         fp16_opt_level: str = "O1",
@@ -68,14 +58,18 @@ class Trainer:
         device=None,
         n_gpu: int = 0,
         run=None,
+        just_evaluation=False,
     ):
         self.no_cuda = no_cuda
         self.local_rank = local_rank
         self.fp16 = fp16
         self.device = device
         self.n_gpu = n_gpu
+        self.just_evaluation = just_evaluation
         set_seed(self.n_gpu)  # ? For reproducibility
 
+        self.logging_epoch = 0
+        
         # ? Setting WandB Log
         if run:
             self.run = run
@@ -96,9 +90,6 @@ class Trainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
         self.verbose = verbose
-
-        # if self.verbose:
-        #     print(f"self.__dict__:\n {pprint(self.__dict__)}")
 
         self.train_dataset, self.train_info = train_dataset_info
         self.evaluate_dataset, self.evaluate_info = evaluate_dataset_info
@@ -161,7 +152,6 @@ class Trainer:
 
         self.max_grad_norm = max_grad_norm
 
-        # self.logging_epoch = 0
         self.evaluate_during_training = evaluate_during_training
         self.logging_every_epoch = logging_every_epoch  #! Maybe change this to logging_epoch
         self.save_every_epoch = save_every_epoch
@@ -178,8 +168,6 @@ class Trainer:
             raise ValueError(
                 f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
             )
-
-        self.logging_epoch = 0
 
         training_samples = len(train_dataset_info[0])
         evaluation_samples = len(evaluate_dataset_info[0])
@@ -232,27 +220,18 @@ class Trainer:
         if self.local_rank != -1:
             sampler = DistributedSampler(dataset)
 
+        num_workers = int(mp.cpu_count() / torch.cuda.device_count())
+
         loader = DataLoader(
             dataset=dataset,
             sampler=sampler,
             batch_size=batch_size,
             pin_memory=True,
-            num_workers=8,  # ? Check for it
+            num_workers=num_workers,
             # generator="forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
             # multiprocessing_context= "forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
         )
         return loader
-
-    # def _log_metrics(self, metrics: Dict[str, float], prefix: str = "") -> None:
-    #     print(f"Logs for epoch={self.logging_epoch}")
-    #     if prefix:
-    #         metrics = {
-    #             f"{prefix}_{metric}": value
-    #             for metric, value in metrics.items()
-    #         }
-    #     print(json.dumps(metrics, indent=4))
-    #     if self.metrics_store:
-    #         self.metrics_store.log_timeseries(**metrics, step=self.logging_epoch)
 
     def _batch_to_device(self, batch_list):
         batch_list = tuple(batch.to(self.device) for batch in batch_list)
@@ -261,13 +240,11 @@ class Trainer:
     def train_epoch(self):
         self.model.net.train()
         all_losses = []
-        batch_iterator = tqdm(
-            self.train_dataloader, desc="Train - Batch"
-        )
+        batch_iterator = tqdm(self.train_dataloader)
 
         for step, batch in enumerate(batch_iterator):
             batch_iterator.update()
-            batch_iterator.set_description(f"Training on step: {step}")
+            batch_iterator.set_description(f"Training on Batch:")
             # print(f"step = {step} | self.local_rank: {self.local_rank}")
 
             batch_list = self._batch_to_device(batch)
@@ -352,8 +329,7 @@ class Trainer:
         print(f"  Gradient Accumulation steps = {self.gradient_accumulation_steps}")
         print(f"  Total optimization steps = {self.t_total}")
 
-        self.global_step = 0
-        self.logging_epoch = 0
+        self.global_step = 0        
         self.tr_loss, self.logging_loss = 0.0, 0.0
 
         epoch_iterator = tqdm(
@@ -361,9 +337,9 @@ class Trainer:
         )
         for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
             if self.evaluate_during_training and self.local_rank in [-1, 0]:
-                torch.distributed.barrier()
+                # torch.distributed.barrier() #! Uncomment those in case you want to try DDP
                 self.evaluate("develop")
-                torch.distributed.barrier()
+                # torch.distributed.barrier() #! Uncomment those in case you want to try DDP
 
             if isinstance(self.train_dataloader, DataLoader) and isinstance(
                 self.train_dataloader.sampler, DistributedSampler
@@ -395,6 +371,7 @@ class Trainer:
         return dataset_evaluated
 
     def evaluate(self, dataset_name="develop") -> Dict[str, float]:
+        print(f"\n****** Running evaluation for: {dataset_name.upper()} ******\n")
         if dataset_name == "train":
             dataloader, dataset, info = (
                 self._get_dataloader(self.train_dataset, is_train=False),
@@ -409,7 +386,6 @@ class Trainer:
             )
 
         if self.verbose:
-            print(f"***** Running evaluation *****")
             # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
             print(f"  Num examples for dataset = {len(dataset)}")
             print(f"  Batch size = {self.eval_batch_size}")
@@ -446,9 +422,20 @@ class Trainer:
 
         print(f"- Evaluation Loss: {np.mean(all_losses)}")
         if self.run:
-            self.run.log({f"{dataset_name}_Evaluation_Loss": np.mean(all_losses)})
+            if self.just_evaluation:
+                log_name = f"{dataset_name}_Evaluation_Loss_Final"
+            else:
+                log_name = f"{dataset_name}_Evaluation_Loss"
+            self.run.log({log_name: np.mean(all_losses)})
 
-        return self.recreate_dataset(all_logits, info)
+        result_df = self.recreate_dataset(all_logits, info)
+
+        metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
+        if self.run:
+            self.log_metrics(metrics_per_dataset)
+            self.log_metrics(cm_per_dataset)
+
+        return result_df
 
     def recreate_dataset(self, all_logits, info):
         # TODO(Aimore): This is very inneficient specially when evaluating at each epoch
@@ -532,15 +519,13 @@ class Trainer:
                 lines["final_probs"].append(final_probs)
 
         result_df = pd.DataFrame(lines)
-        metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
-        if self.run:
-            self.log_metrics(metrics_per_dataset)
-            self.log_metrics(cm_per_dataset)
 
         return result_df
 
     def log_metrics(self, metric):
         for key, value in metric.items():
+            if self.just_evaluation:
+                key = f"{key}_final"
             self.run.log({key: value}, step=self.logging_epoch)
 
     def get_classification_metrics(self, dataset_predicted):

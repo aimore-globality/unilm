@@ -604,7 +604,7 @@ def generate_nodes_seq_and_write_to_file(website):
     print(f"Writing the processed and {len(cleaned_features_for_this_website)} pages of {website} into {output_file_path}")
     nodes_per_page = {x[0]:len(x[1]) for x in cleaned_features_for_this_website.items()}
     print(f"# Nodes per page: {nodes_per_page}\n")
-    with open(output_file_path, "wb") as f:
+    with open(output_file_path, "wb") as f: #!UNCOMMENT
         pickle.dump(cleaned_features_for_this_website, f)
 
 
