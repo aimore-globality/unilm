@@ -69,97 +69,100 @@ websites_data_path
 assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} != {len(data_packed)}"
 
 # %% tags=[]
-all_dfs = {}
-for website_path in tqdm(websites_data_path):
-    dfs = []
-    website_data = pd.read_pickle(website_path)
-    break
-    # print(f"{website_path} {len(website_data)}")
-    # # if website_path == '/data/GIT/swde/my_data/develop/my_CF_processed/ciphr.com.pickle':
-    # for page_index in website_data.keys():
-    #     df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type', 'gt_text'])
-    #     df['gt_text_len'] = df['gt_text'].apply(len)
-    #     dfs.append(df)
+# all_dfs = {}
+# for website_path in tqdm(websites_data_path):
+#     dfs = []
+#     website_data = pd.read_pickle(website_path)
+#     break
+#     # print(f"{website_path} {len(website_data)}")
+#     # # if website_path == '/data/GIT/swde/my_data/develop/my_CF_processed/ciphr.com.pickle':
+#     # for page_index in website_data.keys():
+#     #     df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type', 'gt_text'])
+#     #     df['gt_text_len'] = df['gt_text'].apply(len)
+#     #     dfs.append(df)
 
-    # all_dfs[website_path.parts[-1].split(".pickle")[0]] = dfs
+#     # all_dfs[website_path.parts[-1].split(".pickle")[0]] = dfs
 
-    # # assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
-    # # break
-website_data['0000'][0]
-
-# %%
-import numpy as np
-for enum, (website, dfs) in enumerate(all_dfs.items()):
-    # print(website)
-    for df in dfs:
-        if np.any(df["gt_text_len"] > 1):
-            display(df)
-            break
+#     # # assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
+#     # # break
+# website_data['0000'][0]
 
 # %%
-node_count = {'none':[], 'PAST_CLIENT':[], 'nonempty-none':[]}
-text_length = {'none':[], 'PAST_CLIENT':[]}
+# import numpy as np
+# for enum, (website, dfs) in enumerate(all_dfs.items()):
+#     # print(website)
+#     for df in dfs:
+#         if np.any(df["gt_text_len"] > 1):
+#             display(df)
+#             break
 
-websites = []
-pages = []
-positive_dfs = []
-negative_dfs = []
-all_df = pd.DataFrame()
+# %%
+# node_count = {'none':[], 'PAST_CLIENT':[], 'nonempty-none':[]}
+# text_length = {'none':[], 'PAST_CLIENT':[]}
 
-websites_iterator = tqdm(websites_data_path)
-for website_path in websites_iterator:
-    websites_iterator.set_description(f"Processing: {website_path}")
-    website_data = pd.read_pickle(website_path)
-    no_past_client_pages = []
+# websites = []
+# pages = []
+# positive_dfs = []
+# negative_dfs = []
+# all_df = pd.DataFrame()
+
+# websites_iterator = tqdm(websites_data_path)
+# for website_path in websites_iterator:
+#     websites_iterator.set_description(f"Processing: {website_path}")
+#     website_data = pd.read_pickle(website_path)
+#     no_past_client_pages = []
     
-    for page_index in website_data.keys():
-        website = str(website_path.parts[-1]).split('.pickle')[0]
-        websites.append(website)
-        pages.append(page_index)
+#     for page_index in website_data.keys():
+#         website = str(website_path.parts[-1]).split('.pickle')[0]
+#         websites.append(website)
+#         pages.append(page_index)
         
-        df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
-        if len(df) > 0:
-            df["website"] = website
-            all_df = all_df.append(df)
+#         df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
+#         if len(df) > 0:
+#             df["website"] = website
+#             all_df = all_df.append(df)
 
-    #         node_distribution = df['gt_field'].value_counts()
+#     #         node_distribution = df['gt_field'].value_counts()
 
-    #         if 'PAST_CLIENT' not in node_distribution:
-    #             node_distribution['PAST_CLIENT'] = 0
-    #             no_past_client_pages.append(page_index)
-    #             negative_dfs.append(df)
-    #         else:
-    #             positive_dfs.append(df)
+#     #         if 'PAST_CLIENT' not in node_distribution:
+#     #             node_distribution['PAST_CLIENT'] = 0
+#     #             no_past_client_pages.append(page_index)
+#     #             negative_dfs.append(df)
+#     #         else:
+#     #             positive_dfs.append(df)
 
-    #         node_ratio = node_distribution.get('PAST_CLIENT', 0) / (1 + node_distribution.get('none', 0))
-    #         if node_ratio > 0.6:
-    #             print(f"Strange - ratio! {node_ratio:.2f} | {website} | {page_index}")
-    #             print(node_distribution)
-    #             print()
+#     #         node_ratio = node_distribution.get('PAST_CLIENT', 0) / (1 + node_distribution.get('none', 0))
+#     #         if node_ratio > 0.6:
+#     #             print(f"Strange - ratio! {node_ratio:.2f} | {website} | {page_index}")
+#     #             print(node_distribution)
+#     #             print()
                 
-    #         past_clients = node_distribution.get('PAST_CLIENT', 0)
-    #         if past_clients > 100:
-    #             print(f"Strange - many PAST CLIENTS! {past_clients} | {website} | {page_index}")
-    #             print()
+#     #         past_clients = node_distribution.get('PAST_CLIENT', 0)
+#     #         if past_clients > 100:
+#     #             print(f"Strange - many PAST CLIENTS! {past_clients} | {website} | {page_index}")
+#     #             print()
 
-    #         df = df[df['text'] != '']
-    #         df['text_len'] = df['text'].apply(len)
+#     #         df = df[df['text'] != '']
+#     #         df['text_len'] = df['text'].apply(len)
             
-    #         non_empty_node_count = df['gt_field'].value_counts().get('none', 0)
+#     #         non_empty_node_count = df['gt_field'].value_counts().get('none', 0)
             
-    #         node_count['none'].append(node_distribution.get('none', 0))        
-    #         node_count['PAST_CLIENT'].append(node_distribution.get('PAST_CLIENT', 0))
-    #         node_count['nonempty-none'].append(non_empty_node_count)
+#     #         node_count['none'].append(node_distribution.get('none', 0))        
+#     #         node_count['PAST_CLIENT'].append(node_distribution.get('PAST_CLIENT', 0))
+#     #         node_count['nonempty-none'].append(non_empty_node_count)
 
             
-    #         text_avg = pd.DataFrame(df.groupby('gt_field').mean('text_len'))['text_len']        
+#     #         text_avg = pd.DataFrame(df.groupby('gt_field').mean('text_len'))['text_len']        
                             
-    #         text_length['none'].append(text_avg['none'])
+#     #         text_length['none'].append(text_avg['none'])
 
-    #         if 'PAST_CLIENT' in text_avg:
-    #             text_length['PAST_CLIENT'].append(text_avg['PAST_CLIENT'])
+#     #         if 'PAST_CLIENT' in text_avg:
+#     #             text_length['PAST_CLIENT'].append(text_avg['PAST_CLIENT'])
 
-    # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
+#     # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
+
+# %%
+all_dfs.head()
 
 # %%
 print(len(websites_data_path))
@@ -170,6 +173,7 @@ def read_data(website_path):
     for page_index in website_data.keys():
         website = str(website_path.parts[-1]).split('.pickle')[0]
         df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute', 'node_tag'])
+        df["page_index"] = page_index
         if len(df) > 0:
             df["website"] = website
             dfs = dfs.append(df)
@@ -189,11 +193,51 @@ len(all_dfs)
 all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
 all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len) 
 
-# %%
-all_dfs
-
 # %% [markdown]
 # # Label Analysis
+
+# %% [markdown]
+# ## Duplicated node_text 
+
+# %%
+
+# #? Interesting analysis if we remove the nodes with duplicated data, we can massively reduce their size.
+duplicated_nodes = all_dfs
+domain_non_duplicated_nodes = all_dfs.drop_duplicates(subset=["text", "website"])
+print(f"{'All nodes:':>50} {len(duplicated_nodes):>7}")
+print(f"{'Domain non-duplicated nodes:':>50} {len(domain_non_duplicated_nodes):>7} ({100*len(domain_non_duplicated_nodes)/len(duplicated_nodes):.2f} %)")
+
+# #? Also, not so many nodes with positive data are removed compared to the other data.
+duplicated_gt = len(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'])
+domain_non_duplicated_gt = len(domain_non_duplicated_nodes[domain_non_duplicated_nodes["gt_field"] != 'none'])
+print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
+print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f} %)")
+
+# %% [markdown]
+# ## Create a nonduplicated data 
+
+# %%
+print(len(websites_data_path))
+
+def create_domain_non_duplicated_data(folder, domain_non_duplicated_nodes):
+    folder = Path(str(websites_root_path) + "_dedup")
+    if not folder.exists():
+        folder.mkdir()
+
+    for website, website_data in domain_non_duplicated_nodes.groupby("website"):
+        d = dict()
+        save_path = folder / (str(website) + ".pickle")
+        for page_index, page_data in website_data.groupby("page_index"):            
+            d[page_index] = [tuple(x) for x in page_data[['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute', 'node_tag']].values]
+
+        print(f"save_path: {save_path}")
+        pd.to_pickle(d, save_path)
+            
+create_domain_non_duplicated_data(folder=websites_root_path, domain_non_duplicated_nodes=domain_non_duplicated_nodes)
+
+# assert np.all(list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed/1820productions.com.pickle").values()) == list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed_dedup/1820productions.com.pickle").values()))
+
+# %% [markdown]
 # ## _node_tag_ and _node_attribute_
 # By identified where it is not likely a positive label to appear we should remove those cases and limit the scope of the data in order to:
 # - Reduce time in all stages 

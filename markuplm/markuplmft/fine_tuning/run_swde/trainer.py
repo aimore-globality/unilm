@@ -75,10 +75,8 @@ class Trainer:
             self.run = run
         else:
             if self.local_rank in [-1, 0]:
-                defaults = {}
-                resume = sys.argv[-1] == "--resume"
-
-                self.run = wandb.init(project="LanguageModel", config=defaults, resume=resume)
+                defaults = {}                
+                self.run = wandb.init(project="LanguageModel", config=defaults, resume=True)
             else:
                 self.run = None
 

@@ -52,7 +52,7 @@ trainer_config = dict(
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 0
     # # ? Trainer
-    num_epochs = 3, 
+    num_epochs = 5, 
     logging_every_epoch = 1,
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
@@ -61,10 +61,10 @@ trainer_config = dict(
     max_grad_norm = 1.0,
     verbose = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-    # per_gpu_train_batch_size = 16, #? Max with the big machine 
-    eval_batch_size = 1024, #? 1024 Max with the big machine 
-    # eval_batch_size = 32, #?  Max with the big machine 
+    # per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+    per_gpu_train_batch_size = 16, #? Max with the big machine 
+    # eval_batch_size = 1024, #? 1024 Max with the big machine 
+    eval_batch_size = 128, #?  Max with the big machine 
     overwrite_model = True,
     evaluate_during_training = True,
     no_cuda = no_cuda,
@@ -73,6 +73,7 @@ trainer_config = dict(
     # # ? Data Reader
     overwrite_cache=False, 
     parallelize=False, 
+    dedup=True #? Default: False
 )
 if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
@@ -83,7 +84,7 @@ print(f"local_rank: {local_rank}")
 
 if local_rank in [-1, 0]:
     print("Initializing WandB...")
-    run = wandb.init(project="LanguageModel", config=trainer_config, resume=True)
+    run = wandb.init(project="LanguageModel", config=trainer_config, resume=False)
     trainer_config = dict(run.config)
     print("Training configurations from WandB: ")
     pprint(trainer_config)
@@ -104,20 +105,25 @@ dr = DataReader(
 
 dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
 
+if trainer_config.pop("dedup"):
+    dedup = "_dedup"
+else:
+    dedup = ""
+
 # #?  Debug
 if dataset_to_use == "debug":
-    train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=2)
-    develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=2)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=2)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=2)
 
 # #?  I will use 24 websites to train and 8 websites to evaluate
 elif dataset_to_use == "mini":
-    train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=24)
-    develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=8)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=24)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=8)
 
 # #?  Generate all features
 elif dataset_to_use == "all":
-    train_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/train/my_CF_processed/", limit_data=False)
-    develop_dataset_info = dr.load_dataset(data_dir="/data/GIT/swde/my_data/develop/my_CF_processed/", limit_data=False)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=False)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=False)
 else:
     pass
 
