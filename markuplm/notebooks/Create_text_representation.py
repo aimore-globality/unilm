@@ -3,8 +3,8 @@
 #   jupytext:
 #     text_representation:
 #       extension: .py
-#       format_name: light
-#       format_version: '1.5'
+#       format_name: percent
+#       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
 #     display_name: Python 3.8.12 ('wae_test')
@@ -12,36 +12,62 @@
 #     name: python3
 # ---
 
-# +
+# %%
 from pathlib import Path
 import pandas as pd
 
-pd.set_option("max_colwidth", 200, "max_rows", 10, "min_rows", 10)
-# -
+# pd.set_option("max_colwidth", 200, "max_rows", 10, "min_rows", 10)
 
+# %% [markdown]
 # # Load Data
 
-results_df = pd.read_pickle("results_classified_5_epoch.pkl")
+# %%
+# results_df = pd.read_pickle("results_classified/results_classified_5_epoch.pkl")
+results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_3.pkl")
+
 initial_node_count = len(results_df)
 print(f"Df result size: {initial_node_count}")
 results_df.head(4)
 
-results_df_pos_more_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 1000)])
-results_df_pos_less_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 1000)])
-print(f"results_df_pos_more_than_1000: {results_df_pos_more_than_1000}\nresults_df_pos_less_than_1000:{results_df_pos_less_than_1000}")
+# %%
+# results_df["node_text_len"] = results_df["text"].apply(len)
+# results_df_pos_more_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 1000)])
+# results_df_pos_less_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 1000)])
+# print(f"results_df_pos_more_than_1000: {results_df_pos_more_than_1000}\nresults_df_pos_less_than_1000:{results_df_pos_less_than_1000}")
 
-# +
-
+# %%
 # #? Load and apply pageid to url mapping
 pageid_url_mapping = pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl")
 results_df.reset_index(inplace=True)
 results_df = results_df.drop("index", axis=1)
 results_df['url'] = results_df['html_path'].apply(lambda x: pageid_url_mapping.get(x)[0])
 
-# #? Clean domain name
-results_df['domain'] = results_df['domain'].apply(lambda x: x.split(".pickle")[0])
+# #? Get domain name from html_path
+results_df['domain'] = results_df['html_path'].apply(lambda x: x.split(".pickle")[0])
 
-# +
+# # #? Clean domain name
+# results_df['domain'] = results_df['domain'].apply(lambda x: x.split(".pickle")[0])
+
+# %%
+seed = 66 
+websites_for_error_analysis = sorted(pd.DataFrame(results_df.groupby('domain'))[0].sample(frac=0.1, random_state=seed).values)
+print(websites_for_error_analysis)
+
+# %%
+
+# #? Interesting analysis if we remove the nodes with duplicated data, we can massively reduce their size.
+duplicated_nodes = results_df
+domain_non_duplicated_nodes = results_df.drop_duplicates(subset=["text", "domain"])
+print(f"{'All nodes:':>50} {len(duplicated_nodes):>7}")
+print(f"{'Domain non-duplicated nodes:':>50} {len(domain_non_duplicated_nodes):>7} ({100*len(domain_non_duplicated_nodes)/len(duplicated_nodes):.2f} %)")
+
+# #? Also, not so many nodes with positive data are removed compared to the other data.
+duplicated_gt = len(duplicated_nodes[duplicated_nodes["truth"] != 'none'])
+domain_non_duplicated_gt = len(domain_non_duplicated_nodes[domain_non_duplicated_nodes["truth"] != 'none'])
+print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
+print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f}) %")
+
+# %%
 from lxml.html.clean import Cleaner
 
 cleaner = Cleaner()
@@ -59,27 +85,27 @@ def clean_node(text):
         pass
 
 min_char = 1
-max_char = 1000
+max_char = 10000
 
 # #? Clean node text 
 results_df['text'] = results_df['text'].apply(clean_node) 
 results_df['node_text_len'] = results_df["text"].dropna().apply(len)
 
-print(f"Df result size: {len(initial_node_count)}")
+print(f"Df result size: {initial_node_count}")
 
-results_df_pos_more_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 1000)])
-results_df_pos_less_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 1000)])
-print(f"results_df_pos_more_than_1000: {results_df_pos_more_than_1000}\nresults_df_pos_less_than_1000:{results_df_pos_less_than_1000}")
+results_df_pos_more_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 10000)])
+results_df_pos_less_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 10000)])
+print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresults_df_pos_less_than_10000:{results_df_pos_less_than_10000}")
 
-results_df = results_df[results_df['node_text_len'] >= min_char] 
-print(f"Df result size: {len(results_df)} - Filter out nodes with text smaller or equal than {min_char} characters")
-results_df = results_df[results_df["node_text_len"] < max_char] 
-print(f"Df result size: {len(results_df)} - Filter out nodes with text longer than {max_char} characters")
-# -
+# results_df = results_df[results_df['node_text_len'] >= min_char] 
+# print(f"Df result size: {len(results_df)} - Filter out nodes with text smaller or equal than {min_char} characters")
+# results_df = results_df[results_df["node_text_len"] < max_char] 
+# print(f"Df result size: {len(results_df)} - Filter out nodes with text longer than {max_char} characters")
 
+# %% [markdown]
 # # Generate text for html
 
-# +
+# %%
 from typing import List
 
 node_show = False
@@ -94,6 +120,8 @@ def make_bold_gt_texts(text:str, gt_texts:List[str]) -> str:
 def create_folder(folder_path="text_representation/"):
     text_representation_folder = Path(folder_path)
     if text_representation_folder.exists():
+        print(f"{text_representation_folder} folder already exists.")
+    else:
         text_representation_folder.mkdir(parents=True, exist_ok=True)
         print(f"Created: {text_representation_folder} folder.")
 create_folder()
@@ -186,29 +214,32 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
 
 # #? Run through the websites
 for website_id, (website, df_website) in enumerate(results_df.groupby('domain')):
-    if website == "piwik.pro":
-        print(f"{website_id}: {website}")
-        create_text_representation_for_website(website, df_website)
-        # break
-    # if website_id > 10:
+    # if website == "piwik.pro":
+    print(f"{website_id}: {website}")
+    create_text_representation_for_website(website, df_website)
+    # break
+    # if website_id > 1:
     #     break
 
 # TODO: Add colourful name of the Past Clients 
 # TODO: Add link to the found sentence {url}#:~:text=%20the%20
-# -
 
+# %% [markdown]
 # # Error analysis
 
-# +
-import re2 as re
+# %% [markdown]
+# ## Copy domain text_representation of a sample to folder to be analysed
 
-re.sub("&(?!amp;)", "&amp;", html_text)
+# %%
+import shutil
 
-# +
-# develop_df = pd.read_pickle(f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1735)_neg(4035)_intermediate.pkl")
-# develop_df
-# -
+src = Path("text_representation")
+dst = Path("erro_analysis_domains")
+if not dst.exists():
+    dst.mkdir()
 
+for website, data in results_df[results_df["domain"].isin(websites_for_error_analysis)].groupby('domain'):
+    print(f"{website}: {len(data[data['truth']!='none'])}")
+    website = website + '.html'
 
-
-
+    shutil.copyfile(src / website, dst / website)
