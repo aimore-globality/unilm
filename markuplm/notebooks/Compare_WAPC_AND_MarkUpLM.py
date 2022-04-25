@@ -199,7 +199,8 @@ if not classified_nodes_folder_root.exists():
 
 # #? Put the predictions of the model inside the folder above and select the file with `classified_nodes_data_path`
 # classified_nodes_data_path = "results_classified_5_epoch.pkl"
-classified_nodes_data_path = "develop_set_nodes_classified_epoch_10.pkl"
+# classified_nodes_data_path = "develop_set_nodes_classified_epoch_10.pkl"
+classified_nodes_data_path = "develop_set_nodes_classified_epoch_4_dedup.pkl"
 
 save_load_data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
 print(f"save_load_data_path: {save_load_data_path}")
@@ -344,6 +345,51 @@ for mode in ["WAPC"]+list(mode_indices.keys()):
     
     fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
 print(folder_path)
+
+# %%
+from pathlib import Path
+
+taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
+
+print(f"Metrics with the Segmenter {segmenter_trained}!")
+
+for mode in ["WAPC"]+list(mode_indices.keys()):
+    print(mode)
+    domain_metrics = get_reconciliations_metrics_for_all_domains(
+        df=merge,
+        gt_col=f"{tag}-gt_value",
+        predicted_col=f"{mode}-node_company_span_taxonomy",
+        annotations_col="PAST_CLIENT-annotations",
+        negative_percentage=negative_percentage,
+    )
+    display(calculate_metrics_for_dataset(domain_metrics))
+
+    folder_path = Path(f"/data/GIT/unilm/markuplm/notebooks/Analysys_Gazetteer/segmenter_{segmenter_trained}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+    folder_path = str(folder_path)
+
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["TP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-TP_seg.html")
+    pd.DataFrame(pd.Series(combine_and_get_sorted_list(domain_metrics["FP_seg"])).value_counts()).to_html(f"{folder_path}/{mode}-FP_seg.html")
+
+    fn = pd.DataFrame(domain_metrics["FN_seg"])
+    fn = fn["FN_seg"].explode().dropna()
+    fn_df = pd.DataFrame()
+    fn_df["FN_gt_value"] = fn.apply(lambda x: x[0])
+    fn_df["FN_gt_text"] = fn.apply(lambda x: x[1])
+    fn_df = pd.DataFrame(fn_df.groupby("FN_gt_value").aggregate('FN_gt_text'))
+    fn_df.columns = ["FN_gt_value", "FN_gt_text_list"]
+    fn_df["FN_gt_text_list"] = fn_df["FN_gt_text_list"].apply(list)
+    fn_df["FN_gt_text_len"] = fn_df["FN_gt_text_list"].apply(len)
+    fn_df = fn_df.sort_values("FN_gt_text_len", ascending=False)
+    
+    fn_df.to_html(f"{folder_path}/{mode}-FN_pred.html")
+print(folder_path)
+
+# %%
+len(merge)
+
+# %%
+df
 
 # %%
 # with pd.option_context('min_rows', 200, 'max_rows', 200, 'max_colwidth', 200): 

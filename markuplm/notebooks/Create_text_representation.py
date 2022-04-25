@@ -23,7 +23,9 @@ import pandas as pd
 
 # %%
 # results_df = pd.read_pickle("results_classified/results_classified_5_epoch.pkl")
-results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_3.pkl")
+# results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_3.pkl")
+results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_1.pkl")
+
 
 initial_node_count = len(results_df)
 print(f"Df result size: {initial_node_count}")
@@ -36,6 +38,7 @@ results_df.head(4)
 # print(f"results_df_pos_more_than_1000: {results_df_pos_more_than_1000}\nresults_df_pos_less_than_1000:{results_df_pos_less_than_1000}")
 
 # %%
+
 # #? Load and apply pageid to url mapping
 pageid_url_mapping = pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl")
 results_df.reset_index(inplace=True)
@@ -45,8 +48,8 @@ results_df['url'] = results_df['html_path'].apply(lambda x: pageid_url_mapping.g
 # #? Get domain name from html_path
 results_df['domain'] = results_df['html_path'].apply(lambda x: x.split(".pickle")[0])
 
-# # #? Clean domain name
-# results_df['domain'] = results_df['domain'].apply(lambda x: x.split(".pickle")[0])
+# %%
+# [x for x in pd.DataFrame(results_df.groupby('domain'))[0].values]
 
 # %%
 seed = 66 
@@ -65,7 +68,7 @@ print(f"{'Domain non-duplicated nodes:':>50} {len(domain_non_duplicated_nodes):>
 duplicated_gt = len(duplicated_nodes[duplicated_nodes["truth"] != 'none'])
 domain_non_duplicated_gt = len(domain_non_duplicated_nodes[domain_non_duplicated_nodes["truth"] != 'none'])
 print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
-print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f}) %")
+print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f} %)")
 
 # %%
 from lxml.html.clean import Cleaner
@@ -85,7 +88,7 @@ def clean_node(text):
         pass
 
 min_char = 1
-max_char = 10000
+max_char = 10_000
 
 # #? Clean node text 
 results_df['text'] = results_df['text'].apply(clean_node) 
@@ -97,19 +100,16 @@ results_df_pos_more_than_10000 = len(results_df[(results_df["truth"] != "none") 
 results_df_pos_less_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 10000)])
 print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresults_df_pos_less_than_10000:{results_df_pos_less_than_10000}")
 
-# results_df = results_df[results_df['node_text_len'] >= min_char] 
-# print(f"Df result size: {len(results_df)} - Filter out nodes with text smaller or equal than {min_char} characters")
-# results_df = results_df[results_df["node_text_len"] < max_char] 
-# print(f"Df result size: {len(results_df)} - Filter out nodes with text longer than {max_char} characters")
-
 # %% [markdown]
 # # Generate text for html
 
 # %%
 from typing import List
 
-node_show = False
+show_node = False
 node_text_link = False
+show_probability = True
+show_node_tag = True
 
 def make_bold_gt_texts(text:str, gt_texts:List[str]) -> str:
     for gt_text in gt_texts:
@@ -129,6 +129,8 @@ create_folder()
 def define_page(url, url_df, url_id):
     node_text_list = []
     for index_node, (_, node) in enumerate(url_df.iterrows()):
+        # if index_node == 10: # ? For debugging specific Node
+        #     print(f"Reached node: {index_node}")
         node_defined = define_node(index_node, node, url)
         node_text_list.extend(node_defined)
 
@@ -153,14 +155,18 @@ def define_page(url, url_df, url_id):
 def define_node(index_node, df_node, url):
     xpath = df_node['xpath']
     text = df_node['text']
+    node_tag = df_node['node_tag']
     gt_texts = df_node['gt_text']
+    node_prob = df_node['final_probs'][0]
+    node_index = str(index_node)            
 
-    node_index = str(index_node)
+
     if len(gt_texts) > 0:
         text = make_bold_gt_texts(text, gt_texts)
 
-    if node_show:
+    if show_node:
         text = f"<p class='xpath'> {node_index}: {xpath}</p>" + text
+        text = f"<div class='column'> {text} </div>\n"
 
     if node_text_link:
         text_ref = f"{url}#:~:text={text.strip().replace(' ', '%20')}"
@@ -178,8 +184,17 @@ def define_node(index_node, df_node, url):
     else:
         text_to_return = f"<p> {text} </p>"
 
-    # return f"<div>{text_to_return}</div>\n"
-    return f"{text_to_return}\n"
+    text_to_return =f"<div class='column first'> {text_to_return} </div>"
+
+    if show_probability:
+        text_to_return = f"<div class='column second'> <p>{node_prob:.2f}</p> </div> {text_to_return}\n"
+
+    if show_node_tag:
+        text_to_return = f"<div class='column third'> <p>{node_tag}</p> </div> {text_to_return}\n"
+
+    text_to_return = f"<div class='row'> {text_to_return}</div>\n"
+
+    return text_to_return
 
 # #? Create the text representation of the html
 def create_text_representation_for_website(website, website_df, folder_path="text_representation"):
@@ -192,9 +207,38 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
 
     full_text = ''.join(pages_list)
 
-    html_text = f"""
+
+    head_style = """
     <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+    * {
+        box-sizing: border-box;
+    }
+
+    .row {
+        display: flex;
+        flex: 50%;
+        padding: 1px;
+    }
+
+    /* Create two equal columns that sits next to each other */
+    .column {
+        padding: 1px;
+    }
+    .first {
+    width: 95%;
+    }
+
+    .second {
+    width: 2%;
+    }
+    
+    .third {
+    width: 3%;
+    }
+
+    </style>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
@@ -202,8 +246,9 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
 
     <link rel='stylesheet' href='styles.css'>
     <!DOCTYPE html>
-    <html> {full_text} </html>
     """
+
+    html_text = f"{head_style}\n<html> {full_text} </html>"
     
     # html_text = re.sub("&(?!amp;)", "&amp;", html_text)
     # TODO (AIMORE): Apply these preprocessing before but also when predicting!
@@ -214,8 +259,8 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
 
 # #? Run through the websites
 for website_id, (website, df_website) in enumerate(results_df.groupby('domain')):
-    # if website == "piwik.pro":
-    print(f"{website_id}: {website}")
+    # if website == "lssmedia.com":
+    #     print(f"{website_id}: {website}")
     create_text_representation_for_website(website, df_website)
     # break
     # if website_id > 1:

@@ -162,9 +162,6 @@ assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} 
 #     # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
 
 # %%
-all_dfs.head()
-
-# %%
 print(len(websites_data_path))
 
 def read_data(website_path):
@@ -188,6 +185,9 @@ for dfs in p.imap(read_data, websites_data_path):
     all_dfs = all_dfs.append(dfs)
 
 len(all_dfs)
+
+# %%
+all_dfs.head(1)
 
 # %%
 all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))

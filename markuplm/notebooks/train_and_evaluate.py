@@ -43,16 +43,16 @@ device, n_gpu = get_device_and_gpu_count(no_cuda, local_rank)
 # %%
 trainer_config = dict(
     # # ? Optimizer
-    weight_decay= 0.0, #? Default: 0.0
+    weight_decay= 0.01, #? Default: 0.0
     learning_rate=1e-05,  #? Default: 1e-05
     adam_epsilon=1e-8, #? Default: 1e-8
     # # ? Loss
     label_smoothing=0.01, #? Default: 0.0 
-    loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss /FocalLoss
+    loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss / FocalLoss
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 0
     # # ? Trainer
-    num_epochs = 5, 
+    num_epochs = 80, 
     logging_every_epoch = 1,
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
@@ -61,19 +61,20 @@ trainer_config = dict(
     max_grad_norm = 1.0,
     verbose = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-    # per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-    per_gpu_train_batch_size = 16, #? Max with the big machine 
-    # eval_batch_size = 1024, #? 1024 Max with the big machine 
-    eval_batch_size = 128, #?  Max with the big machine 
+    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+    # per_gpu_train_batch_size = 16, #? Max with the big machine 
+    eval_batch_size = 1024, #? 1024 Max with the big machine 
+    # eval_batch_size = 128, #?  Max with the big machine 
     overwrite_model = True,
     evaluate_during_training = True,
     no_cuda = no_cuda,
     freeze_body = False,
     dataset_to_use='all',
     # # ? Data Reader
-    overwrite_cache=False, 
+    overwrite_cache=True, 
     parallelize=False, 
-    dedup=True #? Default: False
+    train_dedup=True, #? Default: False
+    develop_dedup=True, #? Default: False
 )
 if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
@@ -89,8 +90,8 @@ if local_rank in [-1, 0]:
     print("Training configurations from WandB: ")
     pprint(trainer_config)
 else:
-    run = None   
-
+    run = None
+    
 loss_function = trainer_config.pop("loss_function")
 label_smoothing = trainer_config.pop("label_smoothing")
 # %%
@@ -105,25 +106,29 @@ dr = DataReader(
 
 dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
 
-if trainer_config.pop("dedup"):
-    dedup = "_dedup"
+if trainer_config.pop("train_dedup"):
+    train_dedup = "_dedup"
 else:
-    dedup = ""
+    train_dedup = ""
+if trainer_config.pop("develop_dedup"):
+    develop_dedup = "_dedup"
+else:
+    develop_dedup = ""
 
 # #?  Debug
 if dataset_to_use == "debug":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=2)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=2)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=2)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=2)
 
 # #?  I will use 24 websites to train and 8 websites to evaluate
 elif dataset_to_use == "mini":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=24)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=8)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=24)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=8)
 
 # #?  Generate all features
 elif dataset_to_use == "all":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{dedup}/", limit_data=False)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{dedup}/", limit_data=False)
+    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=False)
+    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=False)
 else:
     pass
 
@@ -166,6 +171,9 @@ trainer = Trainer(
 # %%
 print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
+
+# %%
+dataset_nodes_predicted
 
 # %% [markdown]
 # # Infer

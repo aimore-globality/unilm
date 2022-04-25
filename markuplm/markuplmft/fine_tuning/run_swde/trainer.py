@@ -461,14 +461,18 @@ class Trainer:
                 involved_first_tokens_types,
                 involved_first_tokens_text,
                 involved_first_tokens_gt_text,
+                involved_first_tokens_node_attribute,
+                involved_first_tokens_node_tag
             ) = sub_info
 
-            for pos, xpath, type, text, gt_text in zip(
+            for pos, xpath, type, text, gt_text, node_attribute, node_tag in zip(
                 involved_first_tokens_pos,
                 involved_first_tokens_xpaths,
                 involved_first_tokens_types,
                 involved_first_tokens_text,
                 involved_first_tokens_gt_text,
+                involved_first_tokens_node_attribute,
+                involved_first_tokens_node_tag
 
             ):
 
@@ -482,6 +486,8 @@ class Trainer:
                     all_res[html_path][xpath]["truth"] = type
                     all_res[html_path][xpath]["text"] = text
                     all_res[html_path][xpath]["gt_text"] = gt_text
+                    all_res[html_path][xpath]["node_attribute"] = node_attribute
+                    all_res[html_path][xpath]["node_tag"] = node_tag
 
                 else:
                     all_res[html_path][xpath]["pred"] += pred
@@ -494,6 +500,8 @@ class Trainer:
             "text": [],
             "gt_text": [],
             "truth": [],
+            "node_attribute": [],
+            "node_tag": [],
             "pred_type": [],
             "final_probs": [],
         }
@@ -513,6 +521,8 @@ class Trainer:
                 lines["gt_text"].append(all_res[html_path][xpath]["gt_text"])
                 lines["text"].append(all_res[html_path][xpath]["text"])
                 lines["truth"].append(all_res[html_path][xpath]["truth"])
+                lines["node_attribute"].append(all_res[html_path][xpath]["node_attribute"])
+                lines["node_tag"].append(all_res[html_path][xpath]["node_tag"])
                 lines["pred_type"].append(pred_type)
                 lines["final_probs"].append(final_probs)
 

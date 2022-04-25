@@ -357,8 +357,6 @@ def get_field_xpaths(
 
             gt_values = all_data_dict[page_id][field]["values"]
 
-
-
             # Clean the groundtruth gt_values
             clean_gt_values = []
             for gt_value in gt_values:

@@ -192,6 +192,8 @@ class DataReader:
                 f.involved_first_tokens_types,  # ? ['none', 'none', 'none', 'none', 'none']
                 f.involved_first_tokens_text,  # ? ['', "var siteConf = { ajax_url: 'https://1820productions.com/wp-admin/admin-ajax.php' };", "(function(html){html.className = html.c ......."]
                 f.involved_first_tokens_gt_text,  # ?
+                f.involved_first_tokens_node_attribute,  # ?
+                f.involved_first_tokens_node_tag,  # ?
             )
             for f in all_features
         ]
