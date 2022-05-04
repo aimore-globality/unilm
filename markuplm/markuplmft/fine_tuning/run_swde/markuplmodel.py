@@ -127,7 +127,7 @@ class MarkupLModel:
         for param in self.net.parameters():
             param.grad = None
 
-    def freeze_body(self):
+    def freeze_body(self, verbose=False):
         print("Freezing Model's Body")
         for name, module in self.net.named_modules():
             if name in ["token_cls", "token_cls.dense", "token_cls.LayerNorm", "token_cls.decoder"]:
@@ -137,6 +137,6 @@ class MarkupLModel:
             else:
                 for param in module.parameters():
                     param.requires_grad = True
-
-            print(f"{name}:  {module.parameters}")
-            print()
+            if verbose:
+                print(f"{name}:  {module.parameters}")
+                print()

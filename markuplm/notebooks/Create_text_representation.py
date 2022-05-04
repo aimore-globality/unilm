@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -216,6 +217,24 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
         box-sizing: border-box;
     }
 
+    .TP {
+    background-color: rgba(9, 255, 0, 0.5);
+    }
+    .FN {
+        background-color: rgba(255, 187, 0, 0.7);
+    }
+    .FP {
+        background-color: rgba(255, 53, 10, 0.5);
+    }
+    p {
+    font-size:10px;
+    margin-bottom: -1px;
+    /* background-color: rgba(226, 53, 10, 0.877); */
+    /* padding: 0; */
+    /* white-space: 0; */
+    /* line-height: 0; */
+    }
+
     .row {
         display: flex;
         flex: 50%;
@@ -229,11 +248,9 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
     .first {
     width: 95%;
     }
-
     .second {
     width: 2%;
     }
-    
     .third {
     width: 3%;
     }

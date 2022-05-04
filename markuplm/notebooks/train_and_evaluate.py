@@ -52,32 +52,116 @@ trainer_config = dict(
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 0
     # # ? Trainer
-    num_epochs = 80, 
-    logging_every_epoch = 1,
+    num_epochs = 3, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
+    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+    eval_batch_size = 1024, #? 1024 Max with the big machine 
     fp16 = True, 
     fp16_opt_level = "O1",
     max_grad_norm = 1.0,
-    verbose = False,
+    load_model=False,
+    load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
+    freeze_body = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-    # per_gpu_train_batch_size = 16, #? Max with the big machine 
-    eval_batch_size = 1024, #? 1024 Max with the big machine 
-    # eval_batch_size = 128, #?  Max with the big machine 
     overwrite_model = True,
     evaluate_during_training = True,
     no_cuda = no_cuda,
-    freeze_body = False,
-    dataset_to_use='all',
+    verbose = False,
+    logging_every_epoch = 1,
     # # ? Data Reader
-    overwrite_cache=True, 
+    dataset_to_use='all',
+    overwrite_cache=False, 
     parallelize=False, 
     train_dedup=True, #? Default: False
     develop_dedup=True, #? Default: False
 )
 if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
+
+
+# %%
+# # trainer_config = dict(
+# #     # ? Optimizer
+# #     weight_decay= 0.01, #? Default: 0.0
+# #     learning_rate=1e-05,  #? Default: 1e-05
+# #     adam_epsilon=1e-8, #? Default: 1e-8
+# #     # ? Loss
+# #     label_smoothing=0.01, #? Default: 0.0 
+# #     loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss / FocalLoss
+# #     # ? Scheduler
+# #     warmup_ratio=0.0, #? Default: 0
+# #     # ? Trainer
+# #     num_epochs = 3, 
+# #     logging_every_epoch = 1,
+# #     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
+# #     max_steps = 0, 
+# #     fp16 = True, 
+# #     fp16_opt_level = "O1",
+# #     max_grad_norm = 1.0,
+# #     verbose = False,
+# #     load_model=False,
+# #     load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
+# #     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
+# #     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+# #     # per_gpu_train_batch_size = 16, #? Max with the big machine 
+# #     eval_batch_size = 1024, #? 1024 Max with the big machine 
+# #     # eval_batch_size = 128, #?  Max with the big machine 
+# #     overwrite_model = True,
+# #     evaluate_during_training = True,
+# #     no_cuda = no_cuda,
+# #     freeze_body = False,
+# #     dataset_to_use='all',
+# #     # ? Data Reader
+# #     overwrite_cache=False, 
+# #     parallelize=False, 
+# #     train_dedup=True, #? Default: False
+# #     develop_dedup=True, #? Default: False
+# # )
+# # if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
+# # if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
+
+# # #! Train only head after being trained full body:
+# trainer_config = dict(
+#     # ? Optimizer
+#     weight_decay= 0.01, #? Default: 0.0
+#     learning_rate=1e-05,  #? Default: 1e-05
+#     adam_epsilon=1e-8, #? Default: 1e-8
+#     # ? Loss
+#     label_smoothing=0.01, #? Default: 0.0 
+#     loss_function = "FocalLoss", #? Default: CrossEntropyLoss / FocalLoss
+#     # ? Scheduler
+#     warmup_ratio=0.0, #? Default: 0
+#     # ? Trainer
+#     num_epochs = 10, 
+#     logging_every_epoch = 1,
+#     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
+#     max_steps = 0, 
+#     fp16 = True, 
+#     fp16_opt_level = "O1",
+#     max_grad_norm = 1.0,
+#     verbose = False,
+#     load_model=True,
+#     load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
+#     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
+#     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
+#     # per_gpu_train_batch_size = 16, #? Max with the big machine 
+#     eval_batch_size = 1024, #? 1024 Max with the big machine 
+#     # eval_batch_size = 128, #?  Max with the big machine 
+#     overwrite_model = True,
+#     evaluate_during_training = True,
+#     no_cuda = no_cuda,
+#     freeze_body = True,
+#     dataset_to_use='all',
+#     # ? Data Reader
+#     overwrite_cache=False, 
+#     parallelize=False, 
+#     train_dedup=True, #? Default: False
+#     develop_dedup=True, #? Default: False
+#     seed=,
+# )
+# if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
+# if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
 
 
 # %%
@@ -141,8 +225,20 @@ print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 
 # %%
 print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
-markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-markup_model.load_pretrained_model_and_tokenizer()
+load_model_path = trainer_config.pop("load_model_path") 
+if trainer_config.pop("load_model", False):
+    print("\n --- MODEL LOADED! --- ")
+    markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
+    markup_model.load_trained_model(
+        config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+        tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+        net_path=load_model_path,
+    )
+    print(f"load_model_path: {load_model_path}")
+    print("\n --- MODEL LOADED! --- ")
+else:
+    markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
+    markup_model.load_pretrained_model_and_tokenizer()
 
 if trainer_config.pop("freeze_body", False):
     markup_model.freeze_body()
@@ -173,7 +269,35 @@ print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
 
 # %%
-dataset_nodes_predicted
+from IPython.display import display
+import pandas as pd
+from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
+import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
+
+dataset_nodes_predicted["domain"] = dataset_nodes_predicted["html_path"].apply(lambda x: x.split(".pickle")[0])
+
+metrics_per_domain = pd.DataFrame(dataset_nodes_predicted.groupby("domain").apply(lambda x: compute_metrics_per_dataset(x)[0]).to_dict()).T
+cm_per_domain = pd.DataFrame(dataset_nodes_predicted.groupby("domain").apply(lambda x: compute_metrics_per_dataset(x)[1]).to_dict()).T
+metrics_per_domain = metrics_per_domain.join(cm_per_domain)
+metrics_per_domain = metrics_per_domain.sort_values("f1", ascending=False)
+
+full_perf_style = {
+            "precision": lambda x: "{:.1f}%".format(x * 100) if x > 0  else '',
+            "recall": lambda x: "{:.1f}%".format(x * 100) if x > 0  else '',
+            "f1": lambda x: "{:.1f}%".format(x * 100) if x > 0 else '',
+            "TP": "{:.0f}",
+            "TN": "{:.0f}",
+            "FP": "{:.0f}",
+            "FN": "{:.0f}",
+        }
+
+metrics_per_domain.style.format(full_perf_style).to_html('metrics_per_domain.html')
+run.log({"metrics_per_domain": wandb.Html(open('metrics_per_domain.html'))})
+
+print("Metrics per domain:")
+with pd.option_context("max_rows", 500, "min_rows", 500):
+    display(metrics_per_domain.style.format(full_perf_style))
 
 # %% [markdown]
 # # Infer
@@ -218,8 +342,8 @@ if local_rank in [-1, 0]:
 
     develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
     print(f"Develop dataset predicted size: {len(develop_set_nodes_predicted)}")
-
-    save_path = f"develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}.pkl"
+    
+    save_path = f"develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}{develop_dedup}.pkl"
     print(save_path)
     develop_set_nodes_predicted.to_pickle(save_path)
 

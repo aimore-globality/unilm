@@ -203,28 +203,30 @@ all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len)
 
 # #? Interesting analysis if we remove the nodes with duplicated data, we can massively reduce their size.
 duplicated_nodes = all_dfs
-domain_non_duplicated_nodes = all_dfs.drop_duplicates(subset=["text", "website"])
+domain_deduplicated_nodes = all_dfs.drop_duplicates(subset=["text", "website"])
 print(f"{'All nodes:':>50} {len(duplicated_nodes):>7}")
-print(f"{'Domain non-duplicated nodes:':>50} {len(domain_non_duplicated_nodes):>7} ({100*len(domain_non_duplicated_nodes)/len(duplicated_nodes):.2f} %)")
+print(f"{'Domain deduplicated nodes:':>50} {len(domain_deduplicated_nodes):>7} ({100*len(domain_deduplicated_nodes)/len(duplicated_nodes):.2f} %)")
 
 # #? Also, not so many nodes with positive data are removed compared to the other data.
 duplicated_gt = len(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'])
-domain_non_duplicated_gt = len(domain_non_duplicated_nodes[domain_non_duplicated_nodes["gt_field"] != 'none'])
+domain_deduplicated_gt = len(domain_deduplicated_nodes[domain_deduplicated_nodes["gt_field"] != 'none'])
 print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
-print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f} %)")
+print(f"{'Domain deduplicated ground truth nodes:':>50} {domain_deduplicated_gt:>7} ({100*(domain_deduplicated_gt) / duplicated_gt:.2f} %)")
 
 # %% [markdown]
-# ## Create a nonduplicated data 
+# ## Create a nonduplicated data
+# For the training: Keep the duplicated ground truth node 
 
 # %%
 print(len(websites_data_path))
 
-def create_domain_non_duplicated_data(folder, domain_non_duplicated_nodes):
+def create_domain_deduplicated_data(folder, domain_deduplicated_nodes):
+    print("Creating dedup node dataset:")
     folder = Path(str(websites_root_path) + "_dedup")
     if not folder.exists():
         folder.mkdir()
 
-    for website, website_data in domain_non_duplicated_nodes.groupby("website"):
+    for website, website_data in domain_deduplicated_nodes.groupby("website"):
         d = dict()
         save_path = folder / (str(website) + ".pickle")
         for page_index, page_data in website_data.groupby("page_index"):            
@@ -232,8 +234,13 @@ def create_domain_non_duplicated_data(folder, domain_non_duplicated_nodes):
 
         print(f"save_path: {save_path}")
         pd.to_pickle(d, save_path)
-            
-create_domain_non_duplicated_data(folder=websites_root_path, domain_non_duplicated_nodes=domain_non_duplicated_nodes)
+
+if  dataset == 'train': #? If the data is for training keep the duplicated gt, but for develop/inference drop all duplicates 
+    all_dfs = all_dfs.reset_index()
+    indices = set(all_dfs.drop_duplicates(subset=["text", "website"]).index).union(set(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'].index))
+    domain_deduplicated_nodes = all_dfs.loc[indices]
+
+create_domain_deduplicated_data(folder=websites_root_path, domain_deduplicated_nodes=domain_deduplicated_nodes)
 
 # assert np.all(list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed/1820productions.com.pickle").values()) == list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed_dedup/1820productions.com.pickle").values()))
 

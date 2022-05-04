@@ -23,6 +23,8 @@
     },
     "vs-external-tools.externalCommand1.command": "/home/ubuntu/miniconda3/bin/globality-black",
     "vs-external-tools.externalCommand1.args": ["$(ItemPath)"],
+    "vs-external-tools.externalCommand2.command": "/Users/aimoredutra/miniconda3/bin/isort",
+    "vs-external-tools.externalCommand2.args": ["$(ItemPath)"],
     "jupyter.experiments.optInto": [
         "CustomEditor"
     ],
