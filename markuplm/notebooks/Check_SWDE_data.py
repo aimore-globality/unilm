@@ -41,9 +41,6 @@ data_path = f'../../../swde/my_data/{dataset}/my_CF_sourceCode/wae.pickle'
 data_packed = pd.read_pickle(data_path)
 len(data_packed)
 
-# %%
-# data_packed
-
 # %% [markdown]
 # ### Ground Truth
 
@@ -81,99 +78,6 @@ if dataset == 'train':
     assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} != {len(data_packed)}"
 else:
     assert len(websites_data_path) == len(data_packed) - 1, f"{len(websites_data_path)} != {len(data_packed)}"
-
-# %% tags=[]
-# all_dfs = {}
-# for website_path in tqdm(websites_data_path):
-#     dfs = []
-#     website_data = pd.read_pickle(website_path)
-#     break
-#     # print(f"{website_path} {len(website_data)}")
-#     # # if website_path == '/data/GIT/swde/my_data/develop/my_CF_processed/ciphr.com.pickle':
-#     # for page_index in website_data.keys():
-#     #     df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'node-type', 'gt_text'])
-#     #     df['gt_text_len'] = df['gt_text'].apply(len)
-#     #     dfs.append(df)
-
-#     # all_dfs[website_path.parts[-1].split(".pickle")[0]] = dfs
-
-#     # # assert df['node-type'].value_counts()['PAST_CLIENT'] > 0, "There is a page that doesn't contain any Past Client"
-#     # # break
-# website_data['0000'][0]
-
-# %%
-# import numpy as np
-# for enum, (website, dfs) in enumerate(all_dfs.items()):
-#     # print(website)
-#     for df in dfs:
-#         if np.any(df["gt_text_len"] > 1):
-#             display(df)
-#             break
-
-# %%
-# node_count = {'none':[], 'PAST_CLIENT':[], 'nonempty-none':[]}
-# text_length = {'none':[], 'PAST_CLIENT':[]}
-
-# websites = []
-# pages = []
-# positive_dfs = []
-# negative_dfs = []
-# all_df = pd.DataFrame()
-
-# websites_iterator = tqdm(websites_data_path)
-# for website_path in websites_iterator:
-#     websites_iterator.set_description(f"Processing: {website_path}")
-#     website_data = pd.read_pickle(website_path)
-#     no_past_client_pages = []
-    
-#     for page_index in website_data.keys():
-#         website = str(website_path.parts[-1]).split('.pickle')[0]
-#         websites.append(website)
-#         pages.append(page_index)
-        
-#         df = pd.DataFrame(website_data[page_index], columns=['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute'])
-#         if len(df) > 0:
-#             df["website"] = website
-#             all_df = all_df.append(df)
-
-#     #         node_distribution = df['gt_field'].value_counts()
-
-#     #         if 'PAST_CLIENT' not in node_distribution:
-#     #             node_distribution['PAST_CLIENT'] = 0
-#     #             no_past_client_pages.append(page_index)
-#     #             negative_dfs.append(df)
-#     #         else:
-#     #             positive_dfs.append(df)
-
-#     #         node_ratio = node_distribution.get('PAST_CLIENT', 0) / (1 + node_distribution.get('none', 0))
-#     #         if node_ratio > 0.6:
-#     #             print(f"Strange - ratio! {node_ratio:.2f} | {website} | {page_index}")
-#     #             print(node_distribution)
-#     #             print()
-                
-#     #         past_clients = node_distribution.get('PAST_CLIENT', 0)
-#     #         if past_clients > 100:
-#     #             print(f"Strange - many PAST CLIENTS! {past_clients} | {website} | {page_index}")
-#     #             print()
-
-#     #         df = df[df['text'] != '']
-#     #         df['text_len'] = df['text'].apply(len)
-            
-#     #         non_empty_node_count = df['gt_field'].value_counts().get('none', 0)
-            
-#     #         node_count['none'].append(node_distribution.get('none', 0))        
-#     #         node_count['PAST_CLIENT'].append(node_distribution.get('PAST_CLIENT', 0))
-#     #         node_count['nonempty-none'].append(non_empty_node_count)
-
-            
-#     #         text_avg = pd.DataFrame(df.groupby('gt_field').mean('text_len'))['text_len']        
-                            
-#     #         text_length['none'].append(text_avg['none'])
-
-#     #         if 'PAST_CLIENT' in text_avg:
-#     #             text_length['PAST_CLIENT'].append(text_avg['PAST_CLIENT'])
-
-#     # # print(f"{website} - No past clients: {len(no_past_client_pages)} out of {len(website_data.keys())}")
 
 # %%
 print(len(websites_data_path))
@@ -226,40 +130,6 @@ duplicated_gt = len(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'])
 domain_deduplicated_gt = len(domain_deduplicated_nodes[domain_deduplicated_nodes["gt_field"] != 'none'])
 print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
 print(f"{'Domain deduplicated ground truth nodes:':>50} {domain_deduplicated_gt:>7} ({100*(domain_deduplicated_gt) / duplicated_gt:.2f} %)")
-
-# %%
-all_dfs[(all_dfs["page_index"] == '0008') & (all_dfs["website"] == 'technetit.co.uk') & (all_dfs["gt_field"] != 'none')]
-
-# %% [markdown]
-# ## Create a nonduplicated data
-# For the training: Keep the duplicated ground truth node 
-
-# %%
-print(len(websites_data_path))
-
-def create_domain_deduplicated_data(folder, domain_deduplicated_nodes):
-    print("Creating dedup node dataset:")
-    folder = Path(str(websites_root_path) + "_dedup")
-    if not folder.exists():
-        folder.mkdir()
-
-    for website, website_data in domain_deduplicated_nodes.groupby("website"):
-        d = dict()
-        save_path = folder / (str(website) + ".pickle")
-        for page_index, page_data in website_data.groupby("page_index"):            
-            d[page_index] = [tuple(x) for x in page_data[['text', 'xpath', 'gt_field', 'gt_text', 'node_attribute', 'node_tag']].values]
-
-        print(f"save_path: {save_path}")
-        pd.to_pickle(d, save_path)
-
-if  dataset == 'train': #? If the data is for training keep the duplicated gt, but for develop/inference drop all duplicates 
-    all_dfs = all_dfs.reset_index()
-    indices = set(all_dfs.drop_duplicates(subset=["text", "website"]).index).union(set(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'].index))
-    domain_deduplicated_nodes = all_dfs.loc[indices]
-
-create_domain_deduplicated_data(folder=websites_root_path, domain_deduplicated_nodes=domain_deduplicated_nodes)
-
-# assert np.all(list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed/1820productions.com.pickle").values()) == list(pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_processed_dedup/1820productions.com.pickle").values()))
 
 # %% [markdown]
 # ## _node_tag_ and _node_attribute_
@@ -334,32 +204,6 @@ all_text_len = all_dfs["text_len"].sum()
 print(f"gt_numb: {gt_numb}")
 print(f"data_numb: {data_numb}")
 print(f"ratio:\n gt_numb_ratio: {100*gt_numb/all_gt:.2f} %\n data_numb_ratio: {100*data_numb/all_data:.2f} %\n text_len_ratio: {100*text_len/all_text_len:.2f} %")
-
-# %%
-# all_dfs
-
-# %%
-print(f" Empty text nodes: {len(all_dfs[all_dfs['text_len'] <= 1])}")
-
-# %%
-# all_dfs['text_len'] = all_dfs['text'].apply(len)
-# all_dfs.groupby("node_attribute")['text_len'].describe().sort_values("count", ascending=False)
-
-# %%
-# import collections
-# counts = collections.defaultdict()
-# none_counts = []
-# past_client_counts = []
-# attributes = all_dfs['node_attribute'].value_counts().index
-# for x in attributes:
-#     counts = all_dfs[all_dfs['node_attribute'] == x]["gt_field"].value_counts()
-#     past_client_counts.append(counts.get('PAST_CLIENT'))
-#     none_counts.append(counts.get('none'))
-
-# %%
-# dd = pd.DataFrame([attributes, past_client_counts, none_counts]).T
-# dd.columns = ["xpath", "past_clients", "none"]
-# dd.sort_values("past_clients",ascending=False)["past_clients"].value_counts()
 
 # %% [markdown]
 # ---
