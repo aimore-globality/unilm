@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
-#     display_name: wae
+#     display_name: Python 3.9.12 ('wae39')
 #     language: python
 #     name: python3
 # ---
@@ -51,7 +51,7 @@ if predict_and_segment:
     dataset = 'develop'
     print(dataset)
     if dataset == 'develop':
-        data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1735)_neg(4032)_intermediate.pkl"
+        data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
     df = pd.read_pickle(data_path)
 
     print(len(df))
@@ -201,12 +201,18 @@ if not classified_nodes_folder_root.exists():
 # classified_nodes_data_path = "results_classified_5_epoch.pkl"
 # classified_nodes_data_path = "develop_set_nodes_classified_epoch_10.pkl"
 classified_nodes_data_path = "develop_set_nodes_classified_epoch_4_dedup.pkl"
+# classified_nodes_data_path = "develop_set_nodes_classified_epoch_4.pkl"
+
+
 
 save_load_data_path = f"{classified_nodes_data_path.split('.pkl')[0]}_segmented_{segmenter_trained}.pkl"
 print(f"save_load_data_path: {save_load_data_path}")
 
 if predict_and_segment:
-    results = pd.read_pickle(str(classified_nodes_folder_root / classified_nodes_data_path))
+    load_file = str(classified_nodes_folder_root / classified_nodes_data_path)
+    print(f"Load file: {load_file}")
+    results = pd.read_pickle(load_file)
+    display(results.head())
     results = results.reset_index().drop('index', axis=1)
     results["text"] = results["text"].apply(lambda x: f" {x} ")
 
@@ -353,7 +359,8 @@ taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in gr
 
 print(f"Metrics with the Segmenter {segmenter_trained}!")
 
-for mode in ["WAPC"]+list(mode_indices.keys()):
+# for mode in ["WAPC"]+list(mode_indices.keys()):
+for mode in list(mode_indices.keys())[:1]:
     print(mode)
     domain_metrics = get_reconciliations_metrics_for_all_domains(
         df=merge,
@@ -386,10 +393,34 @@ for mode in ["WAPC"]+list(mode_indices.keys()):
 print(folder_path)
 
 # %%
-len(merge)
+df[df["domain"] == "misoportal.com"]["PAST_CLIENT-gt_value_untax"].value_counts()
+# df[df["domain"] == "datameer.com"]["PAST_CLIENT-gt_value_untax"].value_counts()
 
 # %%
-df
+# [y for x in df[df['domain'].isin(['palisade.com'])]["PAST_CLIENT-gt_text"].values for y in x]
+urls_with_many_gt_text = df.sort_values("PAST_CLIENT-gt_text_len", ascending=False).iloc[:20]
+urls_with_many_gt_text[["domain", "PAST_CLIENT-gt_text_len"]].sort_values("domain")
+
+# %%
+df[df["PAST_CLIENT-gt_text_len"].between(1,5)].sort_values("PAST_CLIENT-gt_text_len")["PAST_CLIENT-gt_text_len"].sum()
+
+# %%
+[x for x in domain_metrics.loc['palisade.com']["PAST_CLIENT-gt_value"]][0:]
+
+# %%
+
+# %%
+with pd.option_context('display.max_rows', 20, 'display.min_rows', 20):
+    display(domain_metrics.sort_values("precision", ascending=True))
+
+# %%
+domain_metrics = get_reconciliations_metrics_for_all_domains(
+    df=merge,
+    gt_col=f"{tag}-gt_value",
+    predicted_col=f"{mode}-node_company_span_taxonomy",
+    annotations_col="PAST_CLIENT-annotations",
+    negative_percentage=negative_percentage,
+)
 
 # %%
 # with pd.option_context('min_rows', 200, 'max_rows', 200, 'max_colwidth', 200): 

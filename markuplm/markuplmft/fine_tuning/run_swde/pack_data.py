@@ -77,6 +77,7 @@ def pack_swde_data(swde_path, pack_path):
             website = website_folder.split("(")[0]
             page_id = html_filename.split(".")[0]
             swde_data[website][page_id] = page
+            
     print("Saving data...")
     with open(pack_path, "wb") as output_file:
         pickle.dump(swde_data, output_file)

@@ -28,4 +28,5 @@
     "jupyter.experiments.optInto": [
         "CustomEditor"
     ],
+    "debug.allowBreakpointsEverywhere": true,
 }

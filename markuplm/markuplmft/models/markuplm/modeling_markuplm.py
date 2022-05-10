@@ -230,7 +230,7 @@ class MarkupLMEmbeddings(nn.Module):
         position_embeddings = self.position_embeddings(position_ids)
 
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
+        # TODO(AIMORE): If you want to remove the xpath_embeddings and do an ablation study here it is: 
         xpath_embeddings = self.xpath_embeddings(xpath_tags_seq, xpath_subs_seq)
 
         embeddings = (

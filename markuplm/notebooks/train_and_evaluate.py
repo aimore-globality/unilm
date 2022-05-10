@@ -52,7 +52,7 @@ trainer_config = dict(
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 0
     # # ? Trainer
-    num_epochs = 3, 
+    num_epochs = 4, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
@@ -71,7 +71,7 @@ trainer_config = dict(
     logging_every_epoch = 1,
     # # ? Data Reader
     dataset_to_use='all',
-    overwrite_cache=False, 
+    overwrite_cache=True, 
     parallelize=False, 
     train_dedup=True, #? Default: False
     develop_dedup=True, #? Default: False
@@ -299,6 +299,25 @@ print("Metrics per domain:")
 with pd.option_context("max_rows", 500, "min_rows", 500):
     display(metrics_per_domain.style.format(full_perf_style))
 
+# %%
+# r = metrics_per_domain[~metrics_per_domain.index.isin(['greatplacetowork.com'])].sum()
+r = metrics_per_domain.sum()
+print(f"Precision : {r['TP']/(r['TP']+r['FP']):.3f}")
+print(f"Recall    : {r['TP']/(r['TP']+r['FN']):.3f}") #? 52 -> 71
+
+
+# %%
+def get_worst_3(metric='precision'):
+    print(f"Worst 3: {metric.capitalize()}")
+    worst_3 = metrics_per_domain.sort_values(metric).dropna().iloc[:3]
+    display(worst_3)
+    worst_3 = list(worst_3.index)
+    print(worst_3)
+    return worst_3
+
+get_worst_3('precision')
+get_worst_3('recall')
+
 # %% [markdown]
 # # Infer
 
@@ -343,8 +362,8 @@ if local_rank in [-1, 0]:
     develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
     print(f"Develop dataset predicted size: {len(develop_set_nodes_predicted)}")
     
-    save_path = f"develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}{develop_dedup}.pkl"
-    print(save_path)
+    save_path = f"results_classified/develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}{develop_dedup}.pkl"
+    print(f"Data infered saved at: {save_path}")
     develop_set_nodes_predicted.to_pickle(save_path)
 
     run.save()
@@ -354,5 +373,4 @@ if local_rank not in [-1, 0]:
     torch.distributed.barrier()
 
 # %%
-
-# %%
+save_path

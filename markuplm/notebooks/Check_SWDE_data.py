@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
-#     display_name: markuplmft
+#     display_name: Python 3.7.11 ('markuplmft')
 #     language: python
 #     name: python3
 # ---
@@ -25,7 +25,13 @@ from tqdm.notebook import tqdm
 pd.set_option("min_rows",5, "max_rows", 5)
 
 # %% tags=[]
-dataset = 'train'
+# dataset = 'train'
+dataset = 'develop'
+dedup = True
+if dedup:
+    dedup = "_dedup"
+else:
+    dedup = ""
 
 # %% [markdown]
 # # Packed Data (Data after pack_data.py)
@@ -34,6 +40,9 @@ dataset = 'train'
 data_path = f'../../../swde/my_data/{dataset}/my_CF_sourceCode/wae.pickle'
 data_packed = pd.read_pickle(data_path)
 len(data_packed)
+
+# %%
+# data_packed
 
 # %% [markdown]
 # ### Ground Truth
@@ -58,15 +67,20 @@ for gt_file in list(gt_path.iterdir())[:]:
 # %% tags=[]
 pd.set_option('max_colwidth', 2000)
 
-websites_root_path = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_processed/'
-print(websites_root_path)
+websites_root_path = Path.cwd().parents[2] / f'swde/my_data/{dataset}/my_CF_processed{dedup}/'
+print(f"Loading data from: {websites_root_path}")
 websites_data_path = list(websites_root_path.glob('*'))
 websites_data_path = [website_path for website_path in websites_data_path if 'cache' not in str(website_path)]
 print(len(websites_data_path))
+
+# %%
 websites_data_path
 
 # %%
-assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} != {len(data_packed)}"
+if dataset == 'train':
+    assert len(websites_data_path) == len(data_packed), f"{len(websites_data_path)} != {len(data_packed)}"
+else:
+    assert len(websites_data_path) == len(data_packed) - 1, f"{len(websites_data_path)} != {len(data_packed)}"
 
 # %% tags=[]
 # all_dfs = {}
@@ -187,11 +201,11 @@ for dfs in p.imap(read_data, websites_data_path):
 len(all_dfs)
 
 # %%
-all_dfs.head(1)
+all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
+all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len)
 
 # %%
-all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
-all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len) 
+all_dfs[all_dfs["xpath"] == '/html/head/title[1]'].sort_values("gt_field")
 
 # %% [markdown]
 # # Label Analysis
@@ -212,6 +226,9 @@ duplicated_gt = len(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'])
 domain_deduplicated_gt = len(domain_deduplicated_nodes[domain_deduplicated_nodes["gt_field"] != 'none'])
 print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
 print(f"{'Domain deduplicated ground truth nodes:':>50} {domain_deduplicated_gt:>7} ({100*(domain_deduplicated_gt) / duplicated_gt:.2f} %)")
+
+# %%
+all_dfs[(all_dfs["page_index"] == '0008') & (all_dfs["website"] == 'technetit.co.uk') & (all_dfs["gt_field"] != 'none')]
 
 # %% [markdown]
 # ## Create a nonduplicated data
@@ -249,6 +266,9 @@ create_domain_deduplicated_data(folder=websites_root_path, domain_deduplicated_n
 # By identified where it is not likely a positive label to appear we should remove those cases and limit the scope of the data in order to:
 # - Reduce time in all stages 
 # - Remove noisy data
+
+# %%
+all_dfs[all_dfs["node_tag"] == 'title']
 
 # %%
 print(all_dfs.columns.values)

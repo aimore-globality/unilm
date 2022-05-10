@@ -25,7 +25,9 @@ import pandas as pd
 # %%
 # results_df = pd.read_pickle("results_classified/results_classified_5_epoch.pkl")
 # results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_3.pkl")
-results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_1.pkl")
+# results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_1.pkl")
+results_df = pd.read_pickle("/data/GIT/unilm/markuplm/notebooks/results_classified/develop_set_nodes_classified_epoch_4_dedup.pkl")
+# results_df = pd.read_pickle("/data/GIT/unilm/markuplm/notebooks/results_classified/develop_set_nodes_classified_epoch_4.pkl")
 
 
 initial_node_count = len(results_df)
@@ -72,34 +74,34 @@ print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
 print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f} %)")
 
 # %%
-from lxml.html.clean import Cleaner
+# from lxml.html.clean import Cleaner
 
-cleaner = Cleaner()
-cleaner.forms = True
-cleaner.annoying_tags = True
-cleaner.page_structure = True
-cleaner.inline_style = True
-cleaner.scripts = True
-cleaner.javascript = True # This is True because we want to activate the javascript filter
+# cleaner = Cleaner()
+# cleaner.forms = True
+# cleaner.annoying_tags = True
+# cleaner.page_structure = True
+# cleaner.inline_style = True
+# cleaner.scripts = True
+# cleaner.javascript = True # This is True because we want to activate the javascript filter
 
-def clean_node(text):
-    try:
-        return cleaner.clean_html(text)[3:-4]
-    except:
-        pass
+# def clean_node(text):
+#     try:
+#         return cleaner.clean_html(text)[3:-4]
+#     except:
+#         pass
 
-min_char = 1
-max_char = 10_000
+# min_char = 1
+# max_char = 10_000
 
-# #? Clean node text 
-results_df['text'] = results_df['text'].apply(clean_node) 
-results_df['node_text_len'] = results_df["text"].dropna().apply(len)
+# # #? Clean node text 
+# results_df['text'] = results_df['text'].apply(clean_node) 
+# results_df['node_text_len'] = results_df["text"].dropna().apply(len)
 
-print(f"Df result size: {initial_node_count}")
+# print(f"Df result size: {initial_node_count}")
 
-results_df_pos_more_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 10000)])
-results_df_pos_less_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 10000)])
-print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresults_df_pos_less_than_10000:{results_df_pos_less_than_10000}")
+# results_df_pos_more_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 10000)])
+# results_df_pos_less_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 10000)])
+# print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresults_df_pos_less_than_10000:{results_df_pos_less_than_10000}")
 
 # %% [markdown]
 # # Generate text for html
@@ -107,7 +109,7 @@ print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresult
 # %%
 from typing import List
 
-show_node = False
+show_node = True
 node_text_link = False
 show_probability = True
 show_node_tag = True
@@ -165,10 +167,6 @@ def define_node(index_node, df_node, url):
     if len(gt_texts) > 0:
         text = make_bold_gt_texts(text, gt_texts)
 
-    if show_node:
-        text = f"<p class='xpath'> {node_index}: {xpath}</p>" + text
-        text = f"<div class='column'> {text} </div>\n"
-
     if node_text_link:
         text_ref = f"{url}#:~:text={text.strip().replace(' ', '%20')}"
         text_ref_link = f"<a href={text_ref}>{text}</a>"
@@ -193,7 +191,12 @@ def define_node(index_node, df_node, url):
     if show_node_tag:
         text_to_return = f"<div class='column third'> <p>{node_tag}</p> </div> {text_to_return}\n"
 
-    text_to_return = f"<div class='row'> {text_to_return}</div>\n"
+
+    text_to_return = f"<div class='row two'> {text_to_return}</div>\n"
+
+    if show_node:
+        text_to_return = f"<div class='row one'> <p2>{node_index}: {xpath}</p2> </div> {text_to_return}\n"
+    
 
     return text_to_return
 
@@ -235,6 +238,16 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
     /* line-height: 0; */
     }
 
+    p2 {
+    font-size:9px;
+    line-height: 25px;
+    margin-bottom: -10px;
+    /* background-color: rgba(226, 53, 10, 0.877); */
+    /* padding: 0; */
+    /* white-space: 0; */
+    /* line-height: 0; */
+    }
+    
     .row {
         display: flex;
         flex: 50%;
@@ -246,14 +259,15 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
         padding: 1px;
     }
     .first {
-    width: 95%;
+    width: 90%;
     }
     .second {
-    width: 2%;
+    width: 4%;
     }
     .third {
-    width: 3%;
+    width: 6%;
     }
+    
 
     </style>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
@@ -280,8 +294,8 @@ for website_id, (website, df_website) in enumerate(results_df.groupby('domain'))
     #     print(f"{website_id}: {website}")
     create_text_representation_for_website(website, df_website)
     # break
-    # if website_id > 1:
-    #     break
+    if website_id > 5:
+        break
 
 # TODO: Add colourful name of the Past Clients 
 # TODO: Add link to the found sentence {url}#:~:text=%20the%20

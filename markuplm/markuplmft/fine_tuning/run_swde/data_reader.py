@@ -74,7 +74,8 @@ class DataReader:
         self.websites = sorted(list(set(websites) - stop_websites))
 
         if limit_data:
-            self.websites = self.websites[:limit_data]  #! Just for speed reasons
+            # self.websites = self.websites[:limit_data]  #! Just for speed reasons
+            self.websites = self.websites[limit_data:]
 
         print(f"\nWebsites ({len(self.websites)}):\n{self.websites}\n")
 
@@ -94,14 +95,15 @@ class DataReader:
 
         if self.parallelize:
             num_cores = mp.cpu_count()
-            print(f"num_cores: {num_cores}")
-            with mp.Pool(num_cores) as pool, tqdm(total=len(websites), disable=self.local_rank not in [-1, 0]) as t:
+            print(f"Parallelizing on num_cores: {num_cores}")
+            # with mp.Pool(num_cores) as pool, tqdm(total=len(websites), disable=self.local_rank not in [-1, 0]) as t:
+            with mp.Pool(num_cores) as pool:
                 for website, features_per_website in pool.imap(
                     self.load_or_cache_one_website_features, websites
                 ):
                     feature_dicts[website] = features_per_website
-                    t.update()
-                    t.set_description(f"Loading/Creating Features ({website})")
+                    # t.update()
+                    # t.set_description(f"Loading/Creating Features ({website})")
         else:
             for website in tqdm(websites, disable=self.local_rank not in [-1, 0]):
                 feature_dicts[website] = self.load_or_cache_one_website_features(website)
@@ -118,15 +120,14 @@ class DataReader:
         cached_features_file = cached_features_dir / website
 
         if not cached_features_dir.exists():
+            print(f"Creating cache folder: {cached_features_file}")
             cached_features_dir.mkdir(exist_ok=False, parents=True)
 
         if cached_features_file.exists() and not self.overwrite_cache:
-            if self.verbose:
-                print(f"Loading features from cached file: {cached_features_file}")
+            print(f"Loading features from cached file: {cached_features_file}")
             features = torch.load(str(cached_features_file))
         else:
-            if self.verbose:
-                print(f"Creating features: {cached_features_file}")
+            print(f"Creating features: {cached_features_file}")
 
             features = get_swde_features(
                 root_dir=self.data_dir,

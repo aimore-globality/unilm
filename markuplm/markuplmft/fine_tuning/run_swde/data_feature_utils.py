@@ -152,7 +152,8 @@ def get_swde_features(
     features = []
 
     # This loops goes over all the pages in a website
-    for page_id in tqdm.tqdm(raw_data, desc=f"Processing {website} features ...", leave=False):
+    # for page_id in tqdm.tqdm(raw_data, desc=f"Processing {website} features ...", leave=False):
+    for page_id in raw_data:
         html_path = f"{website}-{page_id}.htm"
 
         all_token_ids_seq = []
@@ -339,7 +340,7 @@ def get_swde_features(
             # ?  So the first time is from 0 to 386, Then 508
 
             start_pos = end_pos - doc_stride
-
+                        
             if flag:
                 break
 

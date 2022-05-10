@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # ---
 # jupyter:
 #   jupytext:
@@ -41,12 +42,15 @@ from typing import List
 from tqdm import tqdm
 from markuplmft.fine_tuning.run_swde.prepare_data import get_dom_tree
 
+# %%
+include_url_into_html = True
+
 # %% [markdown] tags=[]
 # # Load
 
 # %% tags=[]
-# dataset = 'train' #! Run this data preparation pipeline on a big machine 
-dataset = 'develop'
+dataset = 'train' #! Run this data preparation pipeline on a big machine 
+# dataset = 'develop'
 dataset
 
 # %% [markdown]
@@ -57,10 +61,6 @@ data_path = f"../../../web-annotation-extractor/data/processed/{dataset}/dataset
 df = pdx.read_avro(data_path)
 df.annotations = df.annotations.apply(literal_eval)
 len(df)
-
-# %%
-# #? Remove hiphen of domain
-df["domain"] = df["domain"].apply(lambda x: x.replace('-', ''))
 
 # %%
 from microcosm.api import create_object_graph
@@ -77,6 +77,26 @@ def untaxonomize_gt_value(gt_value: str):
     gt_value_untax = taxonomy_to_value_mappings.get(gt_value)
     return gt_value_untax
 
+
+# %% [markdown]
+# # Create Clean Url
+
+# %%
+import re
+
+def clean_the_url(string, domain):
+    string_without_domain = string.split(domain)[1]
+    clean_string = re.sub('[%+\./:?-]', ' ', string_without_domain)
+    clean_string = re.sub('\s+', ' ', clean_string)
+    return clean_string
+
+df["clean_url"] = df.apply(lambda x: clean_the_url(x['url'], x['domain']), axis=1)
+
+# %% [markdown]
+# # Remove hiphen of domain
+
+# %%
+df["domain"] = df["domain"].apply(lambda x: x.replace('-', ''))
 
 # %%
 tag = "PAST_CLIENT"
@@ -113,7 +133,6 @@ print(f"Negatives: {len(df_negatives)} | Negatives sample: {len(df_negatives_sam
 
 # %% [markdown]
 # ## Assert that domain don't contain parenthesis
-#
 
 # %% tags=[]
 assert len(df_negatives_sample[df_negatives_sample['domain'].apply(lambda x: '(' in x or ')' in x)]) == 0
@@ -125,13 +144,14 @@ assert len(df_positives[df_positives['domain'].apply(lambda x: '(' in x or ')' i
 # # Remove pages that don't have html
 
 # %% tags=[]
+print("- Positives:")
 pages_without_html = df_positives[df_positives['html'] == 'PLACEHOLDER_HTML']
 annotations_without_html = pages_without_html[f"{tag}-gt_text_len"].sum()
 print(f"Pages removed: {len(pages_without_html)}")
 print(f"Annotations removed: {annotations_without_html}")
 df_positives = df_positives[df_positives['html'] != 'PLACEHOLDER_HTML']
 
-# %%
+print("\n- Negatives:")
 pages_without_html = df_negatives_sample[df_negatives_sample['html'] == 'PLACEHOLDER_HTML']
 print(f"Pages removed: {len(pages_without_html)}")
 df_negatives_sample = df_negatives_sample[df_negatives_sample['html'] != 'PLACEHOLDER_HTML']
@@ -150,15 +170,14 @@ def get_only_html(t):
     except:
         return text
 
-
-# %%
+print("- Positives:")  
 print(len(df_positives))
 all_pages = df_positives['html'].apply(lambda x: get_only_html(x))
 positive_non_html_pages = df_positives[all_pages == 'NOT HTML']
 df_positives = df_positives[all_pages != 'NOT HTML']
 print(len(df_positives))
 
-# %%
+print("\n- Negatives:")
 print(len(df_negatives_sample))
 all_pages = df_negatives_sample['html'].apply(lambda x: get_only_html(x))
 negative_non_html_pages = df_negatives_sample[all_pages == 'NOT HTML']
@@ -174,7 +193,123 @@ if len(non_html_pages) > 0:
     non_html_pages.to_csv(save_path)
 
 # %% [markdown]
+# ## Remove image labels links
+
+# %%
+print(f"Amount of labels: {len(df_positives['PAST_CLIENT-gt_text'].sum())}")
+print(f"Amount of labels that are image links: {len([x for x in df_positives['PAST_CLIENT-gt_text'].sum() if 'htt' in x])}")
+
+df_positives['PAST_CLIENT-gt_text'] = df_positives['PAST_CLIENT-gt_text'].apply(lambda annotations: [x for x in annotations if 'htt' not in x])
+df_positives[f"{tag}-gt_text_len"] = df_positives[f"{tag}-gt_text"].apply(len)
+
+print(f"Amount of labels: {len(df_positives['PAST_CLIENT-gt_text'].sum())}")
+print(f"Amount of labels that are image links: {len([x for x in df_positives['PAST_CLIENT-gt_text'].sum() if 'htt' in x])}")
+
+# %% [markdown]
 # # Remove annotations that cannot be found in the xpaths of the html
+
+# %%
+check_annotations = {
+"The Queen’s Diamond Jubilee Beacons":"https://resource.esriuk.com/esri-resources/the-queens-diamond-jubilee-beacons/",
+"KYOCERA SLD Laser, Inc.\nUpdated June 2021.":"https://www.greatplacetowork.com/certified-company/7020473",
+"Universal Parks & REsorts": "https://www.gsdm.com/clients/",
+"Harry's": "https://www.gsdm.com/harrys-a-man-like-you-case-study/",
+"Grupo Martí": "https://www.informatica.com/about-us/customers/customer-success-stories/elkjop.html",
+"Lagardère": "https://www.informatica.com/about-us/customers/customer-success-stories/lagardere-travel-retail-pacific.html",
+"L'Oréal": "https://www.informatica.com/about-us/customers/customer-success-stories/loreal.html",
+"Elkjøp": "https://www.informatica.com/about-us/customers/customer-success-stories/elkjop.html",
+"HARNAŚ": "https://www.cortezbrothers.com/michal-sablinski",
+}
+# #! Found several examples that we lost annotations due to accents and symbols
+
+# %%
+import unicodedata
+
+def clean_format_str(text):
+    """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
+    text = "".join(
+        ch
+        for ch in text
+        if unicodedata.category(ch)[0] != "C"
+    )
+    text = "".join([
+        c if ord(c) < 128 else ""
+        for c in text
+    ])
+    return text
+
+
+# %%
+for x in check_annotations.keys():
+    print(f"{x} | {clean_format_str(x)}")
+
+# %%
+# import lxml
+# from lxml import etree
+# import unicodedata
+# import re
+
+# def clean_spaces(text):
+#     r"""Clean extra spaces in a string.
+
+#     Example:
+#       input: " asd  qwe   " --> output: "asd qwe"
+#       input: " asd\t qwe   " --> output: "asd qwe"
+#     Args:
+#       text: the input string with potentially extra spaces.
+
+#     Returns:
+#       a string containing only the necessary spaces.
+#     """
+#     return " ".join(re.split(r"\s+", text.strip()))
+
+
+# def clean_format_str(text):
+#     """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
+#     text = "".join(
+#         ch
+#         for ch in text
+#         if unicodedata.category(ch)[0] != "C"
+#     )
+#     text = "".join([
+#         c if ord(c) < 128 else ""
+#         for c in text
+#     ])
+#     text = clean_spaces(text)
+#     return text
+
+
+# def clean_annotation(annotation):
+#     # unaccented_string = unidecode.unidecode(annotation)
+#     gt_value = lxml.html.fromstring(annotation)
+#     gt_value = " ".join(etree.XPath("//text()")(gt_value))
+#     gt_value = clean_spaces(gt_value)
+#     gt_value = clean_format_str(gt_value)
+#     gt_value = gt_value.strip()
+#     return gt_value
+
+#     # annotation = lxml.html.fromstring(annotation)
+#     # unaccented_string = cleaner.clean_html(annotation)
+#     # unaccented_string = etree.tostring(unaccented_string, encoding=str)
+#     # return unaccented_string[3:-4]
+
+# [clean_annotation(x) for x in check_annotations]
+
+# %%
+# #? Debugging
+# from lxml import etree
+
+# # html = df_positives[df_positives['url']=='https://www.gsdm.com/harrys-a-man-like-you-case-study/']['html'].values
+# # dom = lxml.html.fromstring(str(html))
+# # s = [x.text for x in dom.getchildren()][50]
+
+# html = df_positives[df_positives['url']=="https://www.gsdm.com/clients/"]['html'].values
+# dom = lxml.html.fromstring(str(html))
+# s = [x.text for x in dom.getchildren()][50]
+
+# [x for x in html[0].split('\n') if "Universal Parks" in x]
+# [x for x in html[0].split('\n')][55:60]
+
 
 # %%
 initial_amount_of_label = df_positives[f"{tag}-gt_text_len"].sum()
@@ -183,29 +318,43 @@ print(f"Initial amount of labels: {initial_amount_of_label}")
 all_new_annotations = []
 
 for i, row in tqdm(df_positives.iterrows()):
+    url = row['url']
     if not row.isnull()[f'{tag}-gt_text']:
-        clean_dom_tree = get_dom_tree(row['html'], 'website')
+        # clean_dom_tree = get_dom_tree(row['html'], 'website')
+        dom_tree = lxml.html.fromstring(row['html'])
         
         annotations_that_can_be_found = []
         annotations_that_cannot_be_found = []
         for text_annotation in row[f'{tag}-gt_text']:
-            for node in clean_dom_tree.iter():
+            # # ? To debug
+            # if text_annotation in check_annotations:
+            #     print(text_annotation)
+            
+            found = False
+            for node in dom_tree.iter():
                 if node.text:
-                    if text_annotation in node.text:
+                    if text_annotation.lower() in node.text.lower():
                         annotations_that_can_be_found.append(text_annotation)
+                        found = True
                         break
                 if node.tail:
-                    if text_annotation in node.tail:
+                    if text_annotation.lower() in node.tail.lower():
                         annotations_that_can_be_found.append(text_annotation)
+                        found = True
                         break
+                # #? In case I want to add the images:
+                #? 1. Don't remove img links from annotations 
+                #? 2. The img html tag contains: alt, title and src as potential places that the PC could be found.
+                #? 3. Find a way to recreate the img node into these three pieces and incoporate then into embedding 
                 # for html_tag, xpath_content in node.items():
                 #     if text_annotation in xpath_content:
                 #         annotations_that_can_be_found.append(text_annotation)
                 #         break
-            annotations_that_cannot_be_found.append(text_annotation)
+            if not found:
+                annotations_that_cannot_be_found.append(text_annotation)
             
         if len(annotations_that_cannot_be_found) > 0:
-            print(f"Cannot be found in {i} \t: {annotations_that_cannot_be_found}")
+            print(f"{len(annotations_that_cannot_be_found)} PC cannot be found in {i} \t: {annotations_that_cannot_be_found} - {url}")
             print()
 
         all_new_annotations.append(annotations_that_can_be_found)
@@ -220,11 +369,9 @@ final_amount_of_label = df_positives[f"{tag}-gt_text_len"].sum()
 print(f"Final amount of labels: {final_amount_of_label}")
 print(f"Number of labels lost because they couldn't be found in the page: {initial_amount_of_label - final_amount_of_label}")
 
-# %% tags=[]
 current_annotations = df_positives[f"{tag}-gt_text_len"].sum()
 print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
-# %% tags=[]
 print(f"With text and tail the page coverage is: {100*len(df_positives)/df_positives_initial_len:.2f} %")
 
 # %% tags=[]
@@ -246,21 +393,6 @@ print(f"With text and tail the page coverage is: {100*len(df_positives)/df_posit
 
 # %%
 # [x for x in df_positives_negatives['domain'].value_counts().sort_values().index if 'group' in x]
-
-# %% [markdown]
-# # Remove image link annotations
-
-# %% tags=[]
-current_annotations = df_positives[f"{tag}-gt_text_len"].sum()
-print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
-
-# %% tags=[]
-df_positives[f"{tag}-gt_text"] = df_positives[f"{tag}-gt_text"].dropna().apply(lambda annotations: [annotation  for annotation in annotations if 'http' not in annotation])
-
-# %% tags=[]
-df_positives[f"{tag}-gt_text_len"] = df_positives[f"{tag}-gt_text"].apply(len)
-current_annotations = df_positives[f"{tag}-gt_text_len"].sum()
-print(f"Annotations: {current_annotations} | Pages: {len(df_positives)}")
 
 # %% [markdown]
 # # Remove samples without annotation
@@ -308,9 +440,6 @@ print(f"Positive negatives: '{len(df_positives_negatives)}' pages and '{len(set(
 # # Save intermediate Data
 
 # %% tags=[]
-data_path
-
-# %% tags=[]
 save_path = data_path.replace('.avro', f'_pos({len(df_positives)})_neg({len(df_negatives_sample)})_intermediate.pkl')
 print(f"Saving file: {save_path}")
 df_positives_negatives.to_pickle(save_path)
@@ -325,6 +454,7 @@ df_positives.to_pickle(save_path)
 # %% tags=[]
 import os
 import shutil
+from lxml import etree
 
 pageid_url_mapping = {}
 
@@ -360,7 +490,19 @@ for e, domain in enumerate(domains):
     domain_len = len(df_domain)
     
     for enum, df_page in df_domain.iterrows():
+        clean_url = df_page['clean_url']
         html = df_page['html']
+        
+        # # ? Adds url information to the HTML
+        dom_tree = get_dom_tree(html, '')
+        root = dom_tree.getroot()
+        element = etree.Element("title")
+        element.text = f" {clean_url} "
+        root.insert(0, element)
+        
+        etree.indent(dom_tree)
+        new_html = etree.tostring(dom_tree, encoding=str)
+
         raw_data_path = raw_data_folder / 'WAE' / f"{domain}({domain_len})"
         raw_data_path.mkdir(parents=True, exist_ok=True)
         raw_data_path = (raw_data_path / str(page_count).zfill(4)).with_suffix('.htm')
@@ -369,9 +511,9 @@ for e, domain in enumerate(domains):
         pageid = f"{domain}.pickle-{name}"
         url = df_page['url']
         pageid_url_mapping[pageid] = [url]
-        
+
         Html_file = open(raw_data_path, "w") #! Uncomment
-        Html_file.write(html)
+        Html_file.write(new_html)
         Html_file.close()
         
         page_count += 1
@@ -433,10 +575,7 @@ df_positives_negatives.domain.value_counts()
 # ## Number of Pages
 
 # %%
-df
-
-# %%
-current_annotations = len([y for x in df_positives_negatives.dropna(subset=[f'text-{tag}'])[f'text-{tag}'].values for y in x])
+current_annotations = len([y for x in df_positives_negatives.dropna(subset=[f'{tag}-gt_text'])[f'{tag}-gt_text'].values for y in x])
 print(f"Annotations: {current_annotations} | Pages: {len(df_positives_negatives)}")
 
 # %% [markdown]

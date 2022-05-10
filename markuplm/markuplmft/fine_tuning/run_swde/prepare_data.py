@@ -37,6 +37,7 @@ from tqdm import tqdm
 import multiprocessing as mp
 from pathlib import Path
 import glob
+
 FLAGS = flags.FLAGS
 random.seed(42)
 
@@ -288,7 +289,7 @@ def load_html_and_groundtruth(website_to_load):
     # swde_html_data =[ {"website":'book-amazon(2000)', "path:'book/book-amazon(2000)/0000.htm', "html_str":xx}, ...]
 
     # TODO (aimore): Here when this dataset is transformed into pandas this will change and it will be easier
-    file_expression = os.path.join(gt_path, website_to_load) + '**'
+    file_expression = os.path.join(gt_path, website_to_load) + "**"
     files_with_exp = glob.glob(file_expression)
     for file in files_with_exp:
         # For example, a groundtruth file name can be "yahoo-PAST_CLIENT.txt".
@@ -341,53 +342,67 @@ def get_field_xpaths(
     # current_page_nodes_in_order = [] # I added this condition in case the page doesn't contain any positive annotation
 
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
-    for page_id in tqdm(all_data_dict, desc=f"Processing: {website_to_process}", ):
+    for page_id in tqdm(
+        all_data_dict,
+        desc=f"Processing: {website_to_process}",
+    ):
         # We add dom-tree attributes for the first n_pages
         html = all_data_dict[page_id]["html_str"]
 
-        dom_tree = get_dom_tree(html, website=website_to_process)
+        # dom_tree = get_dom_tree(html, website=website_to_process)
+        dom_tree = etree.ElementTree(lxml.html.fromstring(html))
+
         all_data_dict[page_id]["dom_tree"] = dom_tree
 
         # Match values of each field for the current page.
-        fields = [keys for keys in all_data_dict[page_id] if 'field' in keys] # all_data_dict[page_id] = ['field-PAST_CLIENT', 'path', 'html_str', 'dom_tree']
-        for field in fields:            
+        fields = [
+            keys
+            for keys in all_data_dict[page_id]
+            if "field" in keys
+        ]  # all_data_dict[page_id] = ['field-PAST_CLIENT', 'path', 'html_str', 'dom_tree']
+        for field in fields:
             # Saving the xpaths of the values for each field.
             all_data_dict[page_id][field]["groundtruth_xpaths"] = set()
             all_data_dict[page_id][field]["is_truth_value_list"] = set()
 
             gt_values = all_data_dict[page_id][field]["values"]
+            #? Clean the groundtruth gt_values
+            clean_gt_values = gt_values
+            # clean_gt_values = []
+            # for gt_value in gt_values:
+            #     # Some gt_values contains HTML tags and special strings like "&nbsp;"
+            #     # So we need to escape the HTML by parsing and then extract the inner text.
+            #     gt_value = lxml.html.fromstring(gt_value)
+            #     gt_value = " ".join(etree.XPath("//text()")(gt_value))
+            #     gt_value = clean_spaces(gt_value)
+            #     gt_value = clean_format_str(gt_value)
+            #     gt_value = gt_value.strip()
+            #     clean_gt_values.append(gt_value)
 
-            # Clean the groundtruth gt_values
-            clean_gt_values = []
-            for gt_value in gt_values:
-                # Some gt_values contains HTML tags and special strings like "&nbsp;"
-                # So we need to escape the HTML by parsing and then extract the inner text.
-                gt_value = lxml.html.fromstring(gt_value)
-                gt_value = " ".join(etree.XPath("//text()")(gt_value))
-                gt_value = clean_spaces(gt_value)
-                gt_value = clean_format_str(gt_value)
-                gt_value = gt_value.strip()
-                clean_gt_values.append(gt_value)
-
-
-            
             matched_xpaths = []  # The resulting list of xpaths to be returned.
             current_xpath_data = dict()  # The resulting dictionary to save all page data.
-            
+
             gt_text_in_nodes = dict()  # A list of the gt_text in each xpath node
 
             current_page_nodes_in_order = []
             is_truth_value_list = []
 
-
-            #? Iterate all the nodes in the given DOMTree.
+            # ? Iterate all the nodes in the given DOMTree.
             for node in dom_tree.iter():
                 # The value can only be matched in the text of the node or the tail.
-                node_text_dict = {"node_text": node.text, "node_tail_text": node.tail} #?The only nodes that are considered here are the node.text and node.tail
-                
+                node_text_dict = {
+                    "node_text": node.text,
+                    "node_tail_text": node.tail,
+                }  # ?The only nodes that are considered here are the node.text and node.tail
+
                 for text_part_flag, node_text in node_text_dict.items():
                     if node_text:
-                        if node.tag != 'script' and len(node_text.strip()) >= min_node_text_size and 'javascript' not in node.attrib.get('type', '') and len(node_text.strip()) < max_node_text_size: #! Remove java/script and min_node_text
+                        if (
+                            node.tag != "script"
+                            and len(node_text.strip()) >= min_node_text_size
+                            and "javascript" not in node.attrib.get("type", "")
+                            and len(node_text.strip()) < max_node_text_size
+                        ):  #! Remove java/script and min_node_text
                             # """Matches the ground truth value with a specific node in the domtree.
 
                             # In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths will be updated.
@@ -410,45 +425,47 @@ def get_field_xpaths(
                             # where we need to split and create new tags of matched_xpaths.
                             # For example, "<div><span>asd<br/>qwe</span></div>"
 
-                            node_attribute = node.attrib.get('type', '')
-                            node_tag = node.tag                            
+                            node_attribute = node.attrib.get("type", "")
+                            node_tag = node.tag
 
                             len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
                             for index, etext in enumerate(node_text.split("--BRRB--")):
                                 if text_part_flag == "node_text":
                                     xpath = dom_tree.getpath(node)
                                 elif text_part_flag == "node_tail_text":
-                                    # TODO (aimore): I am not sure why they make the distinction of the
-                                    #  xpath being the text or tail. That increases complexity of xpath and
-                                    #  might not help during generalization.
                                     xpath = dom_tree.getpath(node) + "/tail"
                                 if len_brs >= 2:
                                     xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
-                                clean_etext = clean_spaces(etext)
+                                # clean_etext = clean_spaces(etext)
+                                clean_etext = etext
 
-                                #? Update the dictionary.
+                                # ? Update the dictionary.
                                 current_xpath_data[xpath] = clean_etext
                                 overall_xpath_dict[xpath].add(clean_etext)
-                                current_page_nodes_in_order.append((clean_etext, xpath, node_attribute, node_tag))
+                                current_page_nodes_in_order.append(
+                                    (clean_etext, xpath, node_attribute, node_tag)
+                                )
 
-                                #? Clean the groundtruth and the node text. Check if the groundtruth is in the node text.                        
-                                clean_etext = clean_format_str(clean_etext)
+                                # ? Clean the groundtruth and the node text. Check if the groundtruth is in the node text.
+                                # clean_etext = clean_format_str(clean_etext)
 
-                                #? Create node ground truth by checking if the the gt_text is in the clean node_text
+                                # ? Create node ground truth by checking if the the gt_text is in the clean node_text
                                 gt_text_in_node = []
                                 for gt_value in clean_gt_values:
-                                    if gt_value in clean_etext.strip():
+                                    if gt_value.lower() in clean_etext.strip().lower():
                                         gt_text_in_node.append(gt_value)
                                         matched_xpaths.append(xpath)
-                                        is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
-                                        break
+                                        is_truth_value_list.append(
+                                            len(current_page_nodes_in_order) - 1
+                                        )
+                                        # break #! I am not sure why Iadded this break, I'm commenting it because I think all gt_values should be added in a node
 
                                 if len(matched_xpaths) == 0:
                                     gt_text_in_nodes[xpath] = []
                                 else:
                                     gt_text_in_nodes[xpath] = gt_text_in_node
 
-            #? Update the page-level xpath information.
+            # ? Update the page-level xpath information.
             all_data_dict[page_id][field]["groundtruth_xpaths"].update(matched_xpaths)
             all_data_dict[page_id][field]["is_truth_value_list"].update(is_truth_value_list)
 
@@ -476,9 +493,11 @@ def get_field_xpaths(
     fixed_nodes = set()
     variable_nodes = set(overall_xpath_dict.keys())
 
-    assert len(fixed_nodes) == 0 
-    assert len(variable_nodes) > 0 
-    print(f"Website: {website_to_process} | Across all pages:\n \tfixed_nodes: {len(fixed_nodes)} | \tvariable_nodes: {len(variable_nodes)}")
+    assert len(fixed_nodes) == 0
+    assert len(variable_nodes) > 0
+    print(
+        f"Website: {website_to_process} | Across all pages:\n \tfixed_nodes: {len(fixed_nodes)} | \tvariable_nodes: {len(variable_nodes)}"
+    )
 
     assure_value_variable(all_data_dict, variable_nodes, fixed_nodes)
     all_data_dict["fixed_nodes"] = list(fixed_nodes)
@@ -492,12 +511,12 @@ def get_field_xpaths(
 
     # "fixed_nodes" are the xpaths for nodes that cannot have truth-value
     # "variable_nodes" are the xpaths for nodes that might have truth-value
-    return all_data_dict 
+    return all_data_dict
 
 
 def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes):
     """Makes sure all values are in the variable nodes by updating sets.
-    
+
     That means that if the xpath that is in groundtruth_xpaths was not yet in the variable_nodes, then the variable_nodes gets updated with it.
     And it gets removed from fixed-xpath.
 
@@ -566,10 +585,14 @@ def generate_nodes_seq_and_write_to_file(website):
 
     cleaned_features_for_this_website = {}
 
-    page_ids = [keys for keys in all_data_dict if 'nodes' not in keys] # The keys of all_data_dict include also fixed_nodes and variable_nodes and here we only care about the page_ids
+    page_ids = [
+        keys
+        for keys in all_data_dict
+        if "nodes" not in keys
+    ]  # The keys of all_data_dict include also fixed_nodes and variable_nodes and here we only care about the page_ids
     for page_id in page_ids:
         page_data = all_data_dict[page_id]
-        gt_text_dict = page_data['field-PAST_CLIENT']['gt_text_in_nodes']
+        gt_text_dict = page_data["field-PAST_CLIENT"]["gt_text_in_nodes"]
 
         assert "xpath_data" in page_data
 
@@ -579,10 +602,14 @@ def generate_nodes_seq_and_write_to_file(website):
         # The difference between doc_strings and new_doc_strings is that new_doc_strings contains the label
         field_info = {}
         # TODO(Aimore): Probably change the name of this variable (field_info) to something more meaningful, such as: gt_node_ids
-        for field in [x for x in list(page_data.keys()) if 'field' in x]:
+        for field in [
+            x
+            for x in list(page_data.keys())
+            if "field" in x
+        ]:
             for doc_string_id in page_data[field]["is_truth_value_list"]:
                 field_info[doc_string_id] = field.split("-")[1]
-        
+
         for id, doc_string in enumerate(doc_strings):
             text, xpath, node_attribute, node_tag = doc_string
             is_variable = xpath in variable_nodes
@@ -599,10 +626,15 @@ def generate_nodes_seq_and_write_to_file(website):
         cleaned_features_for_this_website[page_id] = new_doc_strings
 
     output_file_path = os.path.join(FLAGS.output_data_path, f"{website}.pickle")
-    print(f"Writing the processed and {len(cleaned_features_for_this_website)} pages of {website} into {output_file_path}")
-    nodes_per_page = {x[0]:len(x[1]) for x in cleaned_features_for_this_website.items()}
+    print(
+        f"Writing the processed and {len(cleaned_features_for_this_website)} pages of {website} into {output_file_path}"
+    )
+    nodes_per_page = {
+        x[0]: len(x[1])
+        for x in cleaned_features_for_this_website.items()
+    }
     print(f"# Nodes per page: {nodes_per_page}\n")
-    with open(output_file_path, "wb") as f: #!UNCOMMENT
+    with open(output_file_path, "wb") as f:  #!UNCOMMENT
         pickle.dump(cleaned_features_for_this_website, f)
 
 
@@ -614,8 +646,12 @@ def main(_):
     p = Path(swde_path) / "WAE"
     websites = sorted([x.parts[-1].split("-")[-1].split("(")[0] for x in list(p.iterdir())])
 
-    websites = websites[:] #! Limit the amount of websites
-    websites = [x for x in websites if "ciphr.com" not in x] #! Remove this website for now just because it is taking too long (+20min.) 
+    websites = websites[:]  #! Limit the amount of websites
+    websites = [
+        x
+        for x in websites
+        if "ciphr.com" not in x
+    ]  #! Remove this website for now just because it is taking too long (+20min.)
 
     print(f"Prepare Data: Websites {len(websites)} -\n {websites}")
 
@@ -627,13 +663,15 @@ def main(_):
     debug = False
     if debug:
         for website in websites[:]:
-            if website in ['canelamedia.com']: 
-            # if 'direct.com' in website: # TODO (AIMORE): Debug this page and understand why it doesn't have variable nodes
+            if website in ["canelamedia.com"]:
+                # if 'direct.com' in website: # TODO (AIMORE): Debug this page and understand why it doesn't have variable nodes
                 generate_nodes_seq_and_write_to_file(website)
     else:
         num_cores = mp.cpu_count()
-        with mp.Pool(num_cores) as pool, tqdm(total=len(websites), desc="Processing swde-data") as t:
-            # for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):        
+        with mp.Pool(num_cores) as pool, tqdm(
+            total=len(websites), desc="Processing swde-data"
+        ) as t:
+            # for res in pool.imap_unordered(generate_nodes_seq_and_write_to_file, websites):
             for res in pool.imap(generate_nodes_seq_and_write_to_file, websites):
                 t.update()
 
