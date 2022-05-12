@@ -452,7 +452,7 @@ def get_field_xpaths(
                                 # ? Create node ground truth by checking if the the gt_text is in the clean node_text
                                 gt_text_in_node = []
                                 for gt_value in clean_gt_values:
-                                    if gt_value.lower() in clean_etext.strip().lower():
+                                    if f" {gt_value.strip()} ".lower() in f" {clean_etext.strip()} ".lower():
                                         gt_text_in_node.append(gt_value)
                                         matched_xpaths.append(xpath)
                                         is_truth_value_list.append(

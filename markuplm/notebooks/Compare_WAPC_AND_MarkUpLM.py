@@ -220,7 +220,7 @@ if predict_and_segment:
     results["text"] = results["text"].str.replace("&AMP;", "&")
 
     if segmenter_trained in ["trained"]:
-        gazetteer = pc.segmenter_html
+        gazetteer = pc.segmenter_url # TODO: Replace for the segmenter_html
     else:
         from web_annotation_extractor.bundles.past_client.segmentation.segmenters import PastClientSegmenter
         gazetteer = PastClientSegmenter(graph.html_gazetteer.config)
@@ -271,12 +271,32 @@ print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {gr
 results["domain"] = results["html_path"].apply(lambda x: x.split(".pickle-0000.htm")[0])
 
 # %%
+results["pred_type"].value_counts()
+
+# %%
 results
+
+# %%
+threshold = 0.7
+results["pred_type"] = results["final_probs"].apply(lambda x: "PAST_CLIENT" if x[0] > threshold else 'none')
+results_capped = results.copy(deep=True)
+
+columns = [
+"model-node_company_span_taxonomy",
+]
+
+for c in columns:
+    results_capped[c] = results_capped[c].mask(results_capped["pred_type"] == 'none', '')
+    results_capped[c] = results_capped[c].apply(list)
+    results_capped[c].value_counts()
+
+# %%
+results_capped["pred_type"].value_counts()
 
 # %%
 # # ? Group reconciliations per node into reconciliation per page
 results_grouped = pd.DataFrame(
-    results.groupby(by="html_path").agg(
+    results_capped.groupby(by="html_path").agg(
         {
             "node_company_span_taxonomy": lambda x: combine_and_get_set(x), 
             "model-node_company_span_taxonomy": lambda x: combine_and_get_set(x),
@@ -315,12 +335,12 @@ for mode, index in mode_indices.items():
 
 # %%
 from pathlib import Path
-
+print(f"threshold: {threshold}")
 taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
 
 print(f"Metrics with the Segmenter {segmenter_trained}!")
 
-for mode in ["WAPC"]+list(mode_indices.keys()):
+for mode in ["WAPC"]+['model']:
     print(mode)
     domain_metrics = get_reconciliations_metrics_for_all_domains(
         df=merge,
@@ -359,8 +379,7 @@ taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in gr
 
 print(f"Metrics with the Segmenter {segmenter_trained}!")
 
-# for mode in ["WAPC"]+list(mode_indices.keys()):
-for mode in list(mode_indices.keys())[:1]:
+for mode in ["WAPC"]+list(mode_indices.keys()):
     print(mode)
     domain_metrics = get_reconciliations_metrics_for_all_domains(
         df=merge,

@@ -116,7 +116,7 @@ show_node_tag = True
 
 def make_bold_gt_texts(text:str, gt_texts:List[str]) -> str:
     for gt_text in gt_texts:
-        text = text.replace(gt_text, f"<b>{gt_text}</b>")
+        text = f" {text} ".replace(f" {gt_text} ", f" <b>{gt_text}</b> ")
     return text
 
 # #? Create folder
@@ -161,8 +161,7 @@ def define_node(index_node, df_node, url):
     node_tag = df_node['node_tag']
     gt_texts = df_node['gt_text']
     node_prob = df_node['final_probs'][0]
-    node_index = str(index_node)            
-
+    node_index = str(index_node)
 
     if len(gt_texts) > 0:
         text = make_bold_gt_texts(text, gt_texts)
@@ -290,15 +289,17 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
 
 # #? Run through the websites
 for website_id, (website, df_website) in enumerate(results_df.groupby('domain')):
-    # if website == "lssmedia.com":
-    #     print(f"{website_id}: {website}")
-    create_text_representation_for_website(website, df_website)
-    # break
-    if website_id > 5:
+    if website == "walkerhamill.com":
+        print(f"{website_id}: {website}")
+        create_text_representation_for_website(website, df_website)
         break
+    # if website_id == "https://www.walkerhamill.com/credentials/all":
+    #     break
 
 # TODO: Add colourful name of the Past Clients 
 # TODO: Add link to the found sentence {url}#:~:text=%20the%20
+
+# %%
 
 # %% [markdown]
 # # Error analysis

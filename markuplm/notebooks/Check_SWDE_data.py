@@ -106,7 +106,7 @@ len(all_dfs)
 
 # %%
 all_dfs['text_len'] = all_dfs['text'].apply(lambda  x: len(x.strip()))
-all_dfs['gt_text_len'] = all_dfs['gt_text'].apply(len)
+all_dfs['gt_text_count'] = all_dfs['gt_text'].apply(len)
 
 # %%
 all_dfs[all_dfs["xpath"] == '/html/head/title[1]'].sort_values("gt_field")
@@ -115,7 +115,27 @@ all_dfs[all_dfs["xpath"] == '/html/head/title[1]'].sort_values("gt_field")
 # # Label Analysis
 
 # %% [markdown]
+# ## Stats
+
+# %%
+all_dfs["gt_text_count"].sum()
+
+# %% [markdown]
 # ## Duplicated node_text 
+
+# %%
+
+# #? Interesting analysis if we remove the nodes with duplicated data, we can massively reduce their size.
+duplicated_nodes = all_dfs
+domain_deduplicated_nodes = all_dfs.drop_duplicates(subset=["text", "website"])
+print(f"{'All nodes:':>50} {len(duplicated_nodes):>7}")
+print(f"{'Domain deduplicated nodes:':>50} {len(domain_deduplicated_nodes):>7} ({100*len(domain_deduplicated_nodes)/len(duplicated_nodes):.2f} %)")
+
+# #? Also, not so many nodes with positive data are removed compared to the other data.
+duplicated_gt = len(duplicated_nodes[duplicated_nodes["gt_field"] != 'none'])
+domain_deduplicated_gt = len(domain_deduplicated_nodes[domain_deduplicated_nodes["gt_field"] != 'none'])
+print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
+print(f"{'Domain deduplicated ground truth nodes:':>50} {domain_deduplicated_gt:>7} ({100*(domain_deduplicated_gt) / duplicated_gt:.2f} %)")
 
 # %%
 
@@ -147,8 +167,8 @@ print(all_dfs.columns.values)
 # %%
 def node_analysis(all_dfs, col:str):
     all_data_size = len(all_dfs)
-    positives = all_dfs[all_dfs["gt_text_len"] > 0]
-    negatives = all_dfs[all_dfs["gt_text_len"] == 0]
+    positives = all_dfs[all_dfs["gt_text_count"] > 0]
+    negatives = all_dfs[all_dfs["gt_text_count"] == 0]
 
     positives_col = positives[col].value_counts()
     negatives_col = negatives[col].value_counts()
@@ -181,11 +201,11 @@ all_dfs["node_attribute"].value_counts()
 
 # %%
 print("Positive node text length distribution:")
-pd.DataFrame(all_dfs[all_dfs['gt_text_len']>0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
+pd.DataFrame(all_dfs[all_dfs['gt_text_count']>0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
 
 # %%
 print("Negative node text length distribution:")
-pd.DataFrame(all_dfs[all_dfs['gt_text_len']==0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
+pd.DataFrame(all_dfs[all_dfs['gt_text_count']==0]['text_len'].describe()).style.format(na_rep='MISS', precision=1)  
 
 # %% [markdown]
 # ## Check how long the node text can be in order to remove high memorydata
@@ -193,8 +213,8 @@ pd.DataFrame(all_dfs[all_dfs['gt_text_len']==0]['text_len'].describe()).style.fo
 
 # %%
 max_len = 10000
-all_gt = all_dfs["gt_text_len"].sum()
-gt_numb = all_dfs[all_dfs["text_len"] > max_len]["gt_text_len"].sum()
+all_gt = all_dfs["gt_text_count"].sum()
+gt_numb = all_dfs[all_dfs["text_len"] > max_len]["gt_text_count"].sum()
 data_numb = len(all_dfs[all_dfs["text_len"] > max_len]) 
 all_data = len(all_dfs)
 

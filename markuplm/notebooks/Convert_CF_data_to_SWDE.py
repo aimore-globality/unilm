@@ -109,6 +109,10 @@ df[f"{tag}-gt_value_untax"] = df[f"{tag}-gt_value"].apply(lambda gt_value: [unta
 df[f"{tag}-annotations-untax"] = df[f'{tag}-annotations'].apply(lambda annotations: [{"gt_text":annotation["text"], "gt_value_untax":untaxonomize_gt_value(annotation["value"])} for annotation in annotations])
 df[f"{tag}-gt_text_len"] = df[f"{tag}-gt_text"].apply(len)
 
+# %%
+pd.set_option("max_rows", 20, "min_rows", 20)
+pd.DataFrame(df.groupby("domain").sum("PAST_CLIENT-gt_text_len")).sort_values("PAST_CLIENT-gt_text_len", ascending=False)
+
 # %% [markdown]
 # ## Positive Data (containing at least one annotation)
 

@@ -220,6 +220,10 @@ else:
 print(f"train_dataset_info: {len(train_dataset_info[0])}")
 print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 
+# %%
+print(f"train_dataset_info: {len(train_dataset_info[0])}")
+print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
+
 # %% [markdown]
 # # Train
 
@@ -374,3 +378,5 @@ if local_rank not in [-1, 0]:
 
 # %%
 save_path
+
+# %%
