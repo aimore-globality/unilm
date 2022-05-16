@@ -44,8 +44,12 @@ class MarkupLModel:
         self.original_model_dir = Path("microsoft/markuplm-base")
         self.save_model_path = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
-        self.doc_stride = 128
+        self.doc_stride = 256 # 128
         self.max_seq_length = 384
+
+        # TODO (AIMORE): Change back to default values
+        print(f"doc_stride: {self.doc_stride}" )
+        print(f"max_seq_length: {self.max_seq_length}" )
 
         self.loss_function = loss_function
 

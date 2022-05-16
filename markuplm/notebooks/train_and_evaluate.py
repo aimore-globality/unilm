@@ -179,6 +179,9 @@ else:
 loss_function = trainer_config.pop("loss_function")
 label_smoothing = trainer_config.pop("label_smoothing")
 # %%
+train_dataset_info[0]
+
+# %%
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 
 dr = DataReader(
@@ -215,10 +218,6 @@ elif dataset_to_use == "all":
     develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=False)
 else:
     pass
-
-# %%
-print(f"train_dataset_info: {len(train_dataset_info[0])}")
-print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
 
 # %%
 print(f"train_dataset_info: {len(train_dataset_info[0])}")
@@ -362,6 +361,11 @@ if local_rank in [-1, 0]:
 
     train_set_nodes_predicted = trainer.evaluate(dataset_name="train")
     print(f"Train dataset predicted size: {len(train_set_nodes_predicted)}")
+
+    save_path = f"results_classified/train_set_nodes_classified_epoch_{trainer_config['num_epochs']}{train_dedup}.pkl"
+    print(f"Data infered saved at: {save_path}")
+    train_set_nodes_predicted.to_pickle(save_path)
+    
 
     develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
     print(f"Develop dataset predicted size: {len(develop_set_nodes_predicted)}")

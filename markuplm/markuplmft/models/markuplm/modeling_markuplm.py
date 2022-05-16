@@ -139,7 +139,7 @@ class MarkupLMEmbeddings(nn.Module):
         self.max_depth = config.max_depth
 
         self.xpath_embeddings = XPathEmbeddings(config)
-        # type_vocab_size = segment embedding
+        #? type_vocab_size = segment embedding
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
 
         self.LayerNorm = MarkupLMLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -235,6 +235,7 @@ class MarkupLMEmbeddings(nn.Module):
 
         embeddings = (
             words_embeddings + position_embeddings + token_type_embeddings + xpath_embeddings
+            # position_embeddings + token_type_embeddings + xpath_embeddings
         )
 
         embeddings = self.LayerNorm(embeddings)

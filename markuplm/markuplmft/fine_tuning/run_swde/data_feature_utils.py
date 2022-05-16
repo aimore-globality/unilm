@@ -339,7 +339,8 @@ def get_swde_features(
             # ?  In this way the stride will be 254, instead of 128.
             # ?  So the first time is from 0 to 386, Then 508
 
-            start_pos = end_pos - doc_stride
+             # start_pos = end_pos - doc_stride
+            start_pos += doc_stride
                         
             if flag:
                 break
