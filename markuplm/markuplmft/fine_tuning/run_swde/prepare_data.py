@@ -97,142 +97,8 @@ def clean_format_str(text):
     return text
 
 
-# def match_value_node(
-#     node,
-#     node_text,
-#     current_xpath_data,
-#     overall_xpath_dict,
-#     text_part_flag,
-#     groundtruth_value,
-#     matched_xpaths,
-#     dom_tree,
-#     current_page_nodes_in_order,
-#     is_truth_value_list,
-# ):
-#     """Matches the ground truth value with a specific node in the domtree.
 
-#     In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths
-#     will be updated.
-
-#     Args:
-#       is_truth_value_list: [], indicate which node is the truth-value
-#       current_page_nodes_in_order: [(text, xpath)] seq
-#       node: the node on the domtree that we are going to match.
-#       node_text: the text inside this node.
-#       current_xpath_data: the dictionary of the xpaths of the current domtree.
-#       overall_xpath_dict: the dictionary of the xpaths of the current website.
-#       text_part_flag: to match the "text" or the "tail" part of the node.
-#       groundtruth_value: the value of our interest to match.
-#       matched_xpaths: the existing matched xpaths list for this value on domtree.
-#       website: the website where the value is from.
-#       field: the field where the value is from.
-#       dom_tree: the current domtree object, used for getting paths.
-#     """
-#     assert text_part_flag in ["node_text", "node_tail_text"]
-#     # Dealing with the cases with multiple <br>s in the node text,
-#     # where we need to split and create new tags of matched_xpaths.
-#     # For example, "<div><span>asd<br/>qwe</span></div>"
-#     len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
-#     for index, etext in enumerate(node_text.split("--BRRB--")):
-#         if text_part_flag == "node_text":
-#             xpath = dom_tree.getpath(node)
-#         elif text_part_flag == "node_tail_text":
-#             # TODO (aimore): I am not sure why they make the distinction of the
-#             #  xpath being the text or tail. That increases complexity of xpath and
-#             #  might not help during generalization.
-#             xpath = dom_tree.getpath(node) + "/tail"
-#         if len_brs >= 2:
-#             xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
-#         clean_etext = clean_spaces(etext)
-
-#         # Update the dictionary.
-#         current_xpath_data[xpath] = clean_etext
-#         overall_xpath_dict[xpath].add(clean_etext)
-#         current_page_nodes_in_order.append((clean_etext, xpath))
-
-#         # Clean the groundtruth and the node text. Check if the groundtruth is in the node text.
-#         groundtruth_value = clean_format_str(groundtruth_value)
-#         clean_etext = clean_format_str(clean_etext)
-
-#         if groundtruth_value.strip() in clean_etext.strip():
-#             matched_xpaths.append(xpath)
-#             is_truth_value_list.append(len(current_page_nodes_in_order) - 1)
-
-#         # 这里我们更新三样东西 (Here we update three things)
-#         # 如果当前节点与truth_value一致 (If the current node is consistent with truth_value)，
-#         # 则将当前xpath加入matched_xpaths (Add the current xpath to matched_xpaths)
-#         # 此外，还需要 current_xpath_data[xpath] = clean_etext,即记录当前页面 该xpath对应的文字
-#         # (In addition, current_xpath_data[xpath] = clean_etext is also required,
-#         # that is, the text corresponding to the xpath of the current page is recorded)
-#         # 以及 overall_xpath_dict[xpath].add(clean_etext)，即记录当前网址上该xpath对应的文字，以add加入集合
-#         # (And overall_xpath_dict[xpath].add(clean_etext), that is,
-#         # record the text corresponding to the xpath on the current URL, and add it to the set)
-#     return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
-
-
-# def get_value_xpaths(
-#     dom_tree,
-#     truth_value,
-#     overall_xpath_dict,
-# ):
-#     """Gets a list of xpaths that contain a text truth_value in DOMTree objects.
-
-#     Args:
-#       dom_tree: the DOMTree object of a specific HTML page.
-#       truth_value: a certain groundtruth value.
-#       overall_xpath_dict: a dict maintaining all xpaths data of a website.
-
-#     Returns:
-#       xpaths: a list of xpaths containing the truth_value exactly as inner texts.
-#       current_xpath_data: the xpaths and corresponding values in this DOMTree.
-#     """
-
-#     matched_xpaths = []  # The resulting list of xpaths to be returned.
-#     current_xpath_data = dict()  # The resulting dictionary to save all page data.
-
-#     current_page_nodes_in_order = []
-#     is_truth_value_list = []
-
-#     # Some values contains HTML tags and special strings like "&nbsp;"
-#     # So we need to escape the HTML by parsing and then extract the inner text.
-#     value_dom = lxml.html.fromstring(truth_value)
-#     value = " ".join(etree.XPath("//text()")(value_dom))
-#     value = clean_spaces(value)
-
-#     # Iterate all the nodes in the given DOMTree.
-#     for node in dom_tree.iter():
-#         # The value can only be matched in the text of the node or the tail.
-#         if node.text:
-#             current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
-#                 node=node,
-#                 node_text=node.text,
-#                 current_xpath_data=current_xpath_data,
-#                 overall_xpath_dict=overall_xpath_dict,
-#                 text_part_flag="node_text",
-#                 groundtruth_value=value,
-#                 matched_xpaths=matched_xpaths,
-#                 dom_tree=dom_tree,
-#                 current_page_nodes_in_order=current_page_nodes_in_order,
-#                 is_truth_value_list=is_truth_value_list,
-#             )
-#         if node.tail:
-#             current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list = match_value_node(
-#                 node=node,
-#                 node_text=node.tail,
-#                 current_xpath_data=current_xpath_data,
-#                 overall_xpath_dict=overall_xpath_dict,
-#                 text_part_flag="node_tail_text",
-#                 groundtruth_value=value,
-#                 matched_xpaths=matched_xpaths,
-#                 dom_tree=dom_tree,
-#                 current_page_nodes_in_order=current_page_nodes_in_order,
-#                 is_truth_value_list=is_truth_value_list,
-#             )
-
-#     return current_xpath_data, overall_xpath_dict, current_page_nodes_in_order, matched_xpaths, is_truth_value_list
-
-
-def get_dom_tree(html, website):
+def get_dom_tree(html):
     """Parses a HTML string to a DOMTree.
 
     We preprocess the html string and use lxml lib to get a tree structure object.
@@ -260,14 +126,6 @@ def get_dom_tree(html, website):
     html = html.replace("<BR>", "--BRRB--")
     html = html.replace("<BR/>", "--BRRB--")
     html = html.replace("<BR />", "--BRRB--")
-
-    # A special case in this website, where the values are inside the comments.
-    # if website == "careerbuilder":
-    #     html = html.replace("<!--<tr>", "<tr>")
-    #     html = html.replace("<!-- <tr>", "<tr>")
-    #     html = html.replace("<!--  <tr>", "<tr>")
-    #     html = html.replace("<!--   <tr>", "<tr>")
-    #     html = html.replace("</tr>-->", "</tr>")
 
     html = clean_format_str(html)
     # TODO(Aimore): Deal with XML cases. If there are problems here with XLM, is because it can only treat HTMLpages
@@ -503,7 +361,7 @@ def get_field_xpaths(
         f"Website: {website_to_process} | Across all pages:\n \tfixed_nodes: {len(fixed_nodes)} | \tvariable_nodes: {len(variable_nodes)}"
     )
 
-    assure_value_variable(all_data_dict, variable_nodes, fixed_nodes)
+    # assure_value_variable(all_data_dict, variable_nodes, fixed_nodes)
     all_data_dict["fixed_nodes"] = list(fixed_nodes)
     all_data_dict["variable_nodes"] = list(variable_nodes)
 

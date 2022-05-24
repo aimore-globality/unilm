@@ -343,7 +343,7 @@ all_new_annotations = []
 for i, row in tqdm(df_positives.iterrows()):
     url = row['url']
     if not row.isnull()[f'{tag}-gt_text']:
-        # clean_dom_tree = get_dom_tree(row['html'], 'website')
+        clean_dom_tree = get_dom_tree(row['html'], 'website')
         dom_tree = lxml_html.fromstring(row['html'])
         
         annotations_that_can_be_found = []
