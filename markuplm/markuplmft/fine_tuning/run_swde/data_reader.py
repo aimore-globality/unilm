@@ -120,14 +120,17 @@ class DataReader:
         cached_features_file = cached_features_dir / website
 
         if not cached_features_dir.exists():
-            print(f"Creating cache folder: {cached_features_file}")
+            if self.verbose:
+                print(f"Creating cache folder: {cached_features_file}")
             cached_features_dir.mkdir(exist_ok=False, parents=True)
 
         if cached_features_file.exists() and not self.overwrite_cache:
-            print(f"Loading features from cached file: {cached_features_file}")
+            if self.verbose:
+                print(f"Loading features from cached file: {cached_features_file}")
             features = torch.load(str(cached_features_file))
         else:
-            print(f"Creating features: {cached_features_file}")
+            if self.verbose:
+                print(f"Creating features: {cached_features_file}")
 
             features = get_swde_features(
                 root_dir=self.data_dir,
@@ -138,7 +141,8 @@ class DataReader:
             )
 
             if self.local_rank in [-1, 0]:
-                print(f"Saving features into cached file: {cached_features_file}\n")
+                if self.verbose:
+                    print(f"Saving features into cached file: {cached_features_file}\n")
                 torch.save(features, str(cached_features_file))
 
         if self.parallelize:

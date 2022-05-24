@@ -21,12 +21,19 @@ import pandas as pd
 from pathlib import Path
 from tqdm.notebook import tqdm
 import multiprocess as mp
+import os 
+os.environ["WANDB_NOTEBOOK_NAME"] = "Create_dedup_datasaet.ipynb"
+import wandb
 
 pd.set_option("min_rows",5, "max_rows", 5)
+wandb.login()
+
+run = wandb.init(project="LanguageModel", resume=False, tags=["create_dedup"])
 
 # %% tags=[]
-# dataset = 'train'
-dataset = 'develop'
+dataset = 'train'
+# dataset = 'develop'
+print("Dataset: ", dataset)
 
 # %% [markdown]
 # ## Load Prepare Data (prepare_data.py)
@@ -110,6 +117,10 @@ if  dataset == 'train': #? If the data is for training keep the duplicated gt, b
     domain_deduplicated_nodes = all_dfs.loc[indices]
 
 create_domain_deduplicated_data(folder=websites_root_path, domain_deduplicated_nodes=domain_deduplicated_nodes)
+
+# %%
+run.save()
+run.finish()
 
 # %% [markdown]
 # ---

@@ -55,8 +55,8 @@ trainer_config = dict(
     num_epochs = 4, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
-    per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-    eval_batch_size = 1024, #? 1024 Max with the big machine 
+    per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
+    eval_batch_size = int(1024), #? 1024 Max with the big machine 
     fp16 = True, 
     fp16_opt_level = "O1",
     max_grad_norm = 1.0,
@@ -169,18 +169,15 @@ print(f"local_rank: {local_rank}")
 
 if local_rank in [-1, 0]:
     print("Initializing WandB...")
-    run = wandb.init(project="LanguageModel", config=trainer_config, resume=False)
+    run = wandb.init(project="LanguageModel", config=trainer_config, resume=False, tags=["train_evaluate"])
     trainer_config = dict(run.config)
     print("Training configurations from WandB: ")
     pprint(trainer_config)
 else:
     run = None
-    
+
 loss_function = trainer_config.pop("loss_function")
 label_smoothing = trainer_config.pop("label_smoothing")
-# %%
-train_dataset_info[0]
-
 # %%
 from markuplmft.fine_tuning.run_swde.data_reader import DataReader
 

@@ -10,10 +10,6 @@
     "command": "jupyter.execSelectionInteractive",
     "when": "editorTextFocus",
     "workbench.colorCustomizations": {
-        "editor.selectionBackground": "#c26060c0",
-        "editor.selectionHighlightBackground": "#00ff553a",
-        "editor.findMatchBackground": "#00cc44f8",
-        "editor.findMatchHighlightBackground": "#ff7b00d0",
         "editorGroup.border": "#f5f0b0",
         "sash.hoverBorder": "#f5f0b0",
         "titleBar.activeBackground": "#f0e883",

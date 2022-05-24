@@ -41,7 +41,9 @@ class MarkupLModel:
 
         # self.output_dir = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
-        self.original_model_dir = Path("microsoft/markuplm-base")
+        # self.original_model_dir = Path("microsoft/markuplm-base") # TODO(Aimore): Change from base to large
+        self.original_model_dir = Path("roberta-base") # TODO(Aimore): Change from markup to roberta
+
         self.save_model_path = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
         self.doc_stride = 256 # 128
@@ -75,6 +77,14 @@ class MarkupLModel:
             loss_function=self.loss_function,
             config=config,
         )
+        #? TODO (Aimore): Check if not loading the model from a pre-trained achieve similar metrics
+        # self.net = MarkupLMForTokenClassification(
+        #     # self.original_model_dir,
+        #     label_smoothing=self.label_smoothing,
+        #     loss_function=self.loss_function,
+        #     config=config,
+        # )
+
         self.net.resize_token_embeddings(len(self.tokenizer))
 
     def load_trained_model(

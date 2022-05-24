@@ -28,6 +28,10 @@ from web_annotation_extractor.evaluations.visualization_functions import plot_pe
 from pathlib import Path
 graph = create_object_graph('test')
 # pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
+import wandb
+
+run = wandb.init(project="LanguageModel", resume=False, tags=["compare_with_production"])
+
 
 # %%
 segmenter_trained =["trained", "untrained", "extreme_untrained"][0]
@@ -52,6 +56,7 @@ if predict_and_segment:
     print(dataset)
     if dataset == 'develop':
         data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
+        
     df = pd.read_pickle(data_path)
 
     print(len(df))
@@ -280,6 +285,7 @@ results["text"] = results["text"].apply(lambda x: f" {x} ")
 results["text"] = results["text"].str.replace("&amp;", "&")
 results["text"] = results["text"].str.replace("&AMP;", "&")
 
+# #? Train a new gazetter:
 # from web_annotation_extractor.bundles.past_client.segmentation.segmenters import PastClientSegmenter
 # gazetteer = PastClientSegmenter(graph.html_gazetteer.config)
 # gazetteer.config["stop_words"] = True
@@ -294,6 +300,7 @@ results["text"] = results["text"].str.replace("&AMP;", "&")
 # data_for_gazetteer_to_train = gazetteer.segment(data_for_gazetteer_to_train)
 # gazetteer.fit(data_for_gazetteer_to_train)
 
+# #? Load trained gazetter:
 gazetteer = pd.read_pickle("trained_gazetteer.pkl")
 
 print(len(gazetteer.segmenter))
@@ -309,6 +316,25 @@ node_company_span = node_company_span.fillna("").apply(list)
 value_to_taxonomy_mappings = dict([(company.name, company.uri) for company in graph.known_company_taxonomy])
 
 results["node_company_span_taxonomy"] = node_company_span.apply(lambda company_span: [(x[0], x[1], value_to_taxonomy_mappings.get(x[0])) for x in company_span])
+
+# %%
+# # ? Get the Segmentations (company_span_taxonomy)
+mode_indices = dict(
+    model=results[results["pred_type"] == "PAST_CLIENT"].index,
+    ground_truth=results[results["truth"] == "PAST_CLIENT"].index,
+    no_classification=results.index,
+)
+print("# Nodes:")
+for mode, index in mode_indices.items():
+    print(f"{mode}: {len(index)}")
+    results[f"{mode}-node_company_span_taxonomy"] = results["node_company_span_taxonomy"]
+    results.loc[~results.index.isin(index), f"{mode}-node_company_span_taxonomy"] = ''
+    results[f"{mode}-node_company_span_taxonomy"] = results[f"{mode}-node_company_span_taxonomy"].apply(list)
+
+model_count = results['model-node_company_span_taxonomy'].apply(len).sum()
+ground_truth_count = results['ground_truth-node_company_span_taxonomy'].apply(len).sum()
+no_classification_count = results['no_classification-node_company_span_taxonomy'].apply(len).sum()
+print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {ground_truth_count}, no_classification_count: {no_classification_count}")
 
 # %%
 # # ? Get the Segmentations (company_span_taxonomy)
@@ -701,3 +727,7 @@ domain_metrics = get_reconciliations_metrics_for_all_domains(
 # print("Number of times a gt_value company appears in dataset:")
 # with pd.option_context("max_rows", 20, "min_rows", 20):
 #     display(gt_text_and_gt_value["gt_value"].value_counts())
+
+# %%
+run.save()
+run.finish()

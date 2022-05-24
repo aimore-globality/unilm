@@ -262,12 +262,12 @@ def get_dom_tree(html, website):
     html = html.replace("<BR />", "--BRRB--")
 
     # A special case in this website, where the values are inside the comments.
-    if website == "careerbuilder":
-        html = html.replace("<!--<tr>", "<tr>")
-        html = html.replace("<!-- <tr>", "<tr>")
-        html = html.replace("<!--  <tr>", "<tr>")
-        html = html.replace("<!--   <tr>", "<tr>")
-        html = html.replace("</tr>-->", "</tr>")
+    # if website == "careerbuilder":
+    #     html = html.replace("<!--<tr>", "<tr>")
+    #     html = html.replace("<!-- <tr>", "<tr>")
+    #     html = html.replace("<!--  <tr>", "<tr>")
+    #     html = html.replace("<!--   <tr>", "<tr>")
+    #     html = html.replace("</tr>-->", "</tr>")
 
     html = clean_format_str(html)
     # TODO(Aimore): Deal with XML cases. If there are problems here with XLM, is because it can only treat HTMLpages
@@ -402,7 +402,7 @@ def get_field_xpaths(
                             and len(node_text.strip()) >= min_node_text_size
                             and "javascript" not in node.attrib.get("type", "")
                             and len(node_text.strip()) < max_node_text_size
-                        ):  #! Remove java/script and min_node_text
+                        ):  #! Remove java/script and min_node_text # TODO (Aimore): Make this comparisons more explicity and descriptive
                             # """Matches the ground truth value with a specific node in the domtree.
 
                             # In the function, the current_xpath_data, overall_xpath_dict, matched_xpaths will be updated.
@@ -427,15 +427,19 @@ def get_field_xpaths(
 
                             node_attribute = node.attrib.get("type", "")
                             node_tag = node.tag
+                            node_text_split = node_text.split("--BRRB--")
+                            len_brs = len(node_text_split)  # The number of the <br>s.
+                            for index, etext in enumerate(node_text_split):
 
-                            len_brs = len(node_text.split("--BRRB--"))  # The number of the <br>s.
-                            for index, etext in enumerate(node_text.split("--BRRB--")):
                                 if text_part_flag == "node_text":
                                     xpath = dom_tree.getpath(node)
+
                                 elif text_part_flag == "node_tail_text":
                                     xpath = dom_tree.getpath(node) + "/tail"
+
                                 if len_brs >= 2:
                                     xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
+
                                 # clean_etext = clean_spaces(etext)
                                 clean_etext = etext
 

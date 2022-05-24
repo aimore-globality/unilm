@@ -135,10 +135,9 @@ def get_swde_features(
     """
     This function creates a list of features that goes into the model.
     The data already comes divided by nodes.
-    Here, most of the fixed nodes are filtered out.
     From the remaining nodes, features are created.
-    Each feature has 384 tokens. The sum of the
-    Each feature represents a
+    Each feature has 384 tokens. 
+    Each feature represents a doc_stride
 
     """
     real_max_token_num = max_length - 2  # for cls and sep
