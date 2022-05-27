@@ -41,12 +41,6 @@ import glob
 FLAGS = flags.FLAGS
 random.seed(42)
 
-flags.DEFINE_integer(
-    "n_pages",
-    2000,
-    "The maximum number of pages to read.",
-)
-
 flags.DEFINE_string(
     "input_groundtruth_path",
     "",
@@ -66,76 +60,8 @@ flags.DEFINE_string(
     "output sequences of the sequence tagging version of swde dataset.",
 )
 
-
-def clean_spaces(text):
-    r"""Clean extra spaces in a string.
-
-    Example:
-      input: " asd  qwe   " --> output: "asd qwe"
-      input: " asd\t qwe   " --> output: "asd qwe"
-    Args:
-      text: the input string with potentially extra spaces.
-
-    Returns:
-      a string containing only the necessary spaces.
-    """
-    return " ".join(re.split(r"\s+", text.strip()))
-
-
-def clean_format_str(text):
-    """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
-    text = "".join(
-        ch
-        for ch in text
-        if unicodedata.category(ch)[0] != "C"
-    )
-    text = "".join([
-        c if ord(c) < 128 else ""
-        for c in text
-    ])
-    text = clean_spaces(text)
-    return text
-
-
-
-def get_dom_tree(html):
-    """Parses a HTML string to a DOMTree.
-
-    We preprocess the html string and use lxml lib to get a tree structure object.
-
-    Args:
-      html: the string of the HTML document.
-      website: the website name for dealing with special cases.
-
-    Returns:
-      A parsed DOMTree object using lxml library.
-    """
-    cleaner = Cleaner()
-    # cleaner.javascript = True
-    cleaner.javascript = False
-    # cleaner.scripts = True
-    cleaner.scripts = False
-
-    cleaner.style = True
-    cleaner.page_structure = False
-    html = html.replace("\0", "")  # Delete NULL bytes.
-    # Replace the <br> tags with a special token for post-processing the xpaths.
-    html = html.replace("<br>", "--BRRB--")
-    html = html.replace("<br/>", "--BRRB--")
-    html = html.replace("<br />", "--BRRB--")
-    html = html.replace("<BR>", "--BRRB--")
-    html = html.replace("<BR/>", "--BRRB--")
-    html = html.replace("<BR />", "--BRRB--")
-
-    html = clean_format_str(html)
-    # TODO(Aimore): Deal with XML cases. If there are problems here with XLM, is because it can only treat HTMLpages
-    x = lxml.html.fromstring(html)
-    etree_root = cleaner.clean_html(x)
-    dom_tree = etree.ElementTree(etree_root)
-    return dom_tree
-
-
 def load_html_and_groundtruth(website_to_load):
+    #! All this function will be replaced
     """Loads and returns the html string and ground truth data as a dictionary."""
     all_data_dict = collections.defaultdict(dict)
 
@@ -183,13 +109,11 @@ def load_html_and_groundtruth(website_to_load):
 
 def get_field_xpaths(
     all_data_dict,
-    website_to_process,
 ):
     """Gets xpaths data for each page in the data dictionary.
 
     Args:
       all_data_dict: the dictionary saving both the html content and the truth.
-      website_to_process: the website that we are working on.
     """
     # Saving the xpath info of the whole website,
     #  - Key is a xpath.
@@ -200,10 +124,7 @@ def get_field_xpaths(
     # current_page_nodes_in_order = [] # I added this condition in case the page doesn't contain any positive annotation
 
     #  Update page data with groundtruth xpaths and the overall xpath-value dict.
-    for page_id in tqdm(
-        all_data_dict,
-        desc=f"Processing: {website_to_process}",
-    ):
+    for page_id in tqdm(all_data_dict):
         # We add dom-tree attributes for the first n_pages
         html = all_data_dict[page_id]["html_str"]
 
@@ -257,9 +178,8 @@ def get_field_xpaths(
                     if node_text:
                         if (
                             node.tag != "script"
-                            and len(node_text.strip()) >= min_node_text_size
                             and "javascript" not in node.attrib.get("type", "")
-                            and len(node_text.strip()) < max_node_text_size
+                            and min_node_text_size <= len(node_text.strip()) < max_node_text_size
                         ):  #! Remove java/script and min_node_text # TODO (Aimore): Make this comparisons more explicity and descriptive
                             # """Matches the ground truth value with a specific node in the domtree.
 
@@ -333,85 +253,39 @@ def get_field_xpaths(
 
             all_data_dict[page_id][field]["gt_text_in_nodes"] = gt_text_in_nodes
 
-            # now for each all_data_dict[page_id]
-            # an example
-            # all_data_dict[page_id]["field-PAST_CLIENT"] =
-            # {
-            #   'values': ['Dave Kemper', 'Patrick Sebranek', 'Verne Meyer'],
-            #   'groundtruth_xpaths':
-            #       {'/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[3]',
-            #        '/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[2]',
-            #        '/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[1]',
-            #        '/html/body/div[2]/div[2]/div[3]/div[3]/p/a'}
-            # }
+            #? now for each all_data_dict[page_id]
+            #? an example
+            #? all_data_dict[page_id]["field-PAST_CLIENT"] =
+            #? {
+            #?   'values': ['Dave Kemper', 'Patrick Sebranek', 'Verne Meyer'],
+            #?   'groundtruth_xpaths':
+            #?       {'/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[3]',
+            #?        '/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[2]',
+            #?        '/html/body/div[2]/div[2]/div[2]/div[1]/h3/a[1]',
+            #?        '/html/body/div[2]/div[2]/div[3]/div[3]/p/a'}
+            #? }
 
-        all_data_dict[page_id]["xpath_data"] = current_xpath_data  # {xpath1: text1, xpath2: text2}
-        all_data_dict[page_id]["doc_strings"] = current_page_nodes_in_order  # [(text, xpath)*N]
-        # all_data_dict[page_id]["reversed_doc_strings_ids"] = {v[0]: i for i, v in enumerate(current_page_nodes_in_order)}
+        all_data_dict[page_id]["xpath_data"] = current_xpath_data  #? {xpath1: text1, xpath2: text2}
+        all_data_dict[page_id]["doc_strings"] = current_page_nodes_in_order  #? [(text, xpath)*N]
+        #? all_data_dict[page_id]["reversed_doc_strings_ids"] = {v[0]: i for i, v in enumerate(current_page_nodes_in_order)}
 
-    # all_data_dict[page_id]["doc_strings"] is the basis of our transformers-based method!!!
+    #? all_data_dict[page_id]["doc_strings"] is the basis of our transformers-based method!!!
 
-    # Define the fixed-text nodes and variable nodes.
-    fixed_nodes = set()
     variable_nodes = set(overall_xpath_dict.keys())
 
-    assert len(fixed_nodes) == 0
     assert len(variable_nodes) > 0
     print(
-        f"Website: {website_to_process} | Across all pages:\n \tfixed_nodes: {len(fixed_nodes)} | \tvariable_nodes: {len(variable_nodes)}"
+        f"Website: {website_to_process} | Across all pages:\n \tvariable_nodes: {len(variable_nodes)}"
     )
 
-    # assure_value_variable(all_data_dict, variable_nodes, fixed_nodes)
-    all_data_dict["fixed_nodes"] = list(fixed_nodes)
     all_data_dict["variable_nodes"] = list(variable_nodes)
 
-    # 总之到这为止 (Anyway so far)
-    # fixed_nodes包含的就是固定的node (fixed_nodes contains fixed nodes)
-    # variable_nodes包含的就是值会变化的node (variable_nodes contains nodes whose values will change)
-    # 并且我们保证truth_value必定在variable nodes中
-    # (and we guarantee that truth_value must be in variable nodes)
-
-    # "fixed_nodes" are the xpaths for nodes that cannot have truth-value
-    # "variable_nodes" are the xpaths for nodes that might have truth-value
     return all_data_dict
-
-
-def assure_value_variable(all_data_dict, variable_nodes, fixed_nodes):
-    """Makes sure all values are in the variable nodes by updating sets.
-
-    That means that if the xpath that is in groundtruth_xpaths was not yet in the variable_nodes, then the variable_nodes gets updated with it.
-    And it gets removed from fixed-xpath.
-
-    Args:
-      all_data_dict: the dictionary saving all data with groundtruth.
-      variable_nodes: the current set of variable nodes.
-      fixed_nodes: the current set of fixed nodes.
-      n_pages: to assume we only process first n_pages pages from each website.
-    """
-    for index in all_data_dict:
-        if not index.isdigit():
-            # the key should be an integer, to exclude "fixed/variable nodes" entries.
-            # n_pages to stop for only process part of the website.
-            continue
-        for field in all_data_dict[index]:
-            if not field.startswith("field-"):
-                continue
-            xpaths = all_data_dict[index][field]["groundtruth_xpaths"]
-            if not xpaths:  # There are zero value for this field in this page.
-                continue
-            flag = False
-            for xpath in xpaths:
-                if flag:  # The value's xpath is in the variable_nodes.
-                    break
-                flag = xpath in variable_nodes
-            variable_nodes.update(xpaths)  # Add new xpaths if they are not in.
-            fixed_nodes.difference_update(xpaths)
-
 
 def generate_nodes_seq_and_write_to_file(website):
     """Extracts all the xpaths and labels the nodes for all the pages."""
 
-    all_data_dict = load_html_and_groundtruth(website)
+    all_data_dict = load_html_and_groundtruth(website) #! All this function will be replaced
     """
     all_data_dict = {'0000': {
     field-PAST_CLIENT: {'values': ['we work', 'sse', 'Oman Investment Corporation']}, 
@@ -422,28 +296,27 @@ def generate_nodes_seq_and_write_to_file(website):
 
     all_data_dict = get_field_xpaths(
         all_data_dict=all_data_dict,
-        website_to_process=website,
     )
 
     """
-    all_data_dict = {'0000': {
-    field-PAST_CLIENT: 
-        {'values': ['SA', 'Luye Pharma Group Ltd.', 'Vipshop (US) Inc', 'Delta Air Lines', 'New York University', 'Harmon Store', 'Rutgers University', 'Amneal Pharmaceuticals, LLC', 'Kashiv Pharma, LLC', ...], 
-         'groundtruth_xpaths': {'/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[11]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[12]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[21]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[19]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[20]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[10]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[18]/p[1]', ...}, 
-         'is_truth_value_list': {384, 256, 128, 649, 533, 410, 412, 669, 555, ...}
-         'gt_text_in_nodes': {xpath1:[], xpath2:[gt_text1, gt_text2]}
-         }, 
-    'path': 'lernerdavid.com(41)/0000.htm', 
-    'html_str': 'html' }, 
-    'dom_tree': dom_tree
-    'xpath_data': {'/html/head': '', '/html/head/script[1]/tail': '', '/html/head/script[2]': 'window.jQuery || document.write(\'<script src="/Darwin/script/jquery/jquery-1.11.2.min.js"><\\/script>\')', '/html/head/script[2]/tail': '', '/html/head/script[3]/tail': '', '/html/head/script[4]': 'window.jQuery.ui || document.write(\'<script src="/Darwin/script/jquery/jquery-ui-1.12.1.min.js"><\\/script>\')', '/html/head/script[4]/tail': '', '/html/head/title': 'Successes', '/html/body': '', '/html/body/noscript[1]/tail': '', '/html/body/noscript[1]/div': 'Javascript must be enabled for the correct page display', '/html/body/script[1]': "//<![CDATA[var theForm = document.forms['aspnetForm'];if (!theForm) { theForm = document.aspnetForm;}function __doPostBack(eventTarget, eventArgument) { if (!theForm.onsubmit || (theForm.onsubmit() != false)) { theForm.__EVENTTARGET.value = eventTarget; theForm.__EVENTARGUMENT.value = eventArgument; theForm.submit(); }}//]]>", '/html/body/script[1]/tail': '', '/html/body/div[2]': '', ...}
-    'doc_strings': [('', '/html/head'), ('', '/html/head/script[1]/tail'), ('window.jQuery || document.write(\'<script src="/Darwin/script/jquery/jquery-1.11.2.min.js"><\\/script>\')', '/html/head/script[2]'), ('', '/html/head/script[2]/tail'), ('', '/html/head/script[3]/tail'), ('window.jQuery.ui || document.write(\'<script src="/Darwin/script/jquery/jquery-ui-1.12.1.min.js"><\\/script>\')', '/html/head/script[4]'), ('', '/html/head/script[4]/tail'), ('Successes', '/html/head/title'), ('', '/html/body'), ('', '/html/body/noscript[1]/tail'), ('Javascript must be enabled for the correct page display', '/html/body/noscript[1]/div'), ("//<![CDATA[var theForm = document.forms['aspnetForm'];if (!theForm) { theForm = document.aspnetForm;}function __doPostBack(eventTarget, eventArgument) { if (!theForm.onsubmit || (theForm.onsubmit() != false)) { theForm.__EVENTTARGET.value = eventTarget; theForm.__EVENTARGUMENT.value = eventArgument; theForm.submit(); }}//]]>", '/html/body/script[1]'), ('', '/html/body/script[1]/tail'), ('', '/html/body/div[2]'), ...]
-    '0001': {...} }},
-    'fixed_nodes': [],
-    'variable_nodes': ['/html/body/div[2]/div/div/header/div/div/nav/div/ul/li[3]/ul/li[1]/a', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[24]/dl[1]/tail', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[24]/p[1]/tail', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[12]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[17]/dl[2]/dt/tail', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[11]/dl[1]/dt', '/html/body/div[2]/div/div/div[4]/div/aside/div/ul/li/tail', '/html/body/div[2]/div/div/div[4]/div/section/tail', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[18]/dl[2]/tail', '/html/head/title', '/html/body/div[2]/div/div/div[4]/div/aside/ul[23]/tail', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[19]/dl[1]/dd[2]/a', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[9]/dl[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[1]/dl[2]', ...]
+    all_data_dict = {
+        '0000': {
+            field-PAST_CLIENT: {
+                'values': ['SA', 'Luye Pharma Group Ltd.', 'Vipshop (US) Inc', 'Delta Air Lines', 'New York University', 'Harmon Store', 'Rutgers University', 'Amneal Pharmaceuticals, LLC', 'Kashiv Pharma, LLC', ...], 
+                'groundtruth_xpaths': {'/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[11]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[12]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[21]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[19]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/h2', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[20]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[10]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[3]/p[1]', '/html/body/div[2]/div/div/div[4]/div/section/div[1]/article[18]/p[1]', ...}, 
+                'is_truth_value_list': {384, 256, 128, 649, 533, 410, 412, 669, 555, ...}
+                'gt_text_in_nodes': {xpath1:[], xpath2:[gt_text1, gt_text2]}
+                }, 
+            'path': 'lernerdavid.com(41)/0000.htm', 
+            'html_str': 'html' }, 
+            'dom_tree': dom_tree
+            'xpath_data': {'/html/head': '', '/html/head/script[1]/tail': '', '/html/head/script[2]': 'window.jQuery || document.write(\'<script src="/Darwin/script/jquery/jquery-1.11.2.min.js"><\\/script>\')', '/html/head/script[2]/tail': '', '/html/head/script[3]/tail': '', '/html/head/script[4]': 'window.jQuery.ui || document.write(\'<script src="/Darwin/script/jquery/jquery-ui-1.12.1.min.js"><\\/script>\')', '/html/head/script[4]/tail': '', '/html/head/title': 'Successes', '/html/body': '', '/html/body/noscript[1]/tail': '', '/html/body/noscript[1]/div': 'Javascript must be enabled for the correct page display', '/html/body/script[1]': "//<![CDATA[var theForm = document.forms['aspnetForm'];if (!theForm) { theForm = document.aspnetForm;}function __doPostBack(eventTarget, eventArgument) { if (!theForm.onsubmit || (theForm.onsubmit() != false)) { theForm.__EVENTTARGET.value = eventTarget; theForm.__EVENTARGUMENT.value = eventArgument; theForm.submit(); }}//]]>", '/html/body/script[1]/tail': '', '/html/body/div[2]': '', ...}
+            'doc_strings': [('', '/html/head'), ('', '/html/head/script[1]/tail'), ('window.jQuery || document.write(\'<script src="/Darwin/script/jquery/jquery-1.11.2.min.js"><\\/script>\')', '/html/head/script[2]'), ('', '/html/head/script[2]/tail'), ('', '/html/head/script[3]/tail'), ('window.jQuery.ui || document.write(\'<script src="/Darwin/script/jquery/jquery-ui-1.12.1.min.js"><\\/script>\')', '/html/head/script[4]'), ('', '/html/head/script[4]/tail'), ('Successes', '/html/head/title'), ('', '/html/body'), ('', '/html/body/noscript[1]/tail'), ('Javascript must be enabled for the correct page display', '/html/body/noscript[1]/div'), ("//<![CDATA[var theForm = document.forms['aspnetForm'];if (!theForm) { theForm = document.aspnetForm;}function __doPostBack(eventTarget, eventArgument) { if (!theForm.onsubmit || (theForm.onsubmit() != false)) { theForm.__EVENTTARGET.value = eventTarget; theForm.__EVENTARGUMENT.value = eventArgument; theForm.submit(); }}//]]>", '/html/body/script[1]'), ('', '/html/body/script[1]/tail'), ('', '/html/body/div[2]'), ...]
+        '0001': {
+            ...
+            } 
+    },
     """
-
-    variable_nodes = all_data_dict["variable_nodes"]
 
     cleaned_features_for_this_website = {}
 
@@ -451,7 +324,7 @@ def generate_nodes_seq_and_write_to_file(website):
         keys
         for keys in all_data_dict
         if "nodes" not in keys
-    ]  # The keys of all_data_dict include also fixed_nodes and variable_nodes and here we only care about the page_ids
+    ]
     for page_id in page_ids:
         page_data = all_data_dict[page_id]
         gt_text_dict = page_data["field-PAST_CLIENT"]["gt_text_in_nodes"]
@@ -474,16 +347,10 @@ def generate_nodes_seq_and_write_to_file(website):
 
         for id, doc_string in enumerate(doc_strings):
             text, xpath, node_attribute, node_tag = doc_string
-            is_variable = xpath in variable_nodes
             gt_text = gt_text_dict.get(xpath)
 
-            # # Define Fixed-nodes
-            # if not is_variable:
-            #     new_doc_strings.append((text, xpath, "fixed-node", gt_text)) #!Add here the gt_text
-            # # Define Variable-nodes
-            # else:
             gt_field = field_info.get(id, "none")  # Choose between none or gt label (PAST_CLIENT)
-            new_doc_strings.append((text, xpath, gt_field, gt_text, node_attribute, node_tag))
+            new_doc_strings.append((text, xpath, gt_field, gt_text, node_attribute, node_tag)) #? Here is what is inside the prepared data
 
         cleaned_features_for_this_website[page_id] = new_doc_strings
 

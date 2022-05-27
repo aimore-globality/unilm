@@ -234,8 +234,8 @@ class MarkupLMEmbeddings(nn.Module):
         xpath_embeddings = self.xpath_embeddings(xpath_tags_seq, xpath_subs_seq)
 
         embeddings = (
-            words_embeddings + position_embeddings + token_type_embeddings + xpath_embeddings
-            # position_embeddings + token_type_embeddings + xpath_embeddings
+            # words_embeddings + position_embeddings +  xpath_embeddings
+            words_embeddings + position_embeddings + token_type_embeddings
         )
 
         embeddings = self.LayerNorm(embeddings)
@@ -1231,7 +1231,7 @@ class MarkupLMForTokenClassification(MarkupLMPreTrainedModel):
         ]  # ? sequence_output [34, 384, 768] = [batch_size, tokens_on_window, token_embedding]
         prediction_scores = self.token_cls(
             sequence_output
-        )  #  #? prediction_scores [34, 384, 2] = [batch_size, tokens_on_window, node_type_logits]
+        )  #? prediction_scores [34, 384, 2] = [batch_size, tokens_on_window, node_type_logits]
         # pred_node_types = torch.argmax(prediction_scores,dim=2) # (bs,seq)
 
         token_cls_loss = None

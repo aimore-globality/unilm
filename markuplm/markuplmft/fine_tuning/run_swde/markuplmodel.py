@@ -41,8 +41,9 @@ class MarkupLModel:
 
         # self.output_dir = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
-        # self.original_model_dir = Path("microsoft/markuplm-base") # TODO(Aimore): Change from base to large
-        self.original_model_dir = Path("roberta-base") # TODO(Aimore): Change from markup to roberta
+        self.original_model_dir = Path("microsoft/markuplm-base") # TODO(Aimore): Change from base to large
+        # self.original_model_dir = Path("roberta-base") # TODO(Aimore): Change from markup to roberta
+        # self.original_model_dir = Path("bert-base-uncased") # TODO(Aimore): Change from markup to roberta
 
         self.save_model_path = Path("/data/GIT/unilm/markuplm/markuplmft/models/markuplm/")
 
@@ -71,21 +72,31 @@ class MarkupLModel:
         config_dict.update({"node_type_size": len(constants.ATTRIBUTES_PLUS_NONE)})
         config = MarkupLMConfig.from_dict(config_dict)
 
-        self.net = MarkupLMForTokenClassification.from_pretrained(
-            self.original_model_dir,
-            label_smoothing=self.label_smoothing,
-            loss_function=self.loss_function,
-            config=config,
-        )
-        #? TODO (Aimore): Check if not loading the model from a pre-trained achieve similar metrics
-        # self.net = MarkupLMForTokenClassification(
-        #     # self.original_model_dir,
+        # self.net = MarkupLMForTokenClassification.from_pretrained(
+        #     self.original_model_dir,
         #     label_smoothing=self.label_smoothing,
         #     loss_function=self.loss_function,
         #     config=config,
         # )
+        #? TODO (Aimore): Check if not loading the model from a pre-trained achieve similar metrics
+        self.net = MarkupLMForTokenClassification(
+            # self.original_model_dir,
+            label_smoothing=self.label_smoothing,
+            loss_function=self.loss_function,
+            config=config,
+        )
+        self.net.init_weights()
 
-        self.net.resize_token_embeddings(len(self.tokenizer))
+        self.net.resize_token_embeddings(len(self.tokenizer)-2)
+
+        import transformers
+        roberta  = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+        self.net.markuplm.encoder.load_state_dict(roberta.roberta.encoder.state_dict(), strict=False)
+        self.net.markuplm.embeddings.load_state_dict(roberta.roberta.embeddings.state_dict(), strict=False)
+
+        #! Just replaced with linear head classifier from Roberta
+        self.net.token_cls = roberta.classifier
+
 
     def load_trained_model(
         self,

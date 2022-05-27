@@ -6,7 +6,7 @@ import os
 from markuplmft.fine_tuning.run_swde import constants
 
 
-class SwdeFeature(object):
+class SwdeFeature(object): # BatchEncoding PageClassifierFeature
     def __init__(
         self,
         html_path,
@@ -122,7 +122,7 @@ def process_xpath(xpath: str):
     xpath_tags_seq = xpath_tags_seq + [216] * (50 - len(xpath_tags_seq))
     xpath_subs_seq = xpath_subs_seq + [1001] * (50 - len(xpath_subs_seq))
 
-    return xpath_tags_seq, xpath_subs_seq
+    return xpath_tags_seq, xpath_subs_seq # TODO(aimore): Add better documentation
 
 
 def get_swde_features(
@@ -197,7 +197,7 @@ def get_swde_features(
             # ? E.g. xpath_subs_seq [len(50)] = [0, 0, 0, 0, 2, 1, 2, 0, 0, 0, 3, 0, 1001, 1001, 1001, 1001, ...]
 
             all_token_ids_seq += token_ids
-            # all_token_ids_seq is the sequence of tokens from all the selected nodes (fixed, variable and fround truth)
+            # all_token_ids_seq is the sequence of tokens from all the selected nodes (fixed, variable and ground truth)
             # E. g. all_token_ids_seq = [42996, 4, 23687, 48159, 5457, 2931, ... 43163, 1297, 22, 29766, 12, 698, 34414]
             all_xpath_tags_seq += [xpath_tags_seq] * len(token_ids)
             # E. g. all_xpath_tags_seq len(95)[len(50)] max 1001 = [[0, 0, 2, 1001, 1001, 1001, 1001,...], [...], [...], ...]
