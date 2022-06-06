@@ -1,3 +1,116 @@
+# ---
+# jupyter:
+#   jupytext:
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.13.6
+#   kernelspec:
+#     display_name: Python 3.7.11 ('markuplmft')
+#     language: python
+#     name: python3
+# ---
+
+# %%
+import pandas as pd
+from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
+from markuplmft.fine_tuning.run_swde.featurizer import SwdeDataset
+from transformers import RobertaTokenizer
+import torch
+
+
+tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+
+DOC_STRIDE = 128
+MAX_SEQ_LENGTH = 384
+featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+
+# %%
+# df = pd.read_pickle("/data/GIT/delete/develop/prepared/1820productions.com.pkl")
+# df = pd.read_pickle("/data/GIT/delete/develop/1820productions.com.pkl")
+df = pd.read_pickle("/data/GIT/delete/develop/4-most.co.uk.pkl")
+
+# %%
+features = df.iloc[0]["swde_features"]
+
+# %%
+# features = featurizer.get_swde_features(df.values)
+
+# %%
+dataset = featurizer.feature_to_dataset(features)
+
+# %%
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
+import transformers
+model  = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+# model  = transformers.RobertaForTokenClassification('roberta-base')
+
+# %%
+import wandb
+import os
+from pprint import pprint
+import torch
+
+from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
+
+# from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
+
+try:
+    local_rank = int(os.environ["LOCAL_RANK"])
+except:
+    local_rank=-1
+
+print(f"local_rank: {local_rank}")
+
+os.environ["WANDB_START_METHOD"] = "thread"
+os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
+
+no_cuda = False
+local_rank=-1
+
+device, n_gpu = get_device_and_gpu_count(no_cuda, local_rank)
+print(device, n_gpu)
+
+# %%
+trainer_config = dict(
+    # # ? Optimizer
+    weight_decay= 0.01, #? Default: 0.0
+    learning_rate=1e-05,  #? Default: 1e-05
+    adam_epsilon=1e-8, #? Default: 1e-8
+    # # ? Loss
+    # label_smoothing=0.01, #? Default: 0.0 
+    # loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss / FocalLoss
+    # # ? Scheduler
+    warmup_ratio=0.0, #? Default: 0
+    # # ? Trainer
+    num_epochs = 4, 
+    gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
+    max_steps = 0, 
+    per_gpu_train_batch_size = int(16), #? 34 Max with the big machine 
+    eval_batch_size = int(512), #? 1024 Max with the big machine 
+    fp16 = True, 
+    fp16_opt_level = "O1",
+    max_grad_norm = 1.0,
+    # load_model=False,
+    # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
+    # freeze_body = False,
+    save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
+    overwrite_model = True,
+    evaluate_during_training = True,
+    no_cuda = no_cuda,
+    verbose = False,
+    logging_every_epoch = 1,
+    # # ? Data Reader
+    # dataset_to_use='all',
+    # overwrite_cache=True, 
+    # parallelize=False, 
+    # train_dedup=True, #? Default: False
+    # develop_dedup=True, #? Default: False
+)
+
+# %%
 from typing import Dict
 import numpy as np
 import pandas as pd
@@ -29,14 +142,13 @@ import sys
 from pathlib import Path
 import multiprocess as mp
 
-
 class Trainer:
     def __init__(
         self,
         model,
         no_cuda: bool,
-        train_dataset_info,
-        evaluate_dataset_info,
+        train_dataset,
+        evaluate_dataset,
         per_gpu_train_batch_size: int,
         eval_batch_size: int,
         num_epochs: int,
@@ -67,21 +179,21 @@ class Trainer:
         self.device = device
         self.n_gpu = n_gpu
         self.just_evaluation = just_evaluation
-        set_seed(self.n_gpu)  # ? For reproducibility
+        set_seed(self.n_gpu)  #? For reproducibility
 
         self.logging_epoch = 0
-
-        # ? Setting WandB Log
+        
+        # #? Setting WandB Log
         if run:
             self.run = run
         else:
             if self.local_rank in [-1, 0]:
-                defaults = {}
+                defaults = {}                
                 self.run = wandb.init(project="LanguageModel", config=defaults, resume=True)
             else:
                 self.run = None
 
-        # ? Setting Data
+        # #? Setting Data
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
         self.train_batch_size = self.per_gpu_train_batch_size * max(1, self.n_gpu)
         self.eval_batch_size = eval_batch_size
@@ -90,12 +202,12 @@ class Trainer:
 
         self.verbose = verbose
 
-        self.train_dataset, self.train_info = train_dataset_info
-        self.evaluate_dataset, self.evaluate_info = evaluate_dataset_info
+        self.train_dataset = train_dataset
+        self.evaluate_dataset = evaluate_dataset
 
         self.train_dataloader = self._get_dataloader(self.train_dataset, is_train=True)
         self.evaluate_dataloader = self._get_dataloader(self.evaluate_dataset, is_train=False)
-        #! Maybe pass this to a function before training prepare_for_training >
+        # #! Maybe pass this to a function before training prepare_for_training >
 
         self.max_steps = max_steps
         print(f"self.max_steps: {self.max_steps}")
@@ -116,12 +228,12 @@ class Trainer:
                 * self.num_train_epochs
             )
 
-        # ? Setting Model
+        # #? Setting Model
         self.model = model
         print(f"self.device:{self.device}")
-        self.model.net.to(self.device)
+        self.model.to(self.device)
         self.optimizer = self._prepare_optimizer(
-            self.model.net,
+            self.model,
             weight_decay,
             learning_rate,
             adam_epsilon,
@@ -130,20 +242,20 @@ class Trainer:
         self.warmup_ratio = warmup_ratio
         self.scheduler = self._prepare_scheduler(self.optimizer, self.warmup_ratio, self.t_total)
 
-        # ? Set model to use fp16 and multi-gpu
+        # #? Set model to use fp16 and multi-gpu
         if self.fp16 and not self.no_cuda:
-            self.model.net, self.optimizer = amp.initialize(
-                models=self.model.net, optimizers=self.optimizer, opt_level=fp16_opt_level
+            self.model, self.optimizer = amp.initialize(
+                models=self.model, optimizers=self.optimizer, opt_level=fp16_opt_level
             )
 
-        # ? multi-gpu training (should be after apex fp16 initialization)
-        if self.n_gpu > 1 and not isinstance(self.model.net, torch.nn.DataParallel):
-            self.model.net = torch.nn.DataParallel(self.model.net)
+        # #? multi-gpu training (should be after apex fp16 initialization)
+        if self.n_gpu > 1 and not isinstance(self.model, torch.nn.DataParallel):
+            self.model = torch.nn.DataParallel(self.model)
 
-        # ? Distributed training (should be after apex fp16 initialization)
+        # #? Distributed training (should be after apex fp16 initialization)
         if self.local_rank != -1:
-            self.model.net = torch.nn.parallel.DistributedDataParallel(
-                self.model.net,
+            self.model = torch.nn.parallel.DistributedDataParallel(
+                self.model,
                 device_ids=[self.local_rank],
                 output_device=self.local_rank,
                 find_unused_parameters=True,
@@ -155,21 +267,21 @@ class Trainer:
         self.logging_every_epoch = logging_every_epoch  #! Maybe change this to logging_epoch
         self.save_every_epoch = save_every_epoch
 
-        # ? Check if the folder exists
+        # #? Check if the folder exists
         self.overwrite_model = overwrite_model
 
         self.save_model_path = Path(save_model_path) / f"epochs_{str(self.num_train_epochs)}"
         if (
             self.save_model_path.exists()
-            and any(self.save_model_path.iterdir())  # ? Check if the folder is empty
+            and any(self.save_model_path.iterdir())  #? Check if the folder is empty
             and not self.overwrite_model
         ):
             raise ValueError(
                 f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
             )
 
-        training_samples = len(train_dataset_info[0])
-        evaluation_samples = len(evaluate_dataset_info[0])
+        training_samples = len(train_dataset)
+        evaluation_samples = len(evaluate_dataset)
         if self.run:
             self.run.log(
                 {"training_samples": training_samples, "evaluation_samples": evaluation_samples}
@@ -237,13 +349,12 @@ class Trainer:
         return batch_list
 
     def train_epoch(self):
-        self.model.net.train()
+        self.model.train()
         all_losses = []
-        batch_iterator = tqdm(self.train_dataloader)
 
-        for step, batch in enumerate(batch_iterator):
-            batch_iterator.update()
-            batch_iterator.set_description(f"Training on Batch:")
+        for step, batch in enumerate(self.train_dataloader):
+            # batch_iterator.update()
+            # batch_iterator.set_description(f"Training on Batch:")
             # print(f"step = {step} | self.local_rank: {self.local_rank}")
 
             batch_list = self._batch_to_device(batch)
@@ -251,15 +362,13 @@ class Trainer:
                 "input_ids": batch_list[0],
                 "attention_mask": batch_list[1],
                 "token_type_ids": batch_list[2],
-                "xpath_tags_seq": batch_list[3],
-                "xpath_subs_seq": batch_list[4],
-                "labels": batch_list[5],
+                "labels": batch_list[3],
             }
-            outputs = self.model.net(**inputs)
-            loss = outputs[0]  # ? model outputs are always tuple in transformers (see doc)
+            outputs = self.model(**inputs)
+            loss = outputs[0]  #? model outputs are always tuple in transformers (see doc)
 
             if self.n_gpu > 1:
-                loss = loss.mean()  # ? to average on multi-gpu parallel (not distributed) training
+                loss = loss.mean()  #? to average on multi-gpu parallel (not distributed) training
                 # loss = loss.sum() / len(batch) #! See this to understand that loss.mean() is not optimal: https://discuss.pytorch.org/t/how-to-fix-gathering-dim-0-warning-in-multi-gpu-dataparallel-setting/41733/2#:~:text=Actually%2C%20just%20re,sizes%20as%20well).
             if self.gradient_accumulation_steps > 1:
                 loss = loss / self.gradient_accumulation_steps
@@ -272,21 +381,21 @@ class Trainer:
             # self.tr_loss += loss.item()  #? Sum up new loss value
             all_losses.append(loss.item())
 
-            # ? Optimize (update weights)
+            # #? Optimize (update weights)
             if (step + 1) % self.gradient_accumulation_steps == 0:
                 if self.fp16 and not self.no_cuda:
                     torch.nn.utils.clip_grad_norm_(
                         amp.master_params(self.optimizer), self.max_grad_norm
                     )
                 else:
-                    torch.nn.utils.clip_grad_norm_(self.model.net.parameters(), self.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
                 self.optimizer.step()
                 self.scheduler.step()  # Update learning rate schedule
-                self.model.net.zero_grad()
+                self.model.zero_grad()
                 self.global_step += 1
 
-                # # !Uncomment this
+                # # # !Uncomment this
                 # if (
                 #     self.local_rank in [-1, 0]
                 #     and self.logging_every_epoch > 0
@@ -295,7 +404,7 @@ class Trainer:
                 #     if self.local_rank == -1 and self.evaluate_during_training:
                 #         raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
 
-            # !Uncomment this
+            # # !Uncomment this
             if 0 < self.max_steps < self.global_step:
                 print(
                     "Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})"
@@ -328,16 +437,16 @@ class Trainer:
         print(f"  Gradient Accumulation steps = {self.gradient_accumulation_steps}")
         print(f"  Total optimization steps = {self.t_total}")
 
-        self.global_step = 0
+        self.global_step = 0        
         self.tr_loss, self.logging_loss = 0.0, 0.0
 
         epoch_iterator = tqdm(
             range(self.num_train_epochs), desc="Epoch", disable=self.local_rank not in [-1, 0]
         )
         for epoch in epoch_iterator:  # range(1, self.num_epochs + 1):
-            if self.evaluate_during_training and self.local_rank in [-1, 0]:
+            # if self.evaluate_during_training and self.local_rank in [-1, 0]:
                 # torch.distributed.barrier() #! Uncomment those in case you want to try DDP
-                self.evaluate("develop")
+                # self.evaluate("develop") 
                 # torch.distributed.barrier() #! Uncomment those in case you want to try DDP
 
             if isinstance(self.train_dataloader, DataLoader) and isinstance(
@@ -353,18 +462,18 @@ class Trainer:
             #     break
             self.logging_epoch += 1
 
-        #!Add  # Save the trained model and the tokenizer
+        # #!Add  # Save the trained model and the tokenizer
         # if (self.local_rank == -1 or torch.distributed.get_rank() == 0):
         #     self.save_model_and_tokenizer()
 
         print(f"{'-'*100}\n...Done training!\n")
-        self.model.net.eval()
+        self.model.eval()
 
         dataset_evaluated = None
 
         if self.local_rank in [-1, 0]:
-            self.model.save_model(save_dir=self.save_model_path, epoch=self.num_train_epochs)
-            dataset_evaluated = self.evaluate("develop")
+            # self.model.save_model(save_dir=self.save_model_path, epoch=self.num_train_epochs)
+            # dataset_evaluated = self.evaluate("develop")
             print(f"{'-'*100}\n...Done evaluating!\n")
 
         return dataset_evaluated
@@ -377,64 +486,62 @@ class Trainer:
                 self.train_dataset,
                 self.train_info,
             )
-        else:
-            dataloader, dataset, info = (
-                self.evaluate_dataloader,
-                self.evaluate_dataset,
-                self.evaluate_info,
-            )
+        # else:
+        #     dataloader, dataset, info = (
+        #         self.evaluate_dataloader,
+        #         self.evaluate_dataset,
+        #         self.evaluate_info,
+        #     )
 
-        if self.verbose:
-            # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
-            print(f"  Num examples for dataset = {len(dataset)}")
-            print(f"  Batch size = {self.eval_batch_size}")
+        # if self.verbose:
+        #     # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
+        #     print(f"  Num examples for dataset = {len(dataset)}")
+        #     print(f"  Batch size = {self.eval_batch_size}")
 
-        self.model.net.eval()
+        # self.model.eval()
 
-        with torch.no_grad():
-            all_logits = []
-            all_losses = []
-            batch_iterator = tqdm(dataloader, desc="Eval - Batch")
-            for batch in batch_iterator:
-                batch_list = self._batch_to_device(batch)
-                inputs = {
-                    "input_ids": batch_list[0],
-                    "attention_mask": batch_list[1],
-                    "token_type_ids": batch_list[2],
-                    "xpath_tags_seq": batch_list[3],
-                    "xpath_subs_seq": batch_list[4],
-                    "labels": batch_list[5],  # ? Removing this won't report loss
-                }
-                outputs = self.model.net(**inputs)
-                loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
-                logits = outputs["logits"]  # which is (bs,seq_len,node_type)
-                all_logits.append(logits.detach().cpu())
+        # with torch.no_grad():
+        #     all_logits = []
+        #     all_losses = []
+        #     batch_iterator = tqdm(dataloader, desc="Eval - Batch")
+        #     for batch in batch_iterator:
+        #         batch_list = self._batch_to_device(batch)
+        #         inputs = {
+        #             "input_ids": batch_list[0],
+        #             "attention_mask": batch_list[1],
+        #             "token_type_ids": batch_list[2],
+        #             "labels": batch_list[3],  #? Removing this won't report loss
+        #         }
+        #         outputs = self.model(**inputs)
+        #         loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
+        #         logits = outputs["logits"]  # which is (bs,seq_len,node_type)
+        #         all_logits.append(logits.detach().cpu())
 
-                if self.n_gpu > 1:
-                    # ? to average on multi-gpu parallel (not distributed) training
-                    loss = loss.mean()
+        #         if self.n_gpu > 1:
+        #             #? to average on multi-gpu parallel (not distributed) training
+        #             loss = loss.mean()
 
-                # ! Not sure if I need this here to compute correctly the loss
-                # if self.gradient_accumulation_steps > 1:
-                #     loss = loss / self.gradient_accumulation_steps
-                all_losses.append(loss.item())
+        #         # ! Not sure if I need this here to compute correctly the loss
+        #         # if self.gradient_accumulation_steps > 1:
+        #         #     loss = loss / self.gradient_accumulation_steps
+        #         all_losses.append(loss.item())
 
-        print(f"- Evaluation Loss: {np.mean(all_losses)}")
-        if self.run:
-            if self.just_evaluation:
-                log_name = f"{dataset_name}_Evaluation_Loss_Final"
-            else:
-                log_name = f"{dataset_name}_Evaluation_Loss"
-            self.run.log({log_name: np.mean(all_losses)})
+        # print(f"- Evaluation Loss: {np.mean(all_losses)}")
+        # if self.run:
+        #     if self.just_evaluation:
+        #         log_name = f"{dataset_name}_Evaluation_Loss_Final"
+        #     else:
+        #         log_name = f"{dataset_name}_Evaluation_Loss"
+        #     self.run.log({log_name: np.mean(all_losses)})
 
-        result_df = self.recreate_dataset(all_logits, info)
+        # result_df = self.recreate_dataset(all_logits, info)
 
-        metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
-        if self.run:
-            self.log_metrics(metrics_per_dataset)
-            self.log_metrics(cm_per_dataset)
+        # metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
+        # if self.run:
+        #     self.log_metrics(metrics_per_dataset)
+        #     self.log_metrics(cm_per_dataset)
 
-        return result_df
+        # return result_df
 
     def recreate_dataset(self, all_logits, info):
         # TODO(Aimore): This is very inneficient specially when evaluating at each epoch
@@ -463,7 +570,7 @@ class Trainer:
                 involved_first_tokens_text,
                 involved_first_tokens_gt_text,
                 involved_first_tokens_node_attribute,
-                involved_first_tokens_node_tag,
+                involved_first_tokens_node_tag
             ) = sub_info
 
             for pos, xpath, type, text, gt_text, node_attribute, node_tag in zip(
@@ -477,10 +584,10 @@ class Trainer:
 
             ):
 
-                pred = sub_prob[pos]  # ? This gets the first logit of each respective node
-                # ? sub_prob = [tensor([0.0045, 0.9955]), ...], sub_prob.shape = [384, 2]
-                # ? pos = 14
-                # ? pred = tensor([0.0045, 0.9955])
+                pred = sub_prob[pos]  #? This gets the first logit of each respective node
+                # #? sub_prob = [tensor([0.0045, 0.9955]), ...], sub_prob.shape = [384, 2]
+                # #? pos = 14
+                # #? pred = tensor([0.0045, 0.9955])
                 if xpath not in all_res[html_path]:
                     all_res[html_path][xpath] = {}
                     all_res[html_path][xpath]["pred"] = pred
@@ -545,3 +652,87 @@ class Trainer:
             f"Node Classification Metrics per Dataset:\n {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}"
         )
         return metrics_per_dataset, cm_per_dataset
+
+
+
+# %%
+# from markuplmft.fine_tuning.run_swde.trainer import Trainer
+
+print(f"\n{local_rank} - Preparing Trainer...")
+# #? Leave this barrier here because it unlocks
+# #? the other GPUs that were waiting at: 
+# #? load_or_cache_websites in DataReader
+if local_rank == 0: 
+    torch.distributed.barrier()
+
+train_dataset = dataset
+develop_dataset = train_dataset
+
+trainer = Trainer(
+    model = model,
+    train_dataset = train_dataset,
+    evaluate_dataset = develop_dataset,
+    local_rank=local_rank,
+    device=device, 
+    n_gpu=n_gpu,
+    run=None,
+    **trainer_config,
+)
+
+# %%
+trainer.train()
+
+# %%
+sampler = SequentialSampler(dataset)
+batch_size = 16
+num_workers = 16
+dl = DataLoader(
+            dataset=dataset,
+            sampler=sampler,
+            batch_size=batch_size,
+            pin_memory=True,
+            num_workers=num_workers,)
+
+# %%
+all_logits = []
+model.eval()
+for batch_list in dl:
+    batch_list = trainer._batch_to_device(batch_list)
+    inputs = {
+                    "input_ids": batch_list[0],
+                    "attention_mask": batch_list[1],
+                    "token_type_ids": batch_list[2],
+                    # "labels": batch_list[3],  #? Removing this won't report loss
+                }
+    
+    outputs = model(**inputs)
+    all_logits.append(outputs['logits'].detach().cpu())
+
+# %%
+all_probs = torch.softmax(
+            torch.cat(all_logits, dim=0), dim=2
+        ) 
+
+# %%
+all_probs.shape
+
+# %%
+node_probs = []
+for feature_index, feature_ids in enumerate(dataset.relative_first_tokens_node_index):
+    node_probs.extend(all_probs[feature_index, [dataset.relative_first_tokens_node_index[feature_index]], 0][0])
+
+node_probs
+
+# %%
+dataset.
+
+# %%
+df
+
+# %%
+# 
+[torch.LongTensor(x) for x in dataset.relative_first_tokens_node_index]
+
+# %%
+# 0.6696927785873413
+# 0.6806140422821045
