@@ -24,8 +24,8 @@ def compute_metrics(truth, pred):
     return metrics, cm
 
 def compute_metrics_per_dataset(df):
-    groung_truth = df['truth']
-    predictions = df['pred_type']
+    groung_truth = df['node_gt']
+    predictions = df['node_pred']
     return compute_metrics(groung_truth, predictions)
 
 

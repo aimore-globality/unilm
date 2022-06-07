@@ -30,15 +30,11 @@ featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=M
 # df = pd.read_pickle("/data/GIT/delete/develop/prepared/1820productions.com.pkl")
 # df = pd.read_pickle("/data/GIT/delete/develop/1820productions.com.pkl")
 df = pd.read_pickle("/data/GIT/delete/develop/4-most.co.uk.pkl")
+print(f"Memory: {sum(df.memory_usage(deep=True))/10**6:.2f} Mb")
+df.head(3)
 
 # %%
-features = df.iloc[0]["swde_features"]
-
-# %%
-# features = featurizer.get_swde_features(df.values)
-
-# %%
-dataset = featurizer.feature_to_dataset(features)
+# df.apply(lambda x: featurizer.get_swde_features(x['nodes'], x['url']),axis=1)
 
 # %%
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -50,12 +46,8 @@ model  = transformers.RobertaForTokenClassification.from_pretrained('roberta-bas
 # %%
 import wandb
 import os
-from pprint import pprint
 import torch
-
 from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
-
-# from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 try:
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -85,7 +77,7 @@ trainer_config = dict(
     # # ? Scheduler
     warmup_ratio=0.0, #? Default: 0
     # # ? Trainer
-    num_epochs = 4, 
+    num_epochs = 1, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
     per_gpu_train_batch_size = int(16), #? 34 Max with the big machine 
@@ -162,6 +154,7 @@ class Trainer:
         gradient_accumulation_steps: int,
         max_grad_norm: float,
         save_model_path: str,
+        featurizer,
         overwrite_model: bool = False,
         fp16: bool = True,
         fp16_opt_level: str = "O1",
@@ -181,6 +174,7 @@ class Trainer:
         self.just_evaluation = just_evaluation
         set_seed(self.n_gpu)  #? For reproducibility
 
+        self.featurizer = featurizer
         self.logging_epoch = 0
         
         # #? Setting WandB Log
@@ -205,8 +199,9 @@ class Trainer:
         self.train_dataset = train_dataset
         self.evaluate_dataset = evaluate_dataset
 
-        self.train_dataloader = self._get_dataloader(self.train_dataset, is_train=True)
-        self.evaluate_dataloader = self._get_dataloader(self.evaluate_dataset, is_train=False)
+        
+        self.train_dataloader, _ = self._get_dataloader(self.train_dataset, is_train=True)
+        self.evaluate_dataloader, _ = self._get_dataloader(self.evaluate_dataset, is_train=False)
         # #! Maybe pass this to a function before training prepare_for_training >
 
         self.max_steps = max_steps
@@ -278,7 +273,7 @@ class Trainer:
         ):
             raise ValueError(
                 f"Output directory ({self.save_model_path}) already exists and is not empty. Use --overwrite_model to overcome."
-            )
+            )        
 
         training_samples = len(train_dataset)
         evaluation_samples = len(evaluate_dataset)
@@ -321,20 +316,23 @@ class Trainer:
         )
 
     def _get_dataloader(self, dataset: pd.DataFrame, is_train: bool = True) -> DataLoader:
-        print(f"Get dataloader for dataset: {len(dataset)}")
+        features = dataset["swde_features"].explode().values
+        dataset_featurized = self.featurizer.feature_to_dataset(features)
+
+        print(f"Get dataloader for dataset: {len(dataset_featurized)}")
         if is_train:
-            sampler = RandomSampler(dataset)
+            sampler = RandomSampler(dataset_featurized)
             batch_size = self.train_batch_size
         else:
-            sampler = SequentialSampler(dataset)
+            sampler = SequentialSampler(dataset_featurized)
             batch_size = self.eval_batch_size
         if self.local_rank != -1:
-            sampler = DistributedSampler(dataset)
+            sampler = DistributedSampler(dataset_featurized)
 
         num_workers = int(mp.cpu_count() / torch.cuda.device_count())
 
         loader = DataLoader(
-            dataset=dataset,
+            dataset=dataset_featurized,
             sampler=sampler,
             batch_size=batch_size,
             pin_memory=True,
@@ -342,7 +340,7 @@ class Trainer:
             # generator="forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
             # multiprocessing_context= "forkserver", #? According to this: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#:~:text=If%20you%20plan,change%20this%20setting.
         )
-        return loader
+        return loader, dataset_featurized
 
     def _batch_to_device(self, batch_list):
         batch_list = tuple(batch.to(self.device) for batch in batch_list)
@@ -405,12 +403,12 @@ class Trainer:
                 #         raise ValueError("Shouldn't `evaluate_during_training` when ft SWDE!!")
 
             # # !Uncomment this
-            if 0 < self.max_steps < self.global_step:
-                print(
-                    "Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})"
-                )
-                batch_iterator.close()
-                break
+            # if 0 < self.max_steps < self.global_step:
+            #     print(
+            #         "Forced break because self.max_steps ({self.max_steps}) > self.global_step ({self.global_step})"
+            #     )
+            #     batch_iterator.close()
+            #     break
 
         print(f"- Training Loss: {np.mean(all_losses)}")
         if self.local_rank in [-1, 0]:
@@ -473,7 +471,7 @@ class Trainer:
 
         if self.local_rank in [-1, 0]:
             # self.model.save_model(save_dir=self.save_model_path, epoch=self.num_train_epochs)
-            # dataset_evaluated = self.evaluate("develop")
+            dataset_evaluated = self.evaluate("develop")
             print(f"{'-'*100}\n...Done evaluating!\n")
 
         return dataset_evaluated
@@ -481,162 +479,83 @@ class Trainer:
     def evaluate(self, dataset_name="develop") -> Dict[str, float]:
         print(f"\n****** Running evaluation for: {dataset_name.upper()} ******\n")
         if dataset_name == "train":
-            dataloader, dataset, info = (
-                self._get_dataloader(self.train_dataset, is_train=False),
-                self.train_dataset,
-                self.train_info,
-            )
-        # else:
-        #     dataloader, dataset, info = (
-        #         self.evaluate_dataloader,
-        #         self.evaluate_dataset,
-        #         self.evaluate_info,
-        #     )
+            dataloader, dataset_featurized = self._get_dataloader(self.train_dataset, is_train=False)
+            dataset = self.train_dataset.copy(deep=True)
 
-        # if self.verbose:
-        #     # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
-        #     print(f"  Num examples for dataset = {len(dataset)}")
-        #     print(f"  Batch size = {self.eval_batch_size}")
+        else:
+            dataloader, dataset_featurized = self._get_dataloader(self.evaluate_dataset, is_train=False)
+            dataset = self.evaluate_dataset.copy(deep=True)
 
-        # self.model.eval()
+        if self.verbose:
+            # print(f"  Num examples for {website} = {len(data_loader.dataset)}")
+            print(f"  Num examples for dataset = {len(dataset)}")
+            print(f"  Batch size = {self.eval_batch_size}")
 
-        # with torch.no_grad():
-        #     all_logits = []
-        #     all_losses = []
-        #     batch_iterator = tqdm(dataloader, desc="Eval - Batch")
-        #     for batch in batch_iterator:
-        #         batch_list = self._batch_to_device(batch)
-        #         inputs = {
-        #             "input_ids": batch_list[0],
-        #             "attention_mask": batch_list[1],
-        #             "token_type_ids": batch_list[2],
-        #             "labels": batch_list[3],  #? Removing this won't report loss
-        #         }
-        #         outputs = self.model(**inputs)
-        #         loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
-        #         logits = outputs["logits"]  # which is (bs,seq_len,node_type)
-        #         all_logits.append(logits.detach().cpu())
+        self.model.eval()
 
-        #         if self.n_gpu > 1:
-        #             #? to average on multi-gpu parallel (not distributed) training
-        #             loss = loss.mean()
+        with torch.no_grad():
+            all_logits = []
+            all_losses = []
+            batch_iterator = tqdm(dataloader, desc="Eval - Batch")
+            for batch in batch_iterator:
+                batch_list = self._batch_to_device(batch)
+                inputs = {
+                    "input_ids": batch_list[0],
+                    "attention_mask": batch_list[1],
+                    "token_type_ids": batch_list[2],
+                    "labels": batch_list[3],  #? Removing this won't report loss
+                }
+                outputs = self.model(**inputs)
+                loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
+                logits = outputs["logits"]  # which is (bs,seq_len,node_type)
+                all_logits.append(logits.detach().cpu())
 
-        #         # ! Not sure if I need this here to compute correctly the loss
-        #         # if self.gradient_accumulation_steps > 1:
-        #         #     loss = loss / self.gradient_accumulation_steps
-        #         all_losses.append(loss.item())
+                if self.n_gpu > 1:
+                    # #? to average on multi-gpu parallel (not distributed) training
+                    loss = loss.mean()
 
-        # print(f"- Evaluation Loss: {np.mean(all_losses)}")
-        # if self.run:
-        #     if self.just_evaluation:
-        #         log_name = f"{dataset_name}_Evaluation_Loss_Final"
-        #     else:
-        #         log_name = f"{dataset_name}_Evaluation_Loss"
-        #     self.run.log({log_name: np.mean(all_losses)})
+                # # ! Not sure if I need this here to compute correctly the loss
+                # if self.gradient_accumulation_steps > 1:
+                #     loss = loss / self.gradient_accumulation_steps
+                all_losses.append(loss.item())
 
-        # result_df = self.recreate_dataset(all_logits, info)
+        print(f"- Evaluation Loss: {np.mean(all_losses)}")
+        if self.run:
+            if self.just_evaluation:
+                log_name = f"{dataset_name}_Evaluation_Loss_Final"
+            else:
+                log_name = f"{dataset_name}_Evaluation_Loss"
+            self.run.log({log_name: np.mean(all_losses)})
 
-        # metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(result_df)
-        # if self.run:
-        #     self.log_metrics(metrics_per_dataset)
-        #     self.log_metrics(cm_per_dataset)
+        all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2) 
 
-        # return result_df
+        node_probs = []
+        for feature_index, feature_ids in enumerate(dataset_featurized.relative_first_tokens_node_index):
+            node_probs.extend(all_probs[feature_index, [dataset_featurized.relative_first_tokens_node_index[feature_index]], 0][0])
 
-    def recreate_dataset(self, all_logits, info):
-        # TODO(Aimore): This is very inneficient specially when evaluating at each epoch
-        print("Recreate dataset...")
+        node_probs = np.array(node_probs)
+        print(len(node_probs))
+        print("dataset: ", len(dataset))
+        dataset = dataset.explode('nodes').reset_index()
+        dataset = dataset.join(pd.DataFrame(dataset.pop('nodes').tolist(), columns=["xpath","node_text","gt_tag","node_gt_text" ]))
+        print(f"Memory: {sum(df.memory_usage(deep=True))/10**6:.2f} Mb")
+        # df.drop(['html', "swde_features"], axis=1, inplace=True)
+        dataset["html"] = dataset["html"].astype("category")
+        print(f"Memory: {sum(dataset.memory_usage(deep=True))/10**6:.2f} Mb")
+        dataset['node_prob'] = node_probs
+        dataset['node_pred'] = node_probs > 0.5
 
-        # print(f"\nlen(all_logits): {len(all_logits)}")
-        # print(f"\nall_logits: {all_logits}")
-        # print(f"\nall_logits[0].shape: {all_logits[0].shape}")
-        # print(f"\nall_logits[0]: {all_logits[0]}")
+        # TODO: move this out
+        dataset["node_gt"] = dataset["gt_tag"] == 'PAST_CLIENT' 
+        dataset["node_pred"] = dataset["node_pred"].apply(lambda x: "PAST_CLIENT" if x else "none")
+        dataset["node_gt"] = dataset["node_gt"].apply(lambda x: "PAST_CLIENT" if x else "none")
 
-        all_probs = torch.softmax(
-            torch.cat(all_logits, dim=0), dim=2
-        )  # (all_samples, seq_len, node_type)
+        metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(dataset)
+        if self.run:
+            self.log_metrics(metrics_per_dataset)
+            self.log_metrics(cm_per_dataset)
 
-        print(len(all_probs), len(info))
-        assert len(all_probs) == len(info)
-
-        all_res = collections.defaultdict(dict)
-
-        for sub_prob, sub_info in zip(all_probs, info):
-            (
-                html_path,
-                involved_first_tokens_pos,
-                involved_first_tokens_xpaths,
-                involved_first_tokens_types,
-                involved_first_tokens_text,
-                involved_first_tokens_gt_text,
-                involved_first_tokens_node_attribute,
-                involved_first_tokens_node_tag
-            ) = sub_info
-
-            for pos, xpath, type, text, gt_text, node_attribute, node_tag in zip(
-                involved_first_tokens_pos,
-                involved_first_tokens_xpaths,
-                involved_first_tokens_types,
-                involved_first_tokens_text,
-                involved_first_tokens_gt_text,
-                involved_first_tokens_node_attribute,
-                involved_first_tokens_node_tag
-
-            ):
-
-                pred = sub_prob[pos]  #? This gets the first logit of each respective node
-                # #? sub_prob = [tensor([0.0045, 0.9955]), ...], sub_prob.shape = [384, 2]
-                # #? pos = 14
-                # #? pred = tensor([0.0045, 0.9955])
-                if xpath not in all_res[html_path]:
-                    all_res[html_path][xpath] = {}
-                    all_res[html_path][xpath]["pred"] = pred
-                    all_res[html_path][xpath]["truth"] = type
-                    all_res[html_path][xpath]["text"] = text
-                    all_res[html_path][xpath]["gt_text"] = gt_text
-                    all_res[html_path][xpath]["node_attribute"] = node_attribute
-                    all_res[html_path][xpath]["node_tag"] = node_tag
-
-                else:
-                    all_res[html_path][xpath]["pred"] += pred
-                    assert all_res[html_path][xpath]["truth"] == type
-                    assert all_res[html_path][xpath]["text"] == text
-
-        lines = {
-            "html_path": [],
-            "xpath": [],
-            "text": [],
-            "gt_text": [],
-            "truth": [],
-            "node_attribute": [],
-            "node_tag": [],
-            "pred_type": [],
-            "final_probs": [],
-        }
-
-        for html_path in all_res:
-            # E.g. all_res [dict] = {html_path = {xpath = {'pred': tensor([0.4181, 0.5819]), 'truth': 'PAST_CLIENT', 'text': 'A healthcare client gains control of their ACA processes | BerryDunn'},...}, ...}
-            for xpath in all_res[html_path]:
-                final_probs = all_res[html_path][xpath]["pred"] / torch.sum(
-                    all_res[html_path][xpath]["pred"]
-                )  # TODO(aimore): Why is this even here? torch.sum(both prob) will always be 1, what is the point then? Maybe in case of more than one label?
-                pred_id = torch.argmax(final_probs).item()
-                pred_type = constants.ATTRIBUTES_PLUS_NONE[pred_id]
-                final_probs = final_probs.numpy().tolist()
-
-                lines["html_path"].append(html_path)
-                lines["xpath"].append(xpath)
-                lines["gt_text"].append(all_res[html_path][xpath]["gt_text"])
-                lines["text"].append(all_res[html_path][xpath]["text"])
-                lines["truth"].append(all_res[html_path][xpath]["truth"])
-                lines["node_attribute"].append(all_res[html_path][xpath]["node_attribute"])
-                lines["node_tag"].append(all_res[html_path][xpath]["node_tag"])
-                lines["pred_type"].append(pred_type)
-                lines["final_probs"].append(final_probs)
-
-        result_df = pd.DataFrame(lines)
-
-        return result_df
+        return dataset
 
     def log_metrics(self, metric):
         for key, value in metric.items():
@@ -654,7 +573,6 @@ class Trainer:
         return metrics_per_dataset, cm_per_dataset
 
 
-
 # %%
 # from markuplmft.fine_tuning.run_swde.trainer import Trainer
 
@@ -665,13 +583,11 @@ print(f"\n{local_rank} - Preparing Trainer...")
 if local_rank == 0: 
     torch.distributed.barrier()
 
-train_dataset = dataset
-develop_dataset = train_dataset
-
 trainer = Trainer(
     model = model,
-    train_dataset = train_dataset,
-    evaluate_dataset = develop_dataset,
+    train_dataset = df,
+    evaluate_dataset = df,
+    featurizer = featurizer,
     local_rank=local_rank,
     device=device, 
     n_gpu=n_gpu,
@@ -680,58 +596,15 @@ trainer = Trainer(
 )
 
 # %%
-trainer.train()
+dd = trainer.train()
 
 # %%
-sampler = SequentialSampler(dataset)
-batch_size = 16
-num_workers = 16
-dl = DataLoader(
-            dataset=dataset,
-            sampler=sampler,
-            batch_size=batch_size,
-            pin_memory=True,
-            num_workers=num_workers,)
+dd
 
 # %%
-all_logits = []
-model.eval()
-for batch_list in dl:
-    batch_list = trainer._batch_to_device(batch_list)
-    inputs = {
-                    "input_ids": batch_list[0],
-                    "attention_mask": batch_list[1],
-                    "token_type_ids": batch_list[2],
-                    # "labels": batch_list[3],  #? Removing this won't report loss
-                }
-    
-    outputs = model(**inputs)
-    all_logits.append(outputs['logits'].detach().cpu())
-
-# %%
-all_probs = torch.softmax(
-            torch.cat(all_logits, dim=0), dim=2
-        ) 
-
-# %%
-all_probs.shape
-
-# %%
-node_probs = []
-for feature_index, feature_ids in enumerate(dataset.relative_first_tokens_node_index):
-    node_probs.extend(all_probs[feature_index, [dataset.relative_first_tokens_node_index[feature_index]], 0][0])
-
-node_probs
-
-# %%
-dataset.
-
-# %%
-df
-
-# %%
-# 
-[torch.LongTensor(x) for x in dataset.relative_first_tokens_node_index]
+dataset.relative_first_tokens_node_index[:10] #? Just to understand that the amout of nodes will match the number of nodes in the dataset
+# #? In case we change this to multiple nodes that won't be the same and the absolute_node_index will be important to combine the signal of multiple features for one node
+# dataset.absolute_node_index
 
 # %%
 # 0.6696927785873413
