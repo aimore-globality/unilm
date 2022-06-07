@@ -51,6 +51,7 @@ class SwdeDataset(Dataset):
         all_token_type_ids,
         relative_first_tokens_node_index,
         absolute_node_index,
+        url,
         all_labels=None,
     ):
 
@@ -61,6 +62,7 @@ class SwdeDataset(Dataset):
         ]
         self.relative_first_tokens_node_index = relative_first_tokens_node_index
         self.absolute_node_index = absolute_node_index
+        self.url = url
 
         if not all_labels is None:
             self.tensors.append(all_labels)
@@ -298,6 +300,7 @@ class Featurizer:
         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
         relative_first_tokens_node_index = [f.relative_first_tokens_node_index for f in features]
         absolute_node_index = [f.absolute_node_index for f in features]
+        url = [f.url for f in features]
 
         #! If there are labels then create with labels
         all_labels = torch.tensor([f.labels for f in features], dtype=torch.long)
@@ -307,6 +310,7 @@ class Featurizer:
         all_token_type_ids,
         relative_first_tokens_node_index,
         absolute_node_index,
+        url,
         all_labels)
 
         return dataset

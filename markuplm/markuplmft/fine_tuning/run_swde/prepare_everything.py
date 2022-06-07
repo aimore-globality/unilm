@@ -50,8 +50,8 @@ class PrepareData:
     -
     """
 
-    def __init__(self, tag="PAST_CLIENT"):
-        self.tag = tag
+    def __init__(self, gt_tag="PAST_CLIENT"):
+        self.gt_tag = gt_tag
 
     def load_data(self, load_data_path, limit=-1):
         print("load_data")
@@ -69,17 +69,17 @@ class PrepareData:
 
     def format_annotation(self, df):
         print("Format_annotation...")
-        df[f"{self.tag}-annotations"] = df["annotations"].apply(
-            lambda annotation: annotation.get(self.tag)
+        df[f"{self.gt_tag}-annotations"] = df["annotations"].apply(
+            lambda annotation: annotation.get(self.gt_tag)
         )
-        df[f"{self.tag}-annotations"] = df[f"{self.tag}-annotations"].fillna("").apply(list)
+        df[f"{self.gt_tag}-annotations"] = df[f"{self.gt_tag}-annotations"].fillna("").apply(list)
 
-        df[f"{self.tag}-gt_text"] = get_annotations(df[f"{self.tag}-annotations"], "text")
-        df[f"{self.tag}-gt_value"] = get_annotations(df[f"{self.tag}-annotations"], "value")
-        df[f"{self.tag}-gt_value_untax"] = df[f"{self.tag}-gt_value"].apply(
+        df[f"{self.gt_tag}-gt_text"] = get_annotations(df[f"{self.gt_tag}-annotations"], "text")
+        df[f"{self.gt_tag}-gt_value"] = get_annotations(df[f"{self.gt_tag}-annotations"], "value")
+        df[f"{self.gt_tag}-gt_value_untax"] = df[f"{self.gt_tag}-gt_value"].apply(
             lambda gt_values: [untaxonomize_gt_value(gt_value) for gt_value in gt_values]
         )
-        df[f"{self.tag}-annotations-untax"] = df[f"{self.tag}-annotations"].apply(
+        df[f"{self.gt_tag}-annotations-untax"] = df[f"{self.gt_tag}-annotations"].apply(
             lambda annotations: [
                 {
                     "gt_text": annotation["text"],
@@ -88,7 +88,7 @@ class PrepareData:
                 for annotation in annotations
             ]
         )
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        df[f"{self.gt_tag}-gt_text_count"] = df[f"{self.gt_tag}-gt_text"].apply(len)
 
         print(f" # Annotations (gt_text): {self.count_all_labels(df)}")
         print(f" # Annotations (gt_value): {self.count_all_labels(df, 'value')}")
@@ -157,8 +157,8 @@ class PrepareData:
 
     def get_negative_fraction(self, df, negative_fraction=0.10):
         print("Get_negative_fraction...")
-        df_positives = df[df[f"{self.tag}-gt_text_count"] > 0]
-        df_negatives = df[df[f"{self.tag}-gt_text_count"] == 0]
+        df_positives = df[df[f"{self.gt_tag}-gt_text_count"] > 0]
+        df_negatives = df[df[f"{self.gt_tag}-gt_text_count"] == 0]
 
         df_negatives_sample = df_negatives
 
@@ -188,7 +188,7 @@ class PrepareData:
         return df_positives, df_negatives, df_negatives_sample
 
     def count_all_labels(self, df, tag_type="text"):
-        return df[f"{self.tag}-gt_{tag_type}"].apply(len).sum()
+        return df[f"{self.gt_tag}-gt_{tag_type}"].apply(len).sum()
 
     def remove_non_html_pages(self, df):
         pages_without_html_explicity = df[df["html"] == "PLACEHOLDER_HTML"]
@@ -220,7 +220,7 @@ class PrepareData:
     def remove_annotations_from_images(self, df):
         print("remove_annotations_from_images")
         print(f"# of Annotations (gt_text) before: {self.count_all_labels(df)}")
-        df[f"{self.tag}-gt_text"] = df[f"{self.tag}-gt_text"].apply(
+        df[f"{self.gt_tag}-gt_text"] = df[f"{self.gt_tag}-gt_text"].apply(
             lambda annotations: [
                 annotation
                 for annotation in annotations
@@ -239,7 +239,7 @@ class PrepareData:
 
         for enum, row in df.iterrows():
             url = row["url"]
-            if not row.isnull()[f"{self.tag}-gt_text"]:
+            if not row.isnull()[f"{self.gt_tag}-gt_text"]:
                 # clean_dom_tree = get_dom_tree(row["html"])
                 # dom_tree = clean_dom_tree
                 dom_tree = lxml_html.fromstring(
@@ -248,7 +248,7 @@ class PrepareData:
 
                 annotations_that_can_be_found = []
                 annotations_that_cannot_be_found = []
-                for text_annotation in row[f"{self.tag}-gt_text"]:
+                for text_annotation in row[f"{self.gt_tag}-gt_text"]:
                     found = False
                     # TODO (Aimore): This process is very similar to the one that actually annotates the nodes. It would be better if they were reused.
                     for node in dom_tree.iter():
@@ -264,7 +264,7 @@ class PrepareData:
                                 break
                         # #? In case I want to add the images:
                         # ? 1. Don't remove img links from annotations
-                        # ? 2. The img html tag contains: alt, title and src as potential places that the PC could be found.
+                        # ? 2. The img html gt_tag contains: alt, title and src as potential places that the PC could be found.
                         # ? 3. Find a way to recreate the img node into these three pieces and incoporate then into embedding
                         # for html_tag, xpath_content in node.items():
                         #     if text_annotation in xpath_content:
@@ -275,7 +275,7 @@ class PrepareData:
 
                 if len(annotations_that_cannot_be_found) > 0:
                     print(
-                        f"{len(annotations_that_cannot_be_found)} {self.tag} cannot be found in {enum } \t: {annotations_that_cannot_be_found} - {url}"
+                        f"{len(annotations_that_cannot_be_found)} {self.gt_tag} cannot be found in {enum } \t: {annotations_that_cannot_be_found} - {url}"
                     )
                     print()
 
@@ -289,9 +289,9 @@ class PrepareData:
             f"Number of labels lost because they couldn't be found in the page: {initial_amount_of_label - final_amount_of_label}"
         )
 
-        df[f"{self.tag}-gt_text"] = all_annotations_left
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
-        df = df[df[f"{self.tag}-gt_text_count"] > 0]
+        df[f"{self.gt_tag}-gt_text"] = all_annotations_left
+        df[f"{self.gt_tag}-gt_text_count"] = df[f"{self.gt_tag}-gt_text"].apply(len)
+        df = df[df[f"{self.gt_tag}-gt_text_count"] > 0]
         print("done")
         return df
 
@@ -311,8 +311,8 @@ class PrepareData:
 
     def add_gt_counts_and_sort(self, df):
         print("Add_gt_counts_and_sort...")
-        df[f"{self.tag}-gt_text_counts"] = domain_df[f"{self.tag}-gt_text"].apply(len)
-        return df.sort_values(f"{self.tag}-gt_text_counts", ascending=False)
+        df[f"{self.gt_tag}-gt_text_count"] = domain_df[f"{self.gt_tag}-gt_text"].apply(len)
+        return df.sort_values(f"{self.gt_tag}-gt_text_count", ascending=False)
 
     def add_page_id(self, df):
         df["page_id"] = [str(index).zfill(4) for index in range(len(df))]
@@ -327,9 +327,9 @@ class PrepareData:
         folder_path = root_folder / "ground_truth"
         folder_path.mkdir(parents=True, exist_ok=True)
 
-        page_annotations_df = df[["page_id", f"{self.tag}-gt_text_counts", f"{self.tag}-gt_text"]]
+        page_annotations_df = df[["page_id", f"{self.gt_tag}-gt_text_count", f"{self.gt_tag}-gt_text"]]
         page_annotations_df.to_csv(
-            folder_path / f"{domain_name}-{self.tag}.csv", sep="\t", index=False
+            folder_path / f"{domain_name}-{self.gt_tag}.csv", sep="\t", index=False
         )
 
     def save_htmls(self, df, root_folder, domain_name):
@@ -353,8 +353,8 @@ class PrepareData:
         domain_nodes = []
         for page_nodes in df["nodes"]:
             domain_nodes.extend(page_nodes)
-        # TODO: Probably remove "tag" from here
-        domain_nodes_df = pd.DataFrame(domain_nodes, columns=["xpath", "text", "tag", "gt_texts"])
+        # TODO: Probably remove "gt_tag" from here
+        domain_nodes_df = pd.DataFrame(domain_nodes, columns=["xpath", "text", "gt_tag", "gt_texts"])
         save_path = folder_path / f"{domain_name}.pkl"
         print(f"save_path: {save_path}")
         domain_nodes_df.to_pickle(save_path)
@@ -370,7 +370,7 @@ class PrepareData:
         """
         Node: [(xpath, text), (...)]
         gt_texts: [gt_text1, gt_text2]
-        Annotated_Node: [(xpath, text, tag, [gt_text1, gt_text2]), (...)]
+        Annotated_Node: [(xpath, text, gt_tag, [gt_text1, gt_text2]), (...)]
         """
 
         nodes_annotated = []
@@ -386,7 +386,7 @@ class PrepareData:
                 new_node_text = (
                     xpath,
                     node_text,
-                    self.tag,
+                    self.gt_tag,
                     gt_text_in_node,
                 )
             nodes_annotated.append(new_node_text)
@@ -394,7 +394,7 @@ class PrepareData:
 
     def add_classification_label_to_nodes(self, df):
         df["nodes"] = df.apply(
-            lambda row: self.add_classification_label(row["nodes"], row[f"{self.tag}-gt_text"]),
+            lambda row: self.add_classification_label(row["nodes"], row[f"{self.gt_tag}-gt_text"]),
             axis=1,
         )
         return df
@@ -411,7 +411,7 @@ if __name__ == "__main__":
 
     raw_data_folder = Path(f"/data/GIT/delete/{dataset_name}")
 
-    prepare_data = PrepareData(tag="PAST_CLIENT")
+    prepare_data = PrepareData(gt_tag="PAST_CLIENT")
 
     from transformers import RobertaTokenizer
 
