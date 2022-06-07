@@ -18,10 +18,14 @@ import wandb
 import os
 from pprint import pprint
 import torch
+import glob
+import pandas as pd
 
 from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
+import transformers
+from transformers import RobertaTokenizer
+from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 
-from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
 
 
 # %%
@@ -55,14 +59,16 @@ trainer_config = dict(
     num_epochs = 4, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
-    per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
-    eval_batch_size = int(1024), #? 1024 Max with the big machine 
+    # per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
+    per_gpu_train_batch_size = int(16), #? 34 Max with the big machine 
+    # eval_batch_size = int(1024), #? 1024 Max with the big machine 
+    eval_batch_size = int(128), #? 1024 Max with the big machine 
     fp16 = True, 
     fp16_opt_level = "O1",
     max_grad_norm = 1.0,
-    load_model=False,
-    load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
-    freeze_body = False,
+    # load_model=False,
+    # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
+    # freeze_body = False,
     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
     overwrite_model = True,
     evaluate_during_training = True,
@@ -70,11 +76,10 @@ trainer_config = dict(
     verbose = False,
     logging_every_epoch = 1,
     # # ? Data Reader
-    dataset_to_use='all',
-    overwrite_cache=True, 
-    parallelize=False, 
-    train_dedup=True, #? Default: False
-    develop_dedup=True, #? Default: False
+    dataset_to_use='debug',
+    # parallelize=False, 
+    train_dedup=False, #? Default: False
+    develop_dedup=False, #? Default: False
 )
 if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
@@ -179,69 +184,82 @@ else:
 loss_function = trainer_config.pop("loss_function")
 label_smoothing = trainer_config.pop("label_smoothing")
 # %%
-from markuplmft.fine_tuning.run_swde.data_reader import DataReader
-
-dr = DataReader(
-    local_rank=local_rank, 
-    overwrite_cache=trainer_config.pop("overwrite_cache"), 
-    parallelize=trainer_config.pop("parallelize"),
-    verbose=trainer_config.get("verbose"), 
-    n_gpu=n_gpu)
-
-dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
-
 if trainer_config.pop("train_dedup"):
     train_dedup = "_dedup"
 else:
     train_dedup = ""
+
 if trainer_config.pop("develop_dedup"):
     develop_dedup = "_dedup"
 else:
     develop_dedup = ""
 
+train_domains_path = glob.glob(f"/data/GIT/delete/train{train_dedup}/*.pkl")
+develop_domains_path = glob.glob(f"/data/GIT/delete/develop{develop_dedup}/*.pkl")
+
+dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
 # #?  Debug
 if dataset_to_use == "debug":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=2)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=2)
+    train_domains_path = train_domains_path[:4]
+    develop_domains_path = develop_domains_path[:4]
 
 # #?  I will use 24 websites to train and 8 websites to evaluate
 elif dataset_to_use == "mini":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=24)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=8)
+    train_domains_path = train_domains_path[:24]
+    develop_domains_path = develop_domains_path[:8]
 
 # #?  Generate all features
 elif dataset_to_use == "all":
-    train_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/train/my_CF_processed{train_dedup}/", limit_data=False)
-    develop_dataset_info = dr.load_dataset(data_dir=f"/data/GIT/swde/my_data/develop/my_CF_processed{develop_dedup}/", limit_data=False)
+    train_domains_path = train_domains_path
+    develop_domains_path = develop_domains_path
+
 else:
     pass
 
+df_train = pd.DataFrame()
+for domain_path in train_domains_path:
+    df_train = df_train.append(pd.read_pickle(domain_path)) 
+
+df_develop = pd.DataFrame()
+for domain_path in train_domains_path:
+    df_develop = df_develop.append(pd.read_pickle(domain_path)) 
+
 # %%
-print(f"train_dataset_info: {len(train_dataset_info[0])}")
-print(f"develop_dataset_info: {len(develop_dataset_info[0])}")
+print(f"train_dataset_info: {len(df_train)}")
+print(f"develop_dataset_info: {len(df_develop)}")
 
 # %% [markdown]
 # # Train
 
 # %%
-print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
-load_model_path = trainer_config.pop("load_model_path") 
-if trainer_config.pop("load_model", False):
-    print("\n --- MODEL LOADED! --- ")
-    markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-    markup_model.load_trained_model(
-        config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-        tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-        net_path=load_model_path,
-    )
-    print(f"load_model_path: {load_model_path}")
-    print("\n --- MODEL LOADED! --- ")
-else:
-    markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-    markup_model.load_pretrained_model_and_tokenizer()
+# print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
+# load_model_path = trainer_config.pop("load_model_path") 
+# if trainer_config.pop("load_model", False):
+#     print("\n --- MODEL LOADED! --- ")
+#     markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
+#     markup_model.load_trained_model(
+#         config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#         tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#         net_path=load_model_path,
+#     )
+#     print(f"load_model_path: {load_model_path}")
+#     print("\n --- MODEL LOADED! --- ")
+# else:
+#     markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
+#     markup_model.load_pretrained_model_and_tokenizer()
 
-if trainer_config.pop("freeze_body", False):
-    markup_model.freeze_body()
+# if trainer_config.pop("freeze_body", False):
+#     markup_model.freeze_body()
+
+# %%
+model  = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+
+# %%
+tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+
+DOC_STRIDE = 128
+MAX_SEQ_LENGTH = 384
+featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
 
 # %%
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
@@ -254,9 +272,10 @@ if local_rank == 0:
     torch.distributed.barrier()
 
 trainer = Trainer(
-    model = markup_model,
-    train_dataset_info = train_dataset_info,
-    evaluate_dataset_info = develop_dataset_info,
+    model = model,
+    train_dataset = df_train,
+    evaluate_dataset = df_develop,
+    featurizer=featurizer,
     local_rank=local_rank,
     device=device, 
     n_gpu=n_gpu,
@@ -269,13 +288,14 @@ print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
 
 # %%
+dataset_nodes_predicted.head(1)
+
+# %%
 from IPython.display import display
 import pandas as pd
 from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
-
-dataset_nodes_predicted["domain"] = dataset_nodes_predicted["html_path"].apply(lambda x: x.split(".pickle")[0])
 
 metrics_per_domain = pd.DataFrame(dataset_nodes_predicted.groupby("domain").apply(lambda x: compute_metrics_per_dataset(x)[0]).to_dict()).T
 cm_per_domain = pd.DataFrame(dataset_nodes_predicted.groupby("domain").apply(lambda x: compute_metrics_per_dataset(x)[1]).to_dict()).T

@@ -453,9 +453,9 @@ if __name__ == "__main__":
         domain_df = prepare_data.add_classification_label_to_nodes(domain_df)
 
         #! In this function I am sorting the columns
-        domain_nodes_df = prepare_data.save_domain_node_features(
-            domain_df, raw_data_folder, domain_name
-        )
+        # domain_nodes_df = prepare_data.save_domain_node_features(
+        #     domain_df, raw_data_folder, domain_name
+        # )
 
         # prepare_data.save_dedup(domain_nodes_df, raw_data_folder, domain_name)
 
@@ -463,9 +463,8 @@ if __name__ == "__main__":
         domain_df["swde_features"] = domain_df.apply(
             lambda page: featurizer.get_swde_features(page["nodes"], page["url"]), axis=1
         )
-
-        #! Training
-        save_path = f"/data/GIT/delete/develop/{domain_name}.pkl"
+        #! I save this step just to speed up the swde features 
+        save_path = f"/data/GIT/delete/{dataset_name}/{domain_name}.pkl"
         print(save_path)
         domain_df.to_pickle(save_path)
 
