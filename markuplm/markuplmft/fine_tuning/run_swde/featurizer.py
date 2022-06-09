@@ -1,4 +1,6 @@
 import torch
+from typing import Optional, Sequence, Tuple
+from transformers import RobertaTokenizer
 from urllib.parse import unquote, urlparse
 import re
 from lxml import etree
@@ -18,29 +20,17 @@ class SwdeFeature(object):  # BatchEncoding PageClassifierFeature
         attention_mask,
         labels,
         relative_first_tokens_node_index,
-        absolute_node_index,
-        url,
+        # absolute_node_index,
+        # url,
     ):
-        """
-        html_path: indicate which page the feature belongs to
-        input_ids: RT
-        token_type_ids: RT
-        attention_mask: RT
-        labels: RT
-        involved_first_tokens_pos: a list, indicate the positions of the first-tokens in this feature
-        involved_first_tokens_types: the types of the first-tokens
-        involved_first_tokens_text: the text of the first tokens
-
-        Note that `involved_xxx` are not fixed-length array, so they shouldn't be sent into our model
-        They are just used for evaluation
-        """
+        """ """
         self.input_ids = input_ids
         self.token_type_ids = token_type_ids
         self.attention_mask = attention_mask
         self.labels = labels
         self.relative_first_tokens_node_index = relative_first_tokens_node_index
-        self.absolute_node_index = absolute_node_index
-        self.url = url
+        # self.absolute_node_index = absolute_node_index
+        # self.url = url
 
 
 class SwdeDataset(Dataset):
@@ -50,8 +40,8 @@ class SwdeDataset(Dataset):
         all_attention_mask,
         all_token_type_ids,
         relative_first_tokens_node_index,
-        absolute_node_index,
-        url,
+        # absolute_node_index,
+        # url,
         all_labels=None,
     ):
 
@@ -61,8 +51,8 @@ class SwdeDataset(Dataset):
             all_token_type_ids,
         ]
         self.relative_first_tokens_node_index = relative_first_tokens_node_index
-        self.absolute_node_index = absolute_node_index
-        self.url = url
+        # self.absolute_node_index = absolute_node_index
+        # self.url = url
 
         if not all_labels is None:
             self.tensors.append(all_labels)
@@ -77,11 +67,11 @@ class SwdeDataset(Dataset):
 class Featurizer:
     def __init__(
         self,
-        tokenizer,
         doc_stride,
         max_length,
     ) -> None:
-        self.tokenizer = tokenizer
+
+        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
         self.doc_stride = doc_stride
         self.max_length = max_length
 
@@ -93,7 +83,7 @@ class Featurizer:
         url_parsed = urlparse(url)
         return url_parsed.netloc
 
-    def clean_the_url(self, url):
+    def clean_the_url(self, url: str) -> str:
         "Remove domain and symbols from the url"
         domain = self.get_domain_url(url)
         url_without_domain = url.split(domain)[1]
@@ -101,7 +91,7 @@ class Featurizer:
         clean_url = re.sub("\s+", " ", clean_url)  # ? Reduce any space to one space
         return clean_url
 
-    def insert_url_into_html(self, url, html):
+    def insert_url_into_html(self, url: str, html: str) -> str:
         "Clean url and add to html as a title node"
         clean_url = self.clean_the_url(url)
         element = etree.Element("title")
@@ -118,7 +108,7 @@ class Featurizer:
         # ! Not done yet because I need to think how that will interact with finding it in the page.
         pass
 
-    def get_nodes(self, html):
+    def get_nodes(self, html: str) -> Optional[Sequence[Tuple[str, str]]]:
         """
         Get important nodes and their important attributes as a tuple.
 
@@ -161,39 +151,49 @@ class Featurizer:
                                 xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
 
                             page_features.append((xpath, etext))
+        # ? Make sure that it is returning a page with features
+        if len(page_features) > 0:
+            return page_features
+        else:
+            print(f"No nodes from this html were able to be extracted - html: {html}")
 
-        return page_features
-
-    def get_swde_features(self, nodes, url):
+    def get_swde_features(self, nodes: Sequence) -> Sequence[SwdeFeature]:
         """
         1. Tokenizer page
         2. Convert tokens into ids
         3. Split 384 tokens ids into features that go into the model
-        4. Move features by a doc_stride of 128 
+        4. Move features by a doc_stride of 128
         """
         real_max_token_num = self.max_length - 2  # for cls and sep
 
         page_tokens_ids = []
         page_labels_seq = []
         # ? A list of indices pointing to the first tokens in each node of the all tokens list
-        absolute_first_tokens_node_indices = []  
+        absolute_first_tokens_node_indices = []
 
         # TODO: Move this to a function called tokenize_page_nodes
         # ? Create a tokenization of the page by converting the text of each node into token_ids and concatenate them.
         # ? For each node append the number of tokens to first_token_pos.
+        #! This has to assume that the nodes won't have tag or gt_text!
         for node in nodes:
             # xpath, node_text, tag, gt_text = node[0], node[1], node[2], node[3]
             node_text, gt_text = node[1], node[3]
 
             # ? Tokenize and convert tokens into ids
-            node_tokens_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(node_text))
+            node_tokens_ids = self.tokenizer.convert_tokens_to_ids(
+                self.tokenizer.tokenize(node_text)
+            )
             # ? Concatenate token_ids
-            node_tokens_ids = node_tokens_ids + [self.tokenizer.pad_token_id] # TODO: Check for a better token
-            page_tokens_ids += node_tokens_ids 
+            node_tokens_ids = node_tokens_ids + [
+                self.tokenizer.pad_token_id
+            ]  # TODO: Check for a better token
+            page_tokens_ids += node_tokens_ids
 
             # ? Append the position of the first token of the node
             # ? We always use the first token to predict
-            absolute_first_tokens_node_indices.append(len(page_labels_seq))  # ? E.g. len(all_labels_seq) = 71
+            absolute_first_tokens_node_indices.append(
+                len(page_labels_seq)
+            )  # ? E.g. len(all_labels_seq) = 71
             # ? E.g. first_tokens_node_index = [71, 95, 100, 104, 184, 192, 198, 212]
 
             if len(gt_text) > 0:
@@ -222,7 +222,7 @@ class Featurizer:
             # ? Gets a subset of the page_tokens_ids and appends cls_token_id(0) at the beginning and cls_token_id(2) at the end.
 
             end_pos = start_pos + real_max_token_num
-            
+
             splited_page_tokens_ids = (
                 [self.tokenizer.cls_token_id]
                 + page_tokens_ids[start_pos:end_pos]
@@ -236,8 +236,8 @@ class Featurizer:
             token_type_ids = [0] * self.max_length  # ? It is always a list of 0
 
             splited_labels_seq = [-100] + page_labels_seq[start_pos:end_pos] + [-100]
-            #? E. g. splited_labels_seq = [-100, 1, 1, 1, 0, 1, 1, ..., 0, 1, 1, -100]
-            #? This is to mask the CLS and SEP tokens
+            # ? E. g. splited_labels_seq = [-100, 1, 1, 1, 0, 1, 1, ..., 0, 1, 1, -100]
+            # ? This is to mask the CLS and SEP tokens
 
             relative_first_tokens_node_indices = []
             absolute_node_indices = []
@@ -249,7 +249,7 @@ class Featurizer:
             while (
                 node_index < number_of_nodes
                 and start_pos <= absolute_first_tokens_node_indices[node_index] < end_pos
-            ):  
+            ):
 
                 # ? +1 because of the first token: [cls]
                 relative_first_tokens_node_indices.append(
@@ -263,7 +263,9 @@ class Featurizer:
                 page_over_flag = True
                 # ? The first step is to get the features for the window, which means we need to pad in this feature with -100
                 current_len = len(splited_page_tokens_ids)
-                splited_page_tokens_ids += [self.tokenizer.pad_token_id] * (self.max_length - current_len)
+                splited_page_tokens_ids += [self.tokenizer.pad_token_id] * (
+                    self.max_length - current_len
+                )
                 splited_labels_seq += [-100] * (self.max_length - current_len)
                 attention_mask = [1] * current_len + [0] * (self.max_length - current_len)
 
@@ -282,41 +284,43 @@ class Featurizer:
                     attention_mask=attention_mask,
                     labels=splited_labels_seq,
                     relative_first_tokens_node_index=relative_first_tokens_node_indices,
-                    absolute_node_index=absolute_node_indices,
-                    url=url
+                    # absolute_node_index=absolute_node_indices,
+                    # url=url
                 )
             )
             start_pos += self.doc_stride
 
             if page_over_flag:
                 break
-        
+
         return features
         # ? features = [swde_feature_1, swde_feature_2, ...]
 
-    def feature_to_dataset(self, features):
+    def feature_to_dataset(self, features: Sequence[SwdeFeature]) -> SwdeDataset:
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
         all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
         relative_first_tokens_node_index = [f.relative_first_tokens_node_index for f in features]
-        absolute_node_index = [f.absolute_node_index for f in features]
-        url = [f.url for f in features]
+        # absolute_node_index = [f.absolute_node_index for f in features]
+        # url = [f.url for f in features]
 
         #! If there are labels then create with labels
         all_labels = torch.tensor([f.labels for f in features], dtype=torch.long)
 
-        dataset = SwdeDataset(all_input_ids,
-        all_attention_mask,
-        all_token_type_ids,
-        relative_first_tokens_node_index,
-        absolute_node_index,
-        url,
-        all_labels)
+        dataset = SwdeDataset(
+            all_input_ids,
+            all_attention_mask,
+            all_token_type_ids,
+            relative_first_tokens_node_index,
+            # absolute_node_index,
+            # url,
+            all_labels,
+        )
 
         return dataset
 
 
-def clean_spaces(text):
+def clean_spaces(text: str) -> str:
     r"""Clean extra spaces in a string.
 
     Example:
@@ -331,7 +335,7 @@ def clean_spaces(text):
     return " ".join(re.split(r"\s+", text.strip()))
 
 
-def clean_format_str(text):
+def clean_format_str(text: str) -> str:
     """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
     text = "".join(
         ch
@@ -346,7 +350,7 @@ def clean_format_str(text):
     return text
 
 
-def get_dom_tree(html):
+def get_dom_tree(html: str) -> etree.ElementTree:
     cleaner = Cleaner()
     cleaner.javascript = True
     cleaner.scripts = True

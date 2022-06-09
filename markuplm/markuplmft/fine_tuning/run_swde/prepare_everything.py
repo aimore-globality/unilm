@@ -1,4 +1,6 @@
+from typing import Sequence
 import pandas as pd
+from tqdm import tqdm
 import pandavro as pdx
 from ast import literal_eval
 from pathlib import Path
@@ -17,7 +19,7 @@ from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 import os
 
 
-def get_annotations(annotations: pd.Series, annotation_name: str):
+def get_annotations(annotations: pd.Series, annotation_name: str) -> pd.Series:
     return annotations.apply(
         lambda annotations: [
             annotation[annotation_name]
@@ -37,7 +39,7 @@ taxonomy_to_value_mappings = dict(
 )
 
 
-def untaxonomize_gt_value(gt_value: str):
+def untaxonomize_gt_value(gt_value: str) -> str:
     gt_value_untax = taxonomy_to_value_mappings.get(gt_value)
     return gt_value_untax
 
@@ -50,11 +52,11 @@ class PrepareData:
     -
     """
 
-    def __init__(self, gt_tag="PAST_CLIENT"):
-        self.gt_tag = gt_tag
+    def __init__(self, tag: str = "PAST_CLIENT"):
+        self.tag = tag
 
-    def load_data(self, load_data_path, limit=-1):
-        print("load_data")
+    def load_data(self, load_data_path: str, limit: int = -1) -> pd.DataFrame:
+        logging.info("Load_data...")
         self.wae_data_load_path = load_data_path
         df = pdx.read_avro(str(load_data_path / "dataset.avro"))
         df = df[:limit]
@@ -63,23 +65,22 @@ class PrepareData:
         for column in ["url", "domain", "annotations"]:
             assert column in df.columns, f"Column: {column} not in DF"
 
-        print(len(df))
-        print("done")
+        logging.info(len(df))
         return df
 
-    def format_annotation(self, df):
-        print("Format_annotation...")
-        df[f"{self.gt_tag}-annotations"] = df["annotations"].apply(
-            lambda annotation: annotation.get(self.gt_tag)
+    def format_annotation(self, df: pd.DataFrame) -> pd.DataFrame:
+        logging.info("Format_annotation...")
+        df[f"{self.tag}-annotations"] = df["annotations"].apply(
+            lambda annotation: annotation.get(self.tag)
         )
-        df[f"{self.gt_tag}-annotations"] = df[f"{self.gt_tag}-annotations"].fillna("").apply(list)
+        df[f"{self.tag}-annotations"] = df[f"{self.tag}-annotations"].fillna("").apply(list)
 
-        df[f"{self.gt_tag}-gt_text"] = get_annotations(df[f"{self.gt_tag}-annotations"], "text")
-        df[f"{self.gt_tag}-gt_value"] = get_annotations(df[f"{self.gt_tag}-annotations"], "value")
-        df[f"{self.gt_tag}-gt_value_untax"] = df[f"{self.gt_tag}-gt_value"].apply(
+        df[f"{self.tag}-gt_text"] = get_annotations(df[f"{self.tag}-annotations"], "text")
+        df[f"{self.tag}-gt_value"] = get_annotations(df[f"{self.tag}-annotations"], "value")
+        df[f"{self.tag}-gt_value_untax"] = df[f"{self.tag}-gt_value"].apply(
             lambda gt_values: [untaxonomize_gt_value(gt_value) for gt_value in gt_values]
         )
-        df[f"{self.gt_tag}-annotations-untax"] = df[f"{self.gt_tag}-annotations"].apply(
+        df[f"{self.tag}-annotations-untax"] = df[f"{self.tag}-annotations"].apply(
             lambda annotations: [
                 {
                     "gt_text": annotation["text"],
@@ -88,25 +89,26 @@ class PrepareData:
                 for annotation in annotations
             ]
         )
-        df[f"{self.gt_tag}-gt_text_count"] = df[f"{self.gt_tag}-gt_text"].apply(len)
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
 
-        print(f" # Annotations (gt_text): {self.count_all_labels(df)}")
-        print(f" # Annotations (gt_value): {self.count_all_labels(df, 'value')}")
+        logging.info(f" # Annotations (gt_text): {self.count_all_labels(df)}")
+        logging.info(f" # Annotations (gt_value): {self.count_all_labels(df, 'value')}")
         return df
 
-    def create_postive_negative_data(self, df, negative_fraction=0.1):
-        print("Convert_annotated_data...")
+    def create_postive_negative_data(
+        self,
+        df: pd.DataFrame,
+        negative_fraction: float,
+    ) -> pd.DataFrame:
+        logging.info("Convert_annotated_data...")
         df_positives, df_negatives, df_negatives_sample = self.get_negative_fraction(
             df, negative_fraction
         )
-        print("- Positives:")
-        df_positives = self.remove_non_html_pages(
-            df_positives
-        )  # TODO(Aimore): Try to move this out
-        print("- Negatives:")
-        df_negatives_sample = self.remove_non_html_pages(
-            df_negatives_sample
-        )  # TODO(Aimore): Try to move this out
+        logging.info("- Positives:")
+        # TODO(Aimore): Try to move this out (this also has to happen during inference)
+        df_positives = self.remove_non_html_pages(df_positives)
+        logging.info("- Negatives:")
+        df_negatives_sample = self.remove_non_html_pages(df_negatives_sample)
 
         df_positives = self.remove_annotations_from_images(df_positives)
         df_positives = self.remove_annotations_that_cannot_be_found_on_html(df_positives)
@@ -115,26 +117,32 @@ class PrepareData:
         df_negatives_sample = df_negatives_sample[
             df_negatives_sample["domain"].isin(df_positives["domain"])
         ]
-        print(
-            f"Positive Domains: {len(set(df_positives['domain']))} | Negative Domains: {len(set(df_negatives_sample['domain']))}"
-        )
+        positive_domains = set(df_positives["domain"])
+        negative_domains = set(df_negatives_sample["domain"])
+        logging.info(f"Positive Domains: {len(positive_domains)}")
+        logging.info(f"Negative Domains: {len(negative_domains)}")
+        df_negatives_sample = df_negatives_sample[
+            df_negatives_sample["domain"].isin(positive_domains)
+        ]
         assert (
-            len(set(df_negatives_sample["domain"]) - set(df_positives["domain"])) == 0
-        ), "Negatives have a domain that positive doesnt have!"
+            len(negative_domains - positive_domains) == 0
+        ), "Negatives have domains that Positives don't have!"  #! Uncomment
 
         # ? Make sure that the ratio is still the same
         df_negatives_positive_domain = df_negatives[
             df_negatives["domain"].isin(df_positives["domain"])
         ]
         final_negative_fraction = len(df_negatives_sample) / len(df_negatives_positive_domain)
-        print(
+        logging.info(
             f" # of Pages (Negative Sample): {len(df_negatives_sample)} ({100*final_negative_fraction:.4f} %) \n # of Pages (Negative): {len(df_negatives_positive_domain)}"
         )
-        assert negative_fraction - 0.01 < final_negative_fraction < negative_fraction + 0.01
+        assert (
+            negative_fraction - 0.01 < final_negative_fraction < negative_fraction + 0.01
+        ), f"Not in the range ({negative_fraction - 0.01}, {negative_fraction - 0.01}) final_negative_fraction: {final_negative_fraction}"  #! Uncomment
 
         # ? Merge positives and negatives
         df_positives_negatives = df_positives.append(df_negatives_sample)
-        print(
+        logging.info(
             f"# Total Pages (positive and negatives): {len(df_positives_negatives)} \n Total Domains: {len(set(df_positives_negatives['domain']))}"
         )
 
@@ -143,57 +151,62 @@ class PrepareData:
             self.wae_data_load_path
             / f"dataset_pos({len(df_positives)})_neg({len(df_negatives_sample)})_intermediate.pkl"
         )
-        print(f"Saving file: {save_intermediate_path}")
+        logging.info(f"Saving file: {save_intermediate_path}")
         df_positives_negatives.to_pickle(save_intermediate_path)
 
         # ? Check the amount of annotations in each domain
-        print(
+        logging.info(
             pd.DataFrame(
                 df_positives_negatives.groupby("domain").sum("PAST_CLIENT-gt_text_count")
             ).sort_values("PAST_CLIENT-gt_text_count", ascending=False)
         )
-        print("done")
+        logging.info("done")
         return df_positives_negatives
 
-    def get_negative_fraction(self, df, negative_fraction=0.10):
-        print("Get_negative_fraction...")
-        df_positives = df[df[f"{self.gt_tag}-gt_text_count"] > 0]
-        df_negatives = df[df[f"{self.gt_tag}-gt_text_count"] == 0]
+    def get_negative_fraction(
+        self,
+        df: pd.DataFrame,
+        negative_fraction: float,
+    ) -> Sequence[pd.DataFrame]:
+        logging.info("Get_negative_fraction...")
+        df_positives = df[df[f"{self.tag}-gt_text_count"] > 0]
+        df_negatives = df[df[f"{self.tag}-gt_text_count"] == 0]
 
         df_negatives_sample = df_negatives
 
-        # domains_20_or_less = (
-        #     df_negatives.groupby("domain")["url"]
-        #     .count()[df_negatives.groupby("domain")["url"].count() <= 20]
-        #     .index
-        # )
-        # domains_more_than_20 = (
-        #     df_negatives.groupby("domain")["url"]
-        #     .count()[df_negatives.groupby("domain")["url"].count() > 20]
-        #     .index
-        # )
+        if negative_fraction != 1:
+            domains_20_or_less = (
+                df_negatives.groupby("domain")["url"]
+                .count()[df_negatives.groupby("domain")["url"].count() <= 20]
+                .index
+            )
+            domains_more_than_20 = (
+                df_negatives.groupby("domain")["url"]
+                .count()[df_negatives.groupby("domain")["url"].count() > 20]
+                .index
+            )
 
-        # df_negatives_sample = (
-        #     df_negatives[df_negatives["domain"].isin(domains_more_than_20)]
-        #     .groupby("domain")
-        #     .sample(frac=negative_fraction, random_state=66)
-        # )
-        # df_negatives_sample = df_negatives_sample.append(
-        #     df_negatives[df_negatives["domain"].isin(domains_20_or_less)]
-        # )
+            df_negatives_sample = (
+                df_negatives[df_negatives["domain"].isin(domains_more_than_20)]
+                .groupby("domain")
+                .sample(frac=negative_fraction, random_state=66)
+            )
+            df_negatives_sample = df_negatives_sample.append(
+                df_negatives[df_negatives["domain"].isin(domains_20_or_less)]
+            )
 
-        print(
-            f"# Pages:\nNegatives: {len(df_negatives)} | Negatives sample: {len(df_negatives_sample)} | Positives:{len(df_positives)}"
+        logging.info(
+            f"# Pages: Negatives: {len(df_negatives)} | Negatives sample: {len(df_negatives_sample)} | Positives:{len(df_positives)}"
         )
         return df_positives, df_negatives, df_negatives_sample
 
     def count_all_labels(self, df, tag_type="text"):
-        return df[f"{self.gt_tag}-gt_{tag_type}"].apply(len).sum()
+        return df[f"{self.tag}-gt_{tag_type}"].apply(len).sum()
 
-    def remove_non_html_pages(self, df):
+    def remove_non_html_pages(self, df: pd.DataFrame) -> pd.DataFrame:
         pages_without_html_explicity = df[df["html"] == "PLACEHOLDER_HTML"]
-        print(f"# of Pages that are not html explicity: {len(pages_without_html_explicity)}")
-        print(
+        logging.info(f"# of Pages that are not html explicity: {len(pages_without_html_explicity)}")
+        logging.info(
             f"# of Annotations (gt_text) that are not html explicity: {self.count_all_labels(pages_without_html_explicity)}"
         )
         df = df[df["html"] != "PLACEHOLDER_HTML"]
@@ -209,37 +222,37 @@ class PrepareData:
 
         pages_with_html = df["html"].apply(get_only_html)
         pages_without_html_implicity = df[pages_with_html == "NOT HTML"]
-        print(f"# of Pages that are not html implicity: {len(pages_without_html_implicity)}")
-        print(
+        logging.info(f"# of Pages that are not html implicity: {len(pages_without_html_implicity)}")
+        logging.info(
             f"# of Annotations (gt_text) that are not html implicity: {self.count_all_labels(pages_without_html_implicity)}"
         )
         df = df[pages_with_html != "NOT HTML"]
 
         return df
 
-    def remove_annotations_from_images(self, df):
-        print("remove_annotations_from_images")
-        print(f"# of Annotations (gt_text) before: {self.count_all_labels(df)}")
-        df[f"{self.gt_tag}-gt_text"] = df[f"{self.gt_tag}-gt_text"].apply(
+    def remove_annotations_from_images(self, df: pd.DataFrame) -> pd.DataFrame:
+        logging.info("remove_annotations_from_images")
+        logging.info(f"# of Annotations (gt_text) before: {self.count_all_labels(df)}")
+        df[f"{self.tag}-gt_text"] = df[f"{self.tag}-gt_text"].apply(
             lambda annotations: [
                 annotation
                 for annotation in annotations
                 if "htt" not in annotation
             ]
         )
-        print(f"# of Annotations (gt_text) after: {self.count_all_labels(df)}")
-        print("done")
+        logging.info(f"# of Annotations (gt_text) after: {self.count_all_labels(df)}")
+        logging.info("done")
         return df
 
-    def remove_annotations_that_cannot_be_found_on_html(self, df):
-        print("remove_annotations_that_cannot_be_found_on_html")
+    def remove_annotations_that_cannot_be_found_on_html(self, df: pd.DataFrame) -> pd.DataFrame:
+        logging.info("remove_annotations_that_cannot_be_found_on_html")
         initial_amount_of_label = self.count_all_labels(df)
 
         all_annotations_left = []
 
         for enum, row in df.iterrows():
             url = row["url"]
-            if not row.isnull()[f"{self.gt_tag}-gt_text"]:
+            if not row.isnull()[f"{self.tag}-gt_text"]:
                 # clean_dom_tree = get_dom_tree(row["html"])
                 # dom_tree = clean_dom_tree
                 dom_tree = lxml_html.fromstring(
@@ -248,7 +261,7 @@ class PrepareData:
 
                 annotations_that_can_be_found = []
                 annotations_that_cannot_be_found = []
-                for text_annotation in row[f"{self.gt_tag}-gt_text"]:
+                for text_annotation in row[f"{self.tag}-gt_text"]:
                     found = False
                     # TODO (Aimore): This process is very similar to the one that actually annotates the nodes. It would be better if they were reused.
                     for node in dom_tree.iter():
@@ -264,7 +277,7 @@ class PrepareData:
                                 break
                         # #? In case I want to add the images:
                         # ? 1. Don't remove img links from annotations
-                        # ? 2. The img html gt_tag contains: alt, title and src as potential places that the PC could be found.
+                        # ? 2. The img html node_gt_tag contains: alt, title and src as potential places that the PC could be found.
                         # ? 3. Find a way to recreate the img node into these three pieces and incoporate then into embedding
                         # for html_tag, xpath_content in node.items():
                         #     if text_annotation in xpath_content:
@@ -274,65 +287,69 @@ class PrepareData:
                         annotations_that_cannot_be_found.append(text_annotation)
 
                 if len(annotations_that_cannot_be_found) > 0:
-                    print(
-                        f"{len(annotations_that_cannot_be_found)} {self.gt_tag} cannot be found in {enum } \t: {annotations_that_cannot_be_found} - {url}"
+                    logging.info(
+                        f"{len(annotations_that_cannot_be_found)} {self.tag} cannot be found in {enum } \t: {annotations_that_cannot_be_found} - {url}"
                     )
-                    print()
-
                 all_annotations_left.append(annotations_that_can_be_found)
             else:
                 all_annotations_left.append(None)
 
         final_amount_of_label = self.count_all_labels(df)
-        print(f"Final amount of labels: {final_amount_of_label}")
-        print(
+        logging.info(f"Final amount of labels: {final_amount_of_label}")
+        logging.info(
             f"Number of labels lost because they couldn't be found in the page: {initial_amount_of_label - final_amount_of_label}"
         )
 
-        df[f"{self.gt_tag}-gt_text"] = all_annotations_left
-        df[f"{self.gt_tag}-gt_text_count"] = df[f"{self.gt_tag}-gt_text"].apply(len)
-        df = df[df[f"{self.gt_tag}-gt_text_count"] > 0]
-        print("done")
+        df[f"{self.tag}-gt_text"] = all_annotations_left
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        df = df[df[f"{self.tag}-gt_text_count"] > 0]
+        logging.info("done")
         return df
 
-    def remove_folder(self, raw_data_folder):
-        print("Remove folder...")
+    def remove_folder(self, raw_data_folder: str):
+        logging.info("Remove folder...")
         self.raw_data_folder = raw_data_folder
         if os.path.exists(self.raw_data_folder):
-            print(f"Overwriting this folder: \n{self.raw_data_folder}")
+            logging.info(f"Overwriting this folder: \n{self.raw_data_folder}")
             try:
                 shutil.rmtree(self.raw_data_folder)
-                print(f"REMOVED: {self.raw_data_folder}")
+                logging.info(f"REMOVED: {self.raw_data_folder}")
             except OSError as e:
-                print(f"Error: {e.filename} - {e.strerror}.")
+                logging.info(f"Error: {e.filename} - {e.strerror}.")
 
         groundtruth_folder_path = self.raw_data_folder
         groundtruth_folder_path.mkdir(parents=True, exist_ok=True)
 
-    def add_gt_counts_and_sort(self, df):
-        print("Add_gt_counts_and_sort...")
-        df[f"{self.gt_tag}-gt_text_count"] = domain_df[f"{self.gt_tag}-gt_text"].apply(len)
-        return df.sort_values(f"{self.gt_tag}-gt_text_count", ascending=False)
+    def add_gt_counts_and_sort(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Creates tag-gt_text_count column.
+        """
+        logging.debug("Add_gt_counts_and_sort...")
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        return df.sort_values(f"{self.tag}-gt_text_count", ascending=False)
 
-    def add_page_id(self, df):
+    def add_page_id(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Creates page_id column.
+        """
         df["page_id"] = [str(index).zfill(4) for index in range(len(df))]
         return df
 
-    def save_ground_truth(self, df, root_folder, domain_name):
+    def save_ground_truth(self, df, domain_name, root_folder):
         """
         In domain folder save a single csv file with its pages annotations
         """
-        print("Save_ground_truth...")
+        logging.debug("Save_ground_truth...")
 
         folder_path = root_folder / "ground_truth"
         folder_path.mkdir(parents=True, exist_ok=True)
 
-        page_annotations_df = df[["page_id", f"{self.gt_tag}-gt_text_count", f"{self.gt_tag}-gt_text"]]
+        page_annotations_df = df[["page_id", f"{self.tag}-gt_text_count", f"{self.tag}-gt_text"]]
         page_annotations_df.to_csv(
-            folder_path / f"{domain_name}-{self.gt_tag}.csv", sep="\t", index=False
+            folder_path / f"{domain_name}-{self.tag}.csv", sep="\t", index=False
         )
 
-    def save_htmls(self, df, root_folder, domain_name):
+    def save_htmls(self, df: pd.DataFrame, domain_name: str, root_folder: Path):
         """
         In domain folder save all html pages
         """
@@ -342,35 +359,80 @@ class PrepareData:
             Html_file.write(html)
             Html_file.close()
 
-        print("Save htmls...")
+        logging.debug("Save htmls...")
         folder_path = root_folder / "htmls" / domain_name
         folder_path.mkdir(parents=True, exist_ok=True)
         df.apply(lambda row: save_html(row["html"], folder_path / f"{row['page_id']}.htm"), axis=1)
 
-    def save_domain_node_features(self, df, raw_data_folder, domain_name):
-        folder_path = raw_data_folder / "prepared"
+    # def save_domain_node_features(self, df, raw_data_folder, domain_name):
+    #     folder_path = raw_data_folder / "prepared"
+    #     folder_path.mkdir(parents=True, exist_ok=True)
+    #     domain_nodes = []
+    #     for page_nodes in df["nodes"]:
+    #         domain_nodes.extend(page_nodes)
+    #     domain_nodes_df = pd.DataFrame(
+    #         domain_nodes, columns=["xpath", "text", "node_gt_tag", "gt_texts"]
+    #     )
+    #     save_path = folder_path / f"{domain_name}.pkl"
+    #     logging.info(f"save_path: {save_path}")
+    #     domain_nodes_df.to_pickle(save_path)
+    #     return domain_nodes_df
+
+    def create_dedup_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Randomly remove duplicated nodes across the entire domain
+        Note: Some urls might have been droped due to the deduplication
+        """
+        # ? Expand nodes
+        df_nodes = df.explode("nodes").reset_index()
+        # ? Join expanded nodes into df
+        df_nodes = df_nodes.join(
+            pd.DataFrame(
+                df_nodes.pop("nodes").tolist(),
+                columns=["xpath", "node_text", "node_gt_tag", "node_gt_text"],
+            )
+        )
+        # ? Remove duplicates
+        df_nodes_dedup = df_nodes.drop_duplicates("node_text")
+        # ? Group dedup nodes by page
+        ddd = (
+            df_nodes_dedup[["url", "xpath", "node_text", "node_gt_tag", "node_gt_text"]]
+            .groupby("url")
+            .agg(lambda x: list(x))
+            .reset_index()
+        )
+        # ? Combine dedup nodes into a single column (as they were before )
+        ddd["nodes"] = ddd.apply(
+            lambda x: list(zip(x["xpath"], x["node_text"], x["node_gt_tag"], x["node_gt_text"])), axis=1
+        )
+        # ? Remove pages that don't contain nodes anymore due to dedup
+        ddd = ddd.dropna(subset=["nodes"])
+        # ? Remove columns that are not relevant anymore
+        ddd = ddd.drop(["xpath", "node_text", "node_gt_tag", "node_gt_text"], axis=1)
+        # ? Merge both datasets (size of ddd might be different from the original df)
+        ddd = ddd.set_index("url")
+        df = df.set_index("url")
+        df = df.drop(["nodes"], axis=1)
+        df = ddd.join(df)
+        assert len(df) > 0
+        return df
+
+    def save_dedup(self, df: pd.DataFrame, domain_name: str, raw_data_folder: Path):
+        folder_path = raw_data_folder / "dedup"
         folder_path.mkdir(parents=True, exist_ok=True)
-        domain_nodes = []
-        for page_nodes in df["nodes"]:
-            domain_nodes.extend(page_nodes)
-        # TODO: Probably remove "gt_tag" from here
-        domain_nodes_df = pd.DataFrame(domain_nodes, columns=["xpath", "text", "gt_tag", "gt_texts"])
         save_path = folder_path / f"{domain_name}.pkl"
-        print(f"save_path: {save_path}")
-        domain_nodes_df.to_pickle(save_path)
-        return domain_nodes_df
+        logging.debug(f"Saved dedup file at: {save_path} ({len(df)})")
+        df.to_pickle(save_path)
 
-    def save_dedup(self, domain_nodes_df, raw_data_folder, domain_name):
-        folder_path = raw_data_folder / "prepared_dedup"
-        folder_path.mkdir(parents=True, exist_ok=True)
-
-        domain_nodes_df.drop_duplicates("text").to_pickle(folder_path / f"{domain_name}.pkl")
-
-    def add_classification_label(self, nodes, gt_texts):
+    def add_classification_label(
+        self, 
+        nodes: Sequence[str],
+        gt_texts: Sequence[str],
+    ) -> Sequence[str]:
         """
         Node: [(xpath, text), (...)]
         gt_texts: [gt_text1, gt_text2]
-        Annotated_Node: [(xpath, text, gt_tag, [gt_text1, gt_text2]), (...)]
+        Annotated_Node: [(xpath, text, node_gt_tag, [gt_text1, gt_text2]), (...)]
         """
 
         nodes_annotated = []
@@ -381,20 +443,20 @@ class PrepareData:
                     gt_text_in_node.append(gt_text)
 
             if len(gt_text_in_node) == 0:
-                new_node_text = (xpath, node_text, None, [])
+                new_node_text = (xpath, node_text, 'none', [])
             else:
                 new_node_text = (
                     xpath,
                     node_text,
-                    self.gt_tag,
+                    self.tag,
                     gt_text_in_node,
                 )
             nodes_annotated.append(new_node_text)
         return nodes_annotated
 
-    def add_classification_label_to_nodes(self, df):
+    def add_classification_label_to_nodes(self, df: pd.DataFrame) -> pd.DataFrame:
         df["nodes"] = df.apply(
-            lambda row: self.add_classification_label(row["nodes"], row[f"{self.gt_tag}-gt_text"]),
+            lambda row: self.add_classification_label(row["nodes"], row[f"{self.tag}-gt_text"]),
             axis=1,
         )
         return df
@@ -403,70 +465,118 @@ class PrepareData:
 if __name__ == "__main__":
     # wandb.login()
     # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
+    import logging
 
+    FORMAT = "[ %(asctime)s ] %(filename)s:%(lineno)5s - %(funcName)35s() : %(message)s"
+    logging.basicConfig(format=FORMAT, level=logging.INFO)
+
+    remove_folder = True
+    shortcut = True
     dataset_name = "develop"
+    parallel = True
+    DOC_STRIDE = 128
+    MAX_SEQ_LENGTH = 384
+    negative_fraction = 0.10  # ? 0.10
+    page_limit = -1  # ? -1
 
+    # ? Full version
     # wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
+    # ? Smaller version
     wae_data_load_path = Path(f"/data/GIT/delete/")
 
     raw_data_folder = Path(f"/data/GIT/delete/{dataset_name}")
 
-    prepare_data = PrepareData(gt_tag="PAST_CLIENT")
+    prepare_data = PrepareData(tag="PAST_CLIENT")
+    featurizer = Featurizer(doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
 
-    from transformers import RobertaTokenizer
+    if remove_folder:
+        prepare_data.remove_folder(raw_data_folder)
 
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    #! Shortcut for debugging:
+    if not shortcut:
+        df = prepare_data.load_data(wae_data_load_path, limit=page_limit)  # develop size = 75824
+        df = prepare_data.format_annotation(df)
+        df_positives_negatives = prepare_data.create_postive_negative_data(
+            df, negative_fraction=negative_fraction
+        )
+        df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+    else:
+        logging.info(f"Short cutting...")
+        df_positives_negatives = pd.read_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
 
-    DOC_STRIDE = 128
-    MAX_SEQ_LENGTH = 384
-    featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+    logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
 
-    prepare_data.remove_folder(raw_data_folder)
+    df_domains = list(df_positives_negatives.groupby("domain"))
 
-    df = prepare_data.load_data(wae_data_load_path, limit=-1)  # develop size = 75824
+    # websites_to_debug = ['walkerhamill.com']
+    # df_domains = [x for x in df_domains if x[0] in websites_to_debug]
 
-    # df["domain"] = df["domain"].apply(lambda domain: domain.replace("-", ""))
-    # assert (
-    #     len(df[df["domain"].apply(lambda domain: "(" in domain or ")" in domain)]) == 0
-    # )  #? Make sure domain names don't have parenthesis
+    logging.info(f"Number of Domains: {len(df_domains)}")
 
-    df = prepare_data.format_annotation(df)
+    def prepare(domain_name_and_df):
+        domain_name, domain_df = domain_name_and_df
 
-    df_positives_negatives = prepare_data.create_postive_negative_data(df, 1)
+        save_folder = raw_data_folder / "processed"
+        save_folder.mkdir(parents=True, exist_ok=True)
+        save_path = save_folder / f"{domain_name}.pkl"
 
-    for domain_name, domain_df in df_positives_negatives.groupby("domain"):
-        print(f"domain_name: {domain_name}")
+        dedup_save_folder = raw_data_folder / "processed_dedup"
+        dedup_save_folder.mkdir(parents=True, exist_ok=True)
+        dedup_save_path = dedup_save_folder / f"{domain_name}.pkl"
+
+        # if (
+        #     not save_path.exists()
+        #     and not dedup_save_path.exists()
+        #     and domain_name not in ["ciphr.com"]
+        # ):
+        logging.info(f"domain_name: {domain_name}")
 
         #! Inference
         domain_df["html"] = domain_df.apply(
             lambda row: featurizer.insert_url_into_html(row["url"], row["html"]), axis=1
         )
         domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
+        domain_df = domain_df.dropna(
+            subset=["nodes"]
+        )  #! During the inference this can be a problem - check how to deal with it when productionalizing
 
         #! Training
         domain_df = prepare_data.add_gt_counts_and_sort(domain_df)
         domain_df = prepare_data.add_page_id(domain_df)
 
-        prepare_data.save_ground_truth(domain_df, raw_data_folder, domain_name)
-        prepare_data.save_htmls(domain_df, raw_data_folder, domain_name)
+        prepare_data.save_ground_truth(domain_df, domain_name, raw_data_folder)
+        prepare_data.save_htmls(domain_df, domain_name, raw_data_folder)
 
         domain_df = prepare_data.add_classification_label_to_nodes(domain_df)
 
-        #! In this function I am sorting the columns
-        # domain_nodes_df = prepare_data.save_domain_node_features(
-        #     domain_df, raw_data_folder, domain_name
-        # )
-
-        # prepare_data.save_dedup(domain_nodes_df, raw_data_folder, domain_name)
-
         #! Inference
         domain_df["swde_features"] = domain_df.apply(
-            lambda page: featurizer.get_swde_features(page["nodes"], page["url"]), axis=1
+            lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
         )
-        #! I save this step just to speed up the swde features 
-        save_path = f"/data/GIT/delete/{dataset_name}/{domain_name}.pkl"
-        print(save_path)
+
+        #! Save data
+        logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
         domain_df.to_pickle(save_path)
+
+        domain_df = prepare_data.create_dedup_data(domain_df)
+        domain_df["swde_features"] = domain_df.apply(
+            lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
+        )
+        logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
+        domain_df.to_pickle(dedup_save_path)
+
+        return domain_name
+
+    if parallel:
+        num_cores = mp.cpu_count()
+        with mp.Pool(num_cores) as pool, tqdm(total=len(df_domains), desc="Processing data") as t:
+            for res in pool.imap_unordered(prepare, df_domains):
+                # for res in pool.imap(prepare, df_domains):
+                t.set_description(f"Processed {res}")
+                t.update()
+    else:
+        for df_domain in df_domains:
+            prepare(df_domain)
 
     # self.run.save[""]()
     # self.run.finish()

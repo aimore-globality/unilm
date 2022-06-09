@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
-#     display_name: Python 3.8.12 ('wae_test')
+#     display_name: Python 3.7.11 ('markuplmft')
 #     language: python
 #     name: python3
 # ---
@@ -16,95 +16,18 @@
 # %%
 from pathlib import Path
 import pandas as pd
+import glob 
 
-# pd.set_option("max_colwidth", 200, "max_rows", 10, "min_rows", 10)
-
-# %% [markdown]
-# # Load Data
-
-# %%
-# results_df = pd.read_pickle("results_classified/results_classified_5_epoch.pkl")
-# results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_3.pkl")
-# results_df = pd.read_pickle("results_classified/develop_set_nodes_classified_epoch_1.pkl")
-results_df = pd.read_pickle("/data/GIT/unilm/markuplm/notebooks/results_classified/develop_set_nodes_classified_epoch_4_dedup.pkl")
-# results_df = pd.read_pickle("/data/GIT/unilm/markuplm/notebooks/results_classified/develop_set_nodes_classified_epoch_4.pkl")
-
-
-initial_node_count = len(results_df)
-print(f"Df result size: {initial_node_count}")
-results_df.head(4)
-
-# %%
-# results_df["node_text_len"] = results_df["text"].apply(len)
-# results_df_pos_more_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 1000)])
-# results_df_pos_less_than_1000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 1000)])
-# print(f"results_df_pos_more_than_1000: {results_df_pos_more_than_1000}\nresults_df_pos_less_than_1000:{results_df_pos_less_than_1000}")
-
-# %%
-
-# #? Load and apply pageid to url mapping
-pageid_url_mapping = pd.read_pickle("/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl")
-results_df.reset_index(inplace=True)
-results_df = results_df.drop("index", axis=1)
-results_df['url'] = results_df['html_path'].apply(lambda x: pageid_url_mapping.get(x)[0])
-
-# #? Get domain name from html_path
-results_df['domain'] = results_df['html_path'].apply(lambda x: x.split(".pickle")[0])
-
-# %%
-# [x for x in pd.DataFrame(results_df.groupby('domain'))[0].values]
-
-# %%
-seed = 66 
-websites_for_error_analysis = sorted(pd.DataFrame(results_df.groupby('domain'))[0].sample(frac=0.1, random_state=seed).values)
-print(websites_for_error_analysis)
-
-# %%
-
-# #? Interesting analysis if we remove the nodes with duplicated data, we can massively reduce their size.
-duplicated_nodes = results_df
-domain_non_duplicated_nodes = results_df.drop_duplicates(subset=["text", "domain"])
-print(f"{'All nodes:':>50} {len(duplicated_nodes):>7}")
-print(f"{'Domain non-duplicated nodes:':>50} {len(domain_non_duplicated_nodes):>7} ({100*len(domain_non_duplicated_nodes)/len(duplicated_nodes):.2f} %)")
-
-# #? Also, not so many nodes with positive data are removed compared to the other data.
-duplicated_gt = len(duplicated_nodes[duplicated_nodes["truth"] != 'none'])
-domain_non_duplicated_gt = len(domain_non_duplicated_nodes[domain_non_duplicated_nodes["truth"] != 'none'])
-print(f"{'All number of ground truth nodes:':>50} {duplicated_gt:>7}")
-print(f"{'Domain non duplicated ground truth nodes:':>50} {domain_non_duplicated_gt:>7} ({100*(domain_non_duplicated_gt) / duplicated_gt:.2f} %)")
-
-# %%
-# from lxml.html.clean import Cleaner
-
-# cleaner = Cleaner()
-# cleaner.forms = True
-# cleaner.annoying_tags = True
-# cleaner.page_structure = True
-# cleaner.inline_style = True
-# cleaner.scripts = True
-# cleaner.javascript = True # This is True because we want to activate the javascript filter
-
-# def clean_node(text):
-#     try:
-#         return cleaner.clean_html(text)[3:-4]
-#     except:
-#         pass
-
-# min_char = 1
-# max_char = 10_000
-
-# # #? Clean node text 
-# results_df['text'] = results_df['text'].apply(clean_node) 
-# results_df['node_text_len'] = results_df["text"].dropna().apply(len)
-
-# print(f"Df result size: {initial_node_count}")
-
-# results_df_pos_more_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] > 10000)])
-# results_df_pos_less_than_10000 = len(results_df[(results_df["truth"] != "none") & (results_df["node_text_len"] < 10000)])
-# print(f"results_df_pos_more_than_10000: {results_df_pos_more_than_10000}\nresults_df_pos_less_than_10000:{results_df_pos_less_than_10000}")
+pd.set_option("max_colwidth", 50, "max_rows", 4, "min_rows", 4)
 
 # %% [markdown]
 # # Generate text for html
+
+# %%
+# df_website.head(1)
+
+# %%
+# df_website["gt_tag"].value_counts()
 
 # %%
 from typing import List
@@ -112,22 +35,20 @@ from typing import List
 show_node = True
 node_text_link = False
 show_probability = True
-show_node_tag = True
+show_node_gt_tag = True
 
-def make_bold_gt_texts(text:str, gt_texts:List[str]) -> str:
-    for gt_text in gt_texts:
+def make_bold_gt_texts(text:str, node_gt_text:List[str]) -> str:
+    for gt_text in node_gt_text:
         text = f" {text} ".replace(f" {gt_text} ", f" <b>{gt_text}</b> ")
     return text
 
-# #? Create folder
-def create_folder(folder_path="text_representation/"):
+def create_folder(folder_path):
     text_representation_folder = Path(folder_path)
     if text_representation_folder.exists():
         print(f"{text_representation_folder} folder already exists.")
     else:
         text_representation_folder.mkdir(parents=True, exist_ok=True)
         print(f"Created: {text_representation_folder} folder.")
-create_folder()
 
 def define_page(url, url_df, url_id):
     node_text_list = []
@@ -157,27 +78,36 @@ def define_page(url, url_df, url_id):
 # #? Define what nodes are TP/FP/FN
 def define_node(index_node, df_node, url):
     xpath = df_node['xpath']
-    text = df_node['text']
-    node_tag = df_node['node_tag']
-    gt_texts = df_node['gt_text']
-    node_prob = df_node['final_probs'][0]
+    text = df_node['node_text']
+    node_gt_tag = df_node['node_gt_tag']
+    node_gt_text = df_node['node_gt_text']
+    node_pred_tag = df_node['node_pred_tag']
+
+    if 'node_prob' in list(df_node.index):
+        node_prob = df_node['node_prob'][0]
+    else:
+        node_prob = 0
+
+    if 'node_pred_tag' not in list(df_node.index):
+        node_pred_tag = 'none'
+            
     node_index = str(index_node)
 
-    if len(gt_texts) > 0:
-        text = make_bold_gt_texts(text, gt_texts)
+    if len(node_gt_text) > 0:
+        text = make_bold_gt_texts(text, node_gt_text)
 
     if node_text_link:
         text_ref = f"{url}#:~:text={text.strip().replace(' ', '%20')}"
         text_ref_link = f"<a href={text_ref}>{text}</a>"
         text = text_ref_link
 
-    if df_node['truth'] == 'PAST_CLIENT' and df_node['pred_type'] == 'PAST_CLIENT':
+    if node_gt_tag == 'PAST_CLIENT' and node_pred_tag == 'PAST_CLIENT':
         text_to_return = f"<p class='TP'> {text} </p>"
 
-    elif df_node['truth'] == 'PAST_CLIENT' and df_node['pred_type'] == 'none':
+    elif node_gt_tag == 'PAST_CLIENT' and node_pred_tag == 'none':
         text_to_return = f"<p class='FN'> {text} </p>"
 
-    elif df_node['truth'] == 'none' and df_node['pred_type'] == 'PAST_CLIENT':
+    elif node_gt_tag == 'none' and node_pred_tag == 'PAST_CLIENT':
         text_to_return = f"<p class='FP'> {text} </p>"
     else:
         text_to_return = f"<p> {text} </p>"
@@ -187,20 +117,18 @@ def define_node(index_node, df_node, url):
     if show_probability:
         text_to_return = f"<div class='column second'> <p>{node_prob:.2f}</p> </div> {text_to_return}\n"
 
-    if show_node_tag:
-        text_to_return = f"<div class='column third'> <p>{node_tag}</p> </div> {text_to_return}\n"
-
+    if show_node_gt_tag:
+        text_to_return = f"<div class='column third'> <p>{node_gt_tag}</p> </div> {text_to_return}\n"
 
     text_to_return = f"<div class='row two'> {text_to_return}</div>\n"
 
     if show_node:
         text_to_return = f"<div class='row one'> <p2>{node_index}: {xpath}</p2> </div> {text_to_return}\n"
     
-
     return text_to_return
 
 # #? Create the text representation of the html
-def create_text_representation_for_website(website, website_df, folder_path="text_representation"):
+def create_text_representation_for_website(website, website_df, folder_path):
     pages_list = []
 
     for url_id, (url, url_df) in enumerate(website_df.groupby('url')):
@@ -284,22 +212,31 @@ def create_text_representation_for_website(website, website_df, folder_path="tex
     # TODO (AIMORE): Apply these preprocessing before but also when predicting!
     html_text = html_text.replace("&amp;", "&")
     html_text = html_text.replace("&AMP;", "&")
-    with open(f'{folder_path}/{website}.html', 'w') as f:
+    save_path = folder_path / f"{website}.html"
+    print(f"Saved at: {save_path}")
+    with open(save_path, 'w') as f:
         f.write(html_text)
 
-# #? Run through the websites
-for website_id, (website, df_website) in enumerate(results_df.groupby('domain')):
-    if website == "walkerhamill.com":
-        print(f"{website_id}: {website}")
-        create_text_representation_for_website(website, df_website)
-        break
-    # if website_id == "https://www.walkerhamill.com/credentials/all":
-    #     break
+dataset = "develop"
+load_folder_path = Path(f"/data/GIT/delete/{dataset}/processed")
+save_folder_path = Path(f"/data/GIT/delete/{dataset}/text_representation")
+create_folder(save_folder_path)
+domains_path = glob.glob(str(load_folder_path / "*.pkl"))
+# domains_path = glob.glob(f"/data/GIT/delete/{dataset}/processed_dedup/*.pkl")
+
+
+for website_id, website_path in enumerate(domains_path):
+    website = website_path.split('/')[-1]
+    print(f"{website_id}: {website}")
+    df_website = pd.read_pickle(website_path)
+    df_website = df_website.explode("nodes", ignore_index=True).reset_index()
+    df_website = df_website.join(pd.DataFrame(df_website.pop('nodes').tolist(), columns=["xpath","node_text","node_gt_tag","node_gt_text"]))
+    
+    create_text_representation_for_website(website, df_website, save_folder_path)
+    break
 
 # TODO: Add colourful name of the Past Clients 
 # TODO: Add link to the found sentence {url}#:~:text=%20the%20
-
-# %%
 
 # %% [markdown]
 # # Error analysis

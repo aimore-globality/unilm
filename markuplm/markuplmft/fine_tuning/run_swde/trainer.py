@@ -282,7 +282,8 @@ class Trainer:
                     )
                 else:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-
+                # TODO (Aimore): Based on this: https://pytorch.org/docs/stable/optim.html#:~:text=Learning%20rate%20scheduling%20should%20be%20applied%20after%20optimizer%E2%80%99s%20update%3B%20e.g.%2C%20you%20should%20write%20your%20code%20this%20way%3A
+                # TODO: The order of the optimizer should be before the model's prediction, and the scheduler should come after each epoch
                 self.optimizer.step()
                 self.scheduler.step()  # Update learning rate schedule
                 self.model.zero_grad()
@@ -436,8 +437,8 @@ class Trainer:
         node_probs = np.array(node_probs)
         print(len(node_probs))
         print("dataset: ", len(dataset))
-        dataset = dataset.explode('nodes').reset_index()
-        dataset = dataset.join(pd.DataFrame(dataset.pop('nodes').tolist(), columns=["xpath","node_text","gt_tag","node_gt_text" ]))
+        dataset = dataset.explode('nodes', ignore_index=True).reset_index()
+        dataset = dataset.join(pd.DataFrame(dataset.pop('nodes').tolist(), columns=["xpath","node_text","node_gt_tag","node_gt_text"]))
         print(f"Memory: {sum(dataset.memory_usage(deep=True))/10**6:.2f} Mb")
         dataset.drop(['html', "swde_features"], axis=1, inplace=True)
         print(f"Memory: {sum(dataset.memory_usage(deep=True))/10**6:.2f} Mb")
@@ -445,9 +446,9 @@ class Trainer:
         dataset['node_pred'] = node_probs > 0.5
 
         # TODO: move this out
-        dataset["node_gt"] = dataset["gt_tag"] == 'PAST_CLIENT' 
-        dataset["node_pred"] = dataset["node_pred"].apply(lambda x: "PAST_CLIENT" if x else "none")
-        dataset["node_gt"] = dataset["node_gt"].apply(lambda x: "PAST_CLIENT" if x else "none")
+        # dataset["node_gt"] = dataset["node_gt_tag"] == 'PAST_CLIENT' 
+        # dataset["node_gt_tag"] = dataset["node_gt"].apply(lambda x: "PAST_CLIENT" if x else "none")
+        dataset["node_pred_tag"] = dataset["node_pred"].apply(lambda x: "PAST_CLIENT" if x else "none")
 
         metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(dataset)
         if self.run:

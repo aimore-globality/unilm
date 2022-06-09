@@ -59,29 +59,26 @@ trainer_config = dict(
     num_epochs = 4, 
     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
     max_steps = 0, 
-    # per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
-    per_gpu_train_batch_size = int(16), #? 34 Max with the big machine 
-    # eval_batch_size = int(1024), #? 1024 Max with the big machine 
-    eval_batch_size = int(128), #? 1024 Max with the big machine 
+    per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
+    eval_batch_size = int(1024), #? 1024 Max with the big machine 
     fp16 = True, 
     fp16_opt_level = "O1",
     max_grad_norm = 1.0,
     # load_model=False,
     # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
     # freeze_body = False,
-    save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
+    save_model_path = "/data/GIT/unilm/markuplm/notebooks/models/",
     overwrite_model = True,
     evaluate_during_training = True,
     no_cuda = no_cuda,
     verbose = False,
     logging_every_epoch = 1,
     # # ? Data Reader
-    dataset_to_use='debug',
-    # parallelize=False, 
-    train_dedup=False, #? Default: False
-    develop_dedup=False, #? Default: False
+    dataset_to_use='all',
+    train_dedup=True, #? Default: False
+    develop_dedup=True, #? Default: False
 )
-if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
+# if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
 if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
 
 
@@ -194,17 +191,16 @@ if trainer_config.pop("develop_dedup"):
 else:
     develop_dedup = ""
 
-train_domains_path = glob.glob(f"/data/GIT/delete/train{train_dedup}/*.pkl")
-develop_domains_path = glob.glob(f"/data/GIT/delete/develop{develop_dedup}/*.pkl")
+train_domains_path = glob.glob(f"/data/GIT/delete/train/processed{train_dedup}/*.pkl")
+develop_domains_path = glob.glob(f"/data/GIT/delete/develop/processed{develop_dedup}/*.pkl")
 
-dataset_to_use = trainer_config.pop("dataset_to_use", "debug")
-# #?  Debug
-if dataset_to_use == "debug":
-    train_domains_path = train_domains_path[:4]
-    develop_domains_path = develop_domains_path[:4]
+print(f"train_domains_path: {len(train_domains_path)} - {train_domains_path[0]}")
+print(f"develop_domains_path: {len(develop_domains_path)} - {develop_domains_path[0]}")
+
+dataset_to_use = trainer_config.pop("dataset_to_use")
 
 # #?  I will use 24 websites to train and 8 websites to evaluate
-elif dataset_to_use == "mini":
+if dataset_to_use == "mini":
     train_domains_path = train_domains_path[:24]
     develop_domains_path = develop_domains_path[:8]
 
@@ -213,20 +209,22 @@ elif dataset_to_use == "all":
     train_domains_path = train_domains_path
     develop_domains_path = develop_domains_path
 
+# #?  Debug
 else:
-    pass
+    train_domains_path = train_domains_path[:4]
+    develop_domains_path = develop_domains_path[:4]
 
 df_train = pd.DataFrame()
 for domain_path in train_domains_path:
     df_train = df_train.append(pd.read_pickle(domain_path)) 
 
 df_develop = pd.DataFrame()
-for domain_path in train_domains_path:
+for domain_path in develop_domains_path:
     df_develop = df_develop.append(pd.read_pickle(domain_path)) 
 
 # %%
-print(f"train_dataset_info: {len(df_train)}")
-print(f"develop_dataset_info: {len(df_develop)}")
+print(f"train_dataset: {len(df_train)}")
+print(f"develop_dataset: {len(df_develop)}")
 
 # %% [markdown]
 # # Train
@@ -252,14 +250,12 @@ print(f"develop_dataset_info: {len(df_develop)}")
 #     markup_model.freeze_body()
 
 # %%
-model  = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
 
 # %%
-tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-
 DOC_STRIDE = 128
 MAX_SEQ_LENGTH = 384
-featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+featurizer = Featurizer(doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
 
 # %%
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
@@ -284,11 +280,11 @@ trainer = Trainer(
 )
 
 # %%
-print(f"\nTraining...")
 dataset_nodes_predicted = trainer.train()
 
 # %%
-dataset_nodes_predicted.head(1)
+pd.set_option("max_columns", 200)
+dataset_nodes_predicted.head(2)
 
 # %%
 from IPython.display import display
@@ -342,62 +338,61 @@ get_worst_3('recall')
 # # Infer
 
 # %%
-if local_rank not in [-1, 0]:
-    torch.distributed.barrier()
+# if local_rank not in [-1, 0]:
+#     torch.distributed.barrier()
 
-if local_rank in [-1, 0]:
-    load_model_path = markup_model.save_path
-    # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_3/checkpoint-3"
+# if local_rank in [-1, 0]:
+#     load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_3/checkpoint-3"
     
-    del markup_model
-    torch.cuda.empty_cache()
+#     del model
+#     torch.cuda.empty_cache()
 
-    from markuplmft.fine_tuning.run_swde.markuplmodel import MarkupLModel
+#     print(f"load_model_path: {load_model_path}")
 
-    print(f"load_model_path: {load_model_path}")
+#     # trained_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
+#     trained_model  = transformers.RobertaForTokenClassification.from_pretrained(trainer_config.save_model_path)
+#     # trained_model.load_trained_model(
+#     #     config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#     #     tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
+#     #     net_path=load_model_path,
+#     # )
+#     print(trained_model)
 
-    trained_markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-    trained_markup_model.load_trained_model(
-        config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-        tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-        net_path=load_model_path,
-    )
-    # print(trained_markup_model)
+#     trainer = Trainer(
+#         model = trained_model,
+#         train_dataset = df_train,
+#         evaluate_dataset = df_develop,
+#         featurizer=featurizer,
+#         local_rank=local_rank,
+#         device=device, 
+#         n_gpu=n_gpu,
+#         just_evaluation=True,
+#         run=run,
+#         **trainer_config,
+#     )
 
-    trainer = Trainer(
-        model = trained_markup_model,
-        train_dataset_info = train_dataset_info,
-        evaluate_dataset_info = develop_dataset_info,
-        local_rank=local_rank,
-        device=device, 
-        n_gpu=n_gpu,
-        run=run,
-        just_evaluation=True,
-        **trainer_config,
-    )
+#     train_nodes_predicted = trainer.evaluate(dataset_name="train")
+#     print(f"Train dataset predicted size: {len(train_nodes_predicted)}")
 
-    train_set_nodes_predicted = trainer.evaluate(dataset_name="train")
-    print(f"Train dataset predicted size: {len(train_set_nodes_predicted)}")
-
-    save_path = f"results_classified/train_set_nodes_classified_epoch_{trainer_config['num_epochs']}{train_dedup}.pkl"
-    print(f"Data infered saved at: {save_path}")
-    train_set_nodes_predicted.to_pickle(save_path)
+#     save_path = f"results_classified/train_set_nodes_classified_epoch_{trainer_config['num_epochs']}{train_dedup}.pkl"
+#     print(f"Data infered saved at: {save_path}")
+#     train_nodes_predicted.to_pickle(save_path)
     
 
-    develop_set_nodes_predicted = trainer.evaluate(dataset_name="develop")
-    print(f"Develop dataset predicted size: {len(develop_set_nodes_predicted)}")
+#     develop_nodes_predicted = trainer.evaluate(dataset_name="develop")
+#     print(f"Develop dataset predicted size: {len(develop_nodes_predicted)}")
     
-    save_path = f"results_classified/develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}{develop_dedup}.pkl"
-    print(f"Data infered saved at: {save_path}")
-    develop_set_nodes_predicted.to_pickle(save_path)
+#     save_path = f"results_classified/develop_set_nodes_classified_epoch_{trainer_config['num_epochs']}{develop_dedup}.pkl"
+#     print(f"Data infered saved at: {save_path}")
+#     develop_nodes_predicted.to_pickle(save_path)
 
-    run.save()
-    run.finish()
+#     run.save()
+#     run.finish()
 
-if local_rank not in [-1, 0]:
-    torch.distributed.barrier()
+# if local_rank not in [-1, 0]:
+#     torch.distributed.barrier()
 
 # %%
-save_path
+# save_path
 
 # %%
