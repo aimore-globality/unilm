@@ -1,3 +1,4 @@
+from ast import Not
 import torch
 from typing import Optional, Sequence, Tuple
 from transformers import RobertaTokenizer
@@ -67,11 +68,11 @@ class SwdeDataset(Dataset):
 class Featurizer:
     def __init__(
         self,
-        doc_stride,
-        max_length,
+        doc_stride=128,
+        max_length=384,
+        tokenizer=RobertaTokenizer.from_pretrained('roberta-base'),
     ) -> None:
-
-        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        self.tokenizer = tokenizer
         self.doc_stride = doc_stride
         self.max_length = max_length
 
@@ -159,6 +160,7 @@ class Featurizer:
 
     def get_swde_features(self, nodes: Sequence) -> Sequence[SwdeFeature]:
         """
+        nodes: [(xpath, node_text, tag, gt_text), ...]
         1. Tokenizer page
         2. Convert tokens into ids
         3. Split 384 tokens ids into features that go into the model
@@ -176,7 +178,6 @@ class Featurizer:
         # ? For each node append the number of tokens to first_token_pos.
         #! This has to assume that the nodes won't have tag or gt_text!
         for node in nodes:
-            # xpath, node_text, tag, gt_text = node[0], node[1], node[2], node[3]
             node_text, gt_text = node[1], node[3]
 
             # ? Tokenize and convert tokens into ids

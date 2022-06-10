@@ -1,8 +1,13 @@
 from sklearn.metrics import confusion_matrix
 import numpy as np
 from markuplmft.fine_tuning.run_swde import constants
+from typing import Sequence
 
-def compute_metrics(truth, pred):
+def compute_metrics(truth:Sequence[str], pred:Sequence[str]):
+    """
+    truth: ['none', 'none', 'tag']
+    pred: ['none', 'tag', 'tag']
+    """
     metrics = {}
     
     truth = np.array(truth)
@@ -24,8 +29,8 @@ def compute_metrics(truth, pred):
     return metrics, cm
 
 def compute_metrics_per_dataset(df):
-    groung_truth = df['node_gt']
-    predictions = df['node_pred']
+    groung_truth = df['node_gt_tag']
+    predictions = df['node_pred_tag']
     return compute_metrics(groung_truth, predictions)
 
 

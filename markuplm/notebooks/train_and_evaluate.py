@@ -22,10 +22,8 @@ import glob
 import pandas as pd
 
 from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
-import transformers
-from transformers import RobertaTokenizer
+Aimport transformers
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
-
 
 
 # %%
@@ -74,7 +72,7 @@ trainer_config = dict(
     verbose = False,
     logging_every_epoch = 1,
     # # ? Data Reader
-    dataset_to_use='all',
+    dataset_to_use='debug',
     train_dedup=True, #? Default: False
     develop_dedup=True, #? Default: False
 )
@@ -250,12 +248,21 @@ print(f"develop_dataset: {len(df_develop)}")
 #     markup_model.freeze_body()
 
 # %%
-model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+featurizer = Featurizer()
 
 # %%
-DOC_STRIDE = 128
-MAX_SEQ_LENGTH = 384
-featurizer = Featurizer(doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+
+# from transformers import AutoModelForMaskedLM
+
+# distil_model = AutoModelForMaskedLM.from_pretrained("distilroberta-base")
+
+# model.roberta.encoder = distil_model.roberta.encoder
+# model.roberta.embeddings = distil_model.roberta.embeddings
+
+# model.roberta.encoder.load_state_dict(distil_model.roberta.encoder.state_dict(), strict=False)
+# model.roberta.embeddings.load_state_dict(distil_model.roberta.embeddings.state_dict(), strict=False)
+# del distil_model
 
 # %%
 from markuplmft.fine_tuning.run_swde.trainer import Trainer
@@ -264,7 +271,7 @@ print(f"\n{local_rank} - Preparing Trainer...")
 # #? Leave this barrier here because it unlocks
 # #? the other GPUs that were waiting at: 
 # #? load_or_cache_websites in DataReader
-if local_rank == 0: 
+if local_rank == 0:
     torch.distributed.barrier()
 
 trainer = Trainer(
@@ -280,7 +287,9 @@ trainer = Trainer(
 )
 
 # %%
+print("Start ...")
 dataset_nodes_predicted = trainer.train()
+print("... End")
 
 # %%
 pd.set_option("max_columns", 200)
@@ -396,3 +405,5 @@ get_worst_3('recall')
 # save_path
 
 # %%
+run.save()
+run.finish()

@@ -24,12 +24,6 @@ pd.set_option("max_colwidth", 50, "max_rows", 4, "min_rows", 4)
 # # Generate text for html
 
 # %%
-# df_website.head(1)
-
-# %%
-# df_website["gt_tag"].value_counts()
-
-# %%
 from typing import List
 
 show_node = True

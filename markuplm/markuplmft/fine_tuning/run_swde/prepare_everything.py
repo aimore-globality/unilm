@@ -1,3 +1,4 @@
+import logging
 from typing import Sequence
 import pandas as pd
 from tqdm import tqdm
@@ -371,7 +372,7 @@ class PrepareData:
     #     for page_nodes in df["nodes"]:
     #         domain_nodes.extend(page_nodes)
     #     domain_nodes_df = pd.DataFrame(
-    #         domain_nodes, columns=["xpath", "text", "node_gt_tag", "gt_texts"]
+    #         domain_nodes, columns=["xpath", "text", "node_gt_tag", "node_gt_text"]
     #     )
     #     save_path = folder_path / f"{domain_name}.pkl"
     #     logging.info(f"save_path: {save_path}")
@@ -403,7 +404,8 @@ class PrepareData:
         )
         # ? Combine dedup nodes into a single column (as they were before )
         ddd["nodes"] = ddd.apply(
-            lambda x: list(zip(x["xpath"], x["node_text"], x["node_gt_tag"], x["node_gt_text"])), axis=1
+            lambda x: list(zip(x["xpath"], x["node_text"], x["node_gt_tag"], x["node_gt_text"])),
+            axis=1,
         )
         # ? Remove pages that don't contain nodes anymore due to dedup
         ddd = ddd.dropna(subset=["nodes"])
@@ -417,7 +419,12 @@ class PrepareData:
         assert len(df) > 0
         return df
 
-    def save_dedup(self, df: pd.DataFrame, domain_name: str, raw_data_folder: Path):
+    def save_dedup(
+        self,
+        df: pd.DataFrame,
+        domain_name: str,
+        raw_data_folder: Path,
+    ):
         folder_path = raw_data_folder / "dedup"
         folder_path.mkdir(parents=True, exist_ok=True)
         save_path = folder_path / f"{domain_name}.pkl"
@@ -425,25 +432,25 @@ class PrepareData:
         df.to_pickle(save_path)
 
     def add_classification_label(
-        self, 
+        self,
         nodes: Sequence[str],
-        gt_texts: Sequence[str],
+        node_gt_text: Sequence[str],
     ) -> Sequence[str]:
         """
         Node: [(xpath, text), (...)]
-        gt_texts: [gt_text1, gt_text2]
-        Annotated_Node: [(xpath, text, node_gt_tag, [gt_text1, gt_text2]), (...)]
+        node_gt_text: [node_gt_text1, node_gt_text2]
+        Annotated_Node: [(xpath, text, node_gt_tag, [node_gt_text1, node_gt_text2]), (...)]
         """
 
         nodes_annotated = []
         for xpath, node_text in nodes:
             gt_text_in_node = []
-            for gt_text in gt_texts:
+            for gt_text in node_gt_text:
                 if f" {gt_text.strip()} ".lower() in f" {node_text.strip()} ".lower():
                     gt_text_in_node.append(gt_text)
 
             if len(gt_text_in_node) == 0:
-                new_node_text = (xpath, node_text, 'none', [])
+                new_node_text = (xpath, node_text, "none", [])
             else:
                 new_node_text = (
                     xpath,
@@ -465,29 +472,34 @@ class PrepareData:
 if __name__ == "__main__":
     # wandb.login()
     # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
-    import logging
 
     FORMAT = "[ %(asctime)s ] %(filename)s:%(lineno)5s - %(funcName)35s() : %(message)s"
     logging.basicConfig(format=FORMAT, level=logging.INFO)
 
     remove_folder = True
-    shortcut = True
+    shortcut = False
     dataset_name = "develop"
-    parallel = True
-    DOC_STRIDE = 128
-    MAX_SEQ_LENGTH = 384
     negative_fraction = 0.10  # ? 0.10
     page_limit = -1  # ? -1
+    parallel = True
+    # tokenizer_name = 'distil'
+
+    # if tokenizer_name == 'distil':
+    #     from transformers import AutoTokenizer
+    #     tokenizer = AutoTokenizer.from_pretrained("distilroberta-base")
+    # DOC_STRIDE = 128
+    # MAX_SEQ_LENGTH = 384
 
     # ? Full version
-    # wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
+    wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
     # ? Smaller version
-    wae_data_load_path = Path(f"/data/GIT/delete/")
+    # wae_data_load_path = Path(f"/data/GIT/delete/")
 
-    raw_data_folder = Path(f"/data/GIT/delete/{dataset_name}")
+    raw_data_folder = Path(f"/data/GIT/delete-/{dataset_name}")
 
     prepare_data = PrepareData(tag="PAST_CLIENT")
-    featurizer = Featurizer(doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+
+    featurizer = Featurizer()
 
     if remove_folder:
         prepare_data.remove_folder(raw_data_folder)

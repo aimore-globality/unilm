@@ -254,7 +254,7 @@ class Trainer:
             inputs = {
                 "input_ids": batch_list[0],
                 "attention_mask": batch_list[1],
-                "token_type_ids": batch_list[2],
+                "token_type_ids": batch_list[2], # Uncomment this to use Roberta
                 "labels": batch_list[3],
             }
             outputs = self.model(**inputs)
@@ -445,9 +445,8 @@ class Trainer:
         dataset['node_prob'] = node_probs
         dataset['node_pred'] = node_probs > 0.5
 
-        # TODO: move this out
-        # dataset["node_gt"] = dataset["node_gt_tag"] == 'PAST_CLIENT' 
-        # dataset["node_gt_tag"] = dataset["node_gt"].apply(lambda x: "PAST_CLIENT" if x else "none")
+        # TODO: move this out        
+        dataset["node_gt"] = dataset["node_gt_tag"] == 'PAST_CLIENT'
         dataset["node_pred_tag"] = dataset["node_pred"].apply(lambda x: "PAST_CLIENT" if x else "none")
 
         metrics_per_dataset, cm_per_dataset = self.get_classification_metrics(dataset)
