@@ -22,7 +22,7 @@ import glob
 import pandas as pd
 
 from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
-Aimport transformers
+import transformers
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 
 
