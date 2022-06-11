@@ -15,169 +15,38 @@
 
 # %%
 import wandb
-import os
-from pprint import pprint
-import torch
 import glob
 import pandas as pd
-
-from markuplmft.fine_tuning.run_swde.utils import get_device_and_gpu_count
 import transformers
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
+import numpy as np
+import pandas as pd
+import wandb
+from tqdm import tqdm
+import wandb
+from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from markuplmft.fine_tuning.run_swde.utils import set_seed
+from transformers import AdamW
+from torch.utils.data import DataLoader
+from accelerate import Accelerator
+from transformers import AdamW, get_scheduler
+from transformers import set_seed
+import torch
+from transformers import get_linear_schedule_with_warmup
+from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_dataset
 
-
-# %%
-try:
-    local_rank = int(os.environ["LOCAL_RANK"])
-except:
-    local_rank=-1
-
-print(f"local_rank: {local_rank}")
-
-os.environ["WANDB_START_METHOD"] = "thread"
-os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
-
-# %%
-no_cuda = False
-device, n_gpu = get_device_and_gpu_count(no_cuda, local_rank)
 
 
 # %%
 trainer_config = dict(
-    # # ? Optimizer
-    weight_decay= 0.01, #? Default: 0.0
-    learning_rate=1e-05,  #? Default: 1e-05
-    adam_epsilon=1e-8, #? Default: 1e-8
-    # # ? Loss
-    label_smoothing=0.01, #? Default: 0.0 
-    loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss / FocalLoss
-    # # ? Scheduler
-    warmup_ratio=0.0, #? Default: 0
-    # # ? Trainer
-    num_epochs = 4, 
-    gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
-    max_steps = 0, 
-    per_gpu_train_batch_size = int(34), #? 34 Max with the big machine 
-    eval_batch_size = int(1024), #? 1024 Max with the big machine 
-    fp16 = True, 
-    fp16_opt_level = "O1",
-    max_grad_norm = 1.0,
-    # load_model=False,
-    # load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
-    # freeze_body = False,
-    save_model_path = "/data/GIT/unilm/markuplm/notebooks/models/",
-    overwrite_model = True,
-    evaluate_during_training = True,
-    no_cuda = no_cuda,
-    verbose = False,
-    logging_every_epoch = 1,
-    # # ? Data Reader
     dataset_to_use='debug',
     train_dedup=True, #? Default: False
     develop_dedup=True, #? Default: False
 )
-# if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
-if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
 
 
-# %%
-# # trainer_config = dict(
-# #     # ? Optimizer
-# #     weight_decay= 0.01, #? Default: 0.0
-# #     learning_rate=1e-05,  #? Default: 1e-05
-# #     adam_epsilon=1e-8, #? Default: 1e-8
-# #     # ? Loss
-# #     label_smoothing=0.01, #? Default: 0.0 
-# #     loss_function = "CrossEntropyLoss", #? Default: CrossEntropyLoss / FocalLoss
-# #     # ? Scheduler
-# #     warmup_ratio=0.0, #? Default: 0
-# #     # ? Trainer
-# #     num_epochs = 3, 
-# #     logging_every_epoch = 1,
-# #     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
-# #     max_steps = 0, 
-# #     fp16 = True, 
-# #     fp16_opt_level = "O1",
-# #     max_grad_norm = 1.0,
-# #     verbose = False,
-# #     load_model=False,
-# #     load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
-# #     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-# #     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-# #     # per_gpu_train_batch_size = 16, #? Max with the big machine 
-# #     eval_batch_size = 1024, #? 1024 Max with the big machine 
-# #     # eval_batch_size = 128, #?  Max with the big machine 
-# #     overwrite_model = True,
-# #     evaluate_during_training = True,
-# #     no_cuda = no_cuda,
-# #     freeze_body = False,
-# #     dataset_to_use='all',
-# #     # ? Data Reader
-# #     overwrite_cache=False, 
-# #     parallelize=False, 
-# #     train_dedup=True, #? Default: False
-# #     develop_dedup=True, #? Default: False
-# # )
-# # if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
-# # if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
-
-# # #! Train only head after being trained full body:
-# trainer_config = dict(
-#     # ? Optimizer
-#     weight_decay= 0.01, #? Default: 0.0
-#     learning_rate=1e-05,  #? Default: 1e-05
-#     adam_epsilon=1e-8, #? Default: 1e-8
-#     # ? Loss
-#     label_smoothing=0.01, #? Default: 0.0 
-#     loss_function = "FocalLoss", #? Default: CrossEntropyLoss / FocalLoss
-#     # ? Scheduler
-#     warmup_ratio=0.0, #? Default: 0
-#     # ? Trainer
-#     num_epochs = 10, 
-#     logging_every_epoch = 1,
-#     gradient_accumulation_steps = 1, #? For the short test I did, increasing this doesn't change the time and reduce performance
-#     max_steps = 0, 
-#     fp16 = True, 
-#     fp16_opt_level = "O1",
-#     max_grad_norm = 1.0,
-#     verbose = False,
-#     load_model=True,
-#     load_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models/epochs_2/checkpoint-2",
-#     save_model_path = "/data/GIT/unilm/markuplm/markuplmft/models/my_models",
-#     per_gpu_train_batch_size = 34, #? 34 Max with the big machine 
-#     # per_gpu_train_batch_size = 16, #? Max with the big machine 
-#     eval_batch_size = 1024, #? 1024 Max with the big machine 
-#     # eval_batch_size = 128, #?  Max with the big machine 
-#     overwrite_model = True,
-#     evaluate_during_training = True,
-#     no_cuda = no_cuda,
-#     freeze_body = True,
-#     dataset_to_use='all',
-#     # ? Data Reader
-#     overwrite_cache=False, 
-#     parallelize=False, 
-#     train_dedup=True, #? Default: False
-#     develop_dedup=True, #? Default: False
-#     seed=,
-# )
-# if trainer_config['dataset_to_use'] == 'all': trainer_config["parallelize"] = True
-# if trainer_config['dataset_to_use'] == 'debug': trainer_config["num_epochs"] = 1
-
-
-# %%
-print(f"local_rank: {local_rank}")
-
-if local_rank in [-1, 0]:
-    print("Initializing WandB...")
-    run = wandb.init(project="LanguageModel", config=trainer_config, resume=False, tags=["train_evaluate"])
-    trainer_config = dict(run.config)
-    print("Training configurations from WandB: ")
-    pprint(trainer_config)
-else:
-    run = None
-
-loss_function = trainer_config.pop("loss_function")
-label_smoothing = trainer_config.pop("label_smoothing")
 # %%
 if trainer_config.pop("train_dedup"):
     train_dedup = "_dedup"
@@ -228,68 +97,214 @@ print(f"develop_dataset: {len(df_develop)}")
 # # Train
 
 # %%
-# print(f"\n local_rank: {local_rank} - Loading pretrained model and tokenizer...")
-# load_model_path = trainer_config.pop("load_model_path") 
-# if trainer_config.pop("load_model", False):
-#     print("\n --- MODEL LOADED! --- ")
-#     markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-#     markup_model.load_trained_model(
-#         config_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-#         tokenizer_path="/data/GIT/unilm/markuplm/markuplmft/models/my_models/",
-#         net_path=load_model_path,
-#     )
-#     print(f"load_model_path: {load_model_path}")
-#     print("\n --- MODEL LOADED! --- ")
-# else:
-#     markup_model = MarkupLModel(local_rank=local_rank, loss_function=loss_function, label_smoothing=label_smoothing, device=device, n_gpu=n_gpu)
-#     markup_model.load_pretrained_model_and_tokenizer()
+# # ? Trainer
+num_epochs = 1
+train_batch_size = 30  #? 34 Max with the big machine 
+evaluate_batch_size = 8*train_batch_size #? 1024 Max with the big machine 
+# # ? Setting Data
+train_dataset = df_train
+evaluate_dataset = df_develop
 
-# if trainer_config.pop("freeze_body", False):
-#     markup_model.freeze_body()
+train_dataset["html"] = train_dataset["html"].astype("category")
+evaluate_dataset["html"] = evaluate_dataset["html"].astype("category")
+
+num_train_epochs = num_epochs
+num_training_steps = num_epochs
 
 # %%
-featurizer = Featurizer()
+from sklearn.metrics import recall_score, precision_score
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
+def create_data_loader(features, batch_size, is_train=True):
+    if is_train:
+        sampler = RandomSampler(features)
+    else:
+        sampler = SequentialSampler(features)
+        
+    return DataLoader(
+        dataset=features,
+        # sampler=sampler,
+        shuffle=is_train,
+        batch_size=batch_size,
+        pin_memory=True,
+        # num_workers=4
+    )
+
+def training_function(evaluate_dataset):
+    accelerator = Accelerator()
+
+    if accelerator.is_main_process:
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        transformers.utils.logging.set_verbosity_error()
+        
+    featurizer = Featurizer()
+    
+    train_features = featurizer.feature_to_dataset(train_dataset["swde_features"].explode().values)
+    evaluate_features = featurizer.feature_to_dataset(evaluate_dataset["swde_features"].explode().values)
+
+    train_dataloader = create_data_loader(train_features, train_batch_size, True)
+    evaluate_dataloader = create_data_loader(evaluate_features, evaluate_batch_size, False)
+
+    set_seed(0)
+
+    train_batches = len(train_dataloader)
+    evaluate_batches = len(evaluate_dataloader)
+
+    accelerator.print(f"batch_size = {train_batch_size} | train_batches: {train_batches} | training_samples: {len(train_features)}")
+    accelerator.print(f"batch_size = {evaluate_batch_size} | evaluate_batches: {evaluate_batches} | evaluate_samples: {len(evaluate_features)}")
+
+    accelerator.print(f"Num Epochs = {num_train_epochs}")
+    accelerator.print(f"Num training data points = {len(train_dataset)}")
+
+    device = accelerator.device
+    accelerator.print(f"device: {device}")
+
+    model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+    model.to(device)
+
+    weight_decay =  0.01 #? Default: 0.0
+    learning_rate = 1e-05  #? Default: 1e-05
+    adam_epsilon = 1e-8 #? Default: 1e-8
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                param
+                for param_name, param in model.named_parameters()
+                if not any(nd in param_name for nd in no_decay)
+            ],
+            "weight_decay": weight_decay,
+        },
+        {
+            "params": [
+                param
+                for param_name, param in model.named_parameters()
+                if any(nd in param_name for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+    # optimizer = AdamW(model.parameters(), lr=3e-5)
+    optimizer = AdamW(params=optimizer_grouped_parameters, lr=learning_rate, eps=adam_epsilon)
+
+    (
+        model, optimizer, train_dataloader, evaluate_dataloader 
+    ) = accelerator.prepare(
+        model, optimizer, train_dataloader, evaluate_dataloader, 
+    )
+    
+    # scheduler = get_scheduler(
+    #     "linear",
+    #     optimizer=optimizer,
+    #     num_warmup_steps=0,
+    #     num_training_steps=num_training_steps,
+    # )
+    scheduler = get_linear_schedule_with_warmup(
+            optimizer=optimizer, num_warmup_steps=100, num_training_steps=len(train_dataloader) * num_epochs
+        )
+
+    # #! Training step
+    accelerator.print("Train...")
+    progress_bar = tqdm(range(num_training_steps), disable=not accelerator.is_main_process)
+    for epoch in progress_bar:
+        accelerator.print(f"Epoch: {epoch}")
+        all_losses = []
+        model.train()
+        for step, batch in enumerate(train_dataloader):
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2],  
+                "labels": batch[3],
+            }
+            outputs = model(**inputs)
+            loss = outputs[0]
+            accelerator.backward(loss)
+
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+
+            all_losses.append(loss.item())
+        
+        accelerator.print(f"Loss: {np.mean(all_losses)}")
+        progress_bar.update(1)
+
+    # #! Evaluation step
+    accelerator.print("Evaluate...")
+    model.eval()
+    all_predictions = []
+    all_labels = []
+    all_logits = []
+    for step, batch in enumerate(evaluate_dataloader):
+        with torch.no_grad():
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2],  
+                "labels": batch[3],
+            }
+            outputs = model(**inputs)
+        # predictions = outputs.logits.argmax(dim=-1)
+        logits = outputs.logits
+
+        # all_predictions.append(accelerator.gather(predictions))
+        # all_labels.append(accelerator.gather(inputs["labels"]))
+
+        all_logits.append(accelerator.gather(logits).detach().cpu())
+
+
+    # all_predictions = torch.cat(all_predictions)[:len(evaluate_features)]
+    # all_labels = torch.cat(all_labels)[:len(evaluate_features)]
+
+    all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)
+
+    # all_labels, all_predictions = np.array(all_labels.cpu()), np.array(all_predictions.cpu())
+    # all_labels, all_predictions = np.clip(all_labels, a_min = 0, a_max=1).reshape(-1,1), np.clip(all_predictions, a_min = 0, a_max=1).reshape(-1,1)
+    p = precision_score(all_labels, all_predictions)
+    r = recall_score(all_labels, all_predictions)
+    accelerator.print(f"Final: P: {p:.2f} R:{r:.2f}")
+    # eval_metric = metric.compute(predictions=all_predictions, references=all_labels)
+
+
+    node_probs = []
+
+    for feature_index, feature_ids in enumerate(evaluate_features.relative_first_tokens_node_index):
+        node_probs.extend(all_probs[feature_index, [evaluate_features.relative_first_tokens_node_index[feature_index]], 0][0])
+
+    node_probs = np.array(node_probs)
+    accelerator.print(len(node_probs))
+    accelerator.print("dataset: ", len(evaluate_dataset))
+    evaluate_dataset = evaluate_dataset.explode('nodes', ignore_index=True).reset_index()
+    evaluate_dataset = evaluate_dataset.join(pd.DataFrame(evaluate_dataset.pop('nodes').tolist(), columns=["xpath","node_text","node_gt_tag","node_gt_text"]))
+    accelerator.print(f"Memory: {sum(evaluate_dataset.memory_usage(deep=True))/10**6:.2f} Mb")
+    evaluate_dataset.drop(['html', "swde_features"], axis=1, inplace=True)
+    accelerator.print(f"Memory: {sum(evaluate_dataset.memory_usage(deep=True))/10**6:.2f} Mb")
+    evaluate_dataset['node_prob'] = node_probs
+    evaluate_dataset['node_pred'] = node_probs > 0.5
+
+    # TODO: move this out        
+    evaluate_dataset["node_gt"] = evaluate_dataset["node_gt_tag"] == 'PAST_CLIENT'
+    evaluate_dataset["node_pred_tag"] = evaluate_dataset["node_pred"].apply(lambda x: "PAST_CLIENT" if x else "none")
+
+    def get_classification_metrics(dataset_predicted):
+        accelerator.print("Compute Metrics:")
+        metrics_per_dataset, cm_per_dataset = compute_metrics_per_dataset(dataset_predicted)
+
+        accelerator.print(
+            f"Node Classification Metrics per Dataset:\n {metrics_per_dataset} | cm_per_dataset: {cm_per_dataset}"
+        )
+        return metrics_per_dataset, cm_per_dataset
+
+    metrics_per_dataset, cm_per_dataset = get_classification_metrics(evaluate_dataset)
+    accelerator.print(f"metrics_per_dataset: {metrics_per_dataset}")
+    accelerator.print(f"cm_per_dataset: {cm_per_dataset}")
+    accelerator.print("...Done")
 
 # %%
-model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
-
-# from transformers import AutoModelForMaskedLM
-
-# distil_model = AutoModelForMaskedLM.from_pretrained("distilroberta-base")
-
-# model.roberta.encoder = distil_model.roberta.encoder
-# model.roberta.embeddings = distil_model.roberta.embeddings
-
-# model.roberta.encoder.load_state_dict(distil_model.roberta.encoder.state_dict(), strict=False)
-# model.roberta.embeddings.load_state_dict(distil_model.roberta.embeddings.state_dict(), strict=False)
-# del distil_model
-
-# %%
-from markuplmft.fine_tuning.run_swde.trainer import Trainer
-
-print(f"\n{local_rank} - Preparing Trainer...")
-# #? Leave this barrier here because it unlocks
-# #? the other GPUs that were waiting at: 
-# #? load_or_cache_websites in DataReader
-if local_rank == 0:
-    torch.distributed.barrier()
-
-trainer = Trainer(
-    model = model,
-    train_dataset = df_train,
-    evaluate_dataset = df_develop,
-    featurizer=featurizer,
-    local_rank=local_rank,
-    device=device, 
-    n_gpu=n_gpu,
-    run=run,
-    **trainer_config,
-)
-
-# %%
-print("Start ...")
-dataset_nodes_predicted = trainer.train()
-print("... End")
+from accelerate import notebook_launcher
+notebook_launcher(training_function, args=[evaluate_dataset],  num_processes=4, use_fp16=True)
 
 # %%
 pd.set_option("max_columns", 200)
