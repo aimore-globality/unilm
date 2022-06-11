@@ -41,7 +41,7 @@ from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_datas
 
 # %%
 trainer_config = dict(
-    dataset_to_use='debug',
+    dataset_to_use='all',
     train_dedup=True, #? Default: False
     develop_dedup=True, #? Default: False
 )
@@ -98,7 +98,7 @@ print(f"develop_dataset: {len(df_develop)}")
 
 # %%
 # # ? Trainer
-num_epochs = 1
+num_epochs = 4
 train_batch_size = 30  #? 34 Max with the big machine 
 evaluate_batch_size = 8*train_batch_size #? 1024 Max with the big machine 
 # # ? Setting Data
@@ -116,18 +116,12 @@ from sklearn.metrics import recall_score, precision_score
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 def create_data_loader(features, batch_size, is_train=True):
-    if is_train:
-        sampler = RandomSampler(features)
-    else:
-        sampler = SequentialSampler(features)
-        
     return DataLoader(
         dataset=features,
-        # sampler=sampler,
         shuffle=is_train,
         batch_size=batch_size,
         pin_memory=True,
-        # num_workers=4
+        num_workers=4
     )
 
 def training_function(evaluate_dataset):
@@ -185,7 +179,6 @@ def training_function(evaluate_dataset):
             "weight_decay": 0.0,
         },
     ]
-    # optimizer = AdamW(model.parameters(), lr=3e-5)
     optimizer = AdamW(params=optimizer_grouped_parameters, lr=learning_rate, eps=adam_epsilon)
 
     (
@@ -194,12 +187,6 @@ def training_function(evaluate_dataset):
         model, optimizer, train_dataloader, evaluate_dataloader, 
     )
     
-    # scheduler = get_scheduler(
-    #     "linear",
-    #     optimizer=optimizer,
-    #     num_warmup_steps=0,
-    #     num_training_steps=num_training_steps,
-    # )
     scheduler = get_linear_schedule_with_warmup(
             optimizer=optimizer, num_warmup_steps=100, num_training_steps=len(train_dataloader) * num_epochs
         )
@@ -246,28 +233,24 @@ def training_function(evaluate_dataset):
                 "labels": batch[3],
             }
             outputs = model(**inputs)
-        # predictions = outputs.logits.argmax(dim=-1)
         logits = outputs.logits
-
-        # all_predictions.append(accelerator.gather(predictions))
-        # all_labels.append(accelerator.gather(inputs["labels"]))
-
         all_logits.append(accelerator.gather(logits).detach().cpu())
 
+    #     predictions = outputs.logits.argmax(dim=-1)
+    #     all_predictions.append(accelerator.gather(predictions))
+    #     all_labels.append(accelerator.gather(inputs["labels"]))
 
     # all_predictions = torch.cat(all_predictions)[:len(evaluate_features)]
     # all_labels = torch.cat(all_labels)[:len(evaluate_features)]
 
-    all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)
-
     # all_labels, all_predictions = np.array(all_labels.cpu()), np.array(all_predictions.cpu())
     # all_labels, all_predictions = np.clip(all_labels, a_min = 0, a_max=1).reshape(-1,1), np.clip(all_predictions, a_min = 0, a_max=1).reshape(-1,1)
-    p = precision_score(all_labels, all_predictions)
-    r = recall_score(all_labels, all_predictions)
-    accelerator.print(f"Final: P: {p:.2f} R:{r:.2f}")
+    # p = precision_score(all_labels, all_predictions)
+    # r = recall_score(all_labels, all_predictions)
+    # accelerator.print(f"Final: P: {p:.2f} R:{r:.2f}")
     # eval_metric = metric.compute(predictions=all_predictions, references=all_labels)
 
-
+    all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)
     node_probs = []
 
     for feature_index, feature_ids in enumerate(evaluate_features.relative_first_tokens_node_index):
@@ -302,9 +285,10 @@ def training_function(evaluate_dataset):
     accelerator.print(f"cm_per_dataset: {cm_per_dataset}")
     accelerator.print("...Done")
 
+
 # %%
 from accelerate import notebook_launcher
-notebook_launcher(training_function, args=[evaluate_dataset],  num_processes=4, use_fp16=True)
+notebook_launcher(training_function, args=[evaluate_dataset],  num_processes=4, use_fp16=True, mixed_precision="bf16")
 
 # %%
 pd.set_option("max_columns", 200)
