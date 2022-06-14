@@ -1,4 +1,3 @@
-from ast import Not
 import torch
 from typing import Optional, Sequence, Tuple
 from transformers import RobertaTokenizer
@@ -65,6 +64,25 @@ class SwdeDataset(Dataset):
         return tuple(tensor[index] for tensor in self.tensors)
 
 
+# from sklearn.base import Basestimator, TransformerMixin
+# class InsertUrlTransformer(Basestimator, TransformerMixin):
+#     def __init__(self, variable) -> None:
+#         super().__init__()
+#         self.variable = variable
+
+#     def fit(self, X, y=None):
+#         return self
+
+#     def transform(self, X):
+#         X = X.copy()
+
+#         X[self.variable] = 
+
+#         return X
+
+
+
+
 class Featurizer:
     def __init__(
         self,
@@ -76,17 +94,18 @@ class Featurizer:
         self.doc_stride = doc_stride
         self.max_length = max_length
 
-    def get_domain_url(self, url: str) -> str:
+    def get_domain_from_url(self, url: str) -> str:
         """
         "http://en.added-value.com/case-study/career-educa.php" --> "en.added-value.com"
         """
         url = unquote(url).lower().strip("/")
         url_parsed = urlparse(url)
-        return url_parsed.netloc
+        domain = url_parsed.netloc
+        return domain
 
     def clean_the_url(self, url: str) -> str:
         "Remove domain and symbols from the url"
-        domain = self.get_domain_url(url)
+        domain = self.get_domain_from_url(url)
         url_without_domain = url.split(domain)[1]
         clean_url = re.sub("[%+\./:?-]", " ", url_without_domain)  # ? Replace symbols with spaces
         clean_url = re.sub("\s+", " ", clean_url)  # ? Reduce any space to one space
@@ -117,7 +136,7 @@ class Featurizer:
         """
         dom_tree = etree.ElementTree(lxml.html.fromstring(html))
 
-        page_features = []
+        page_nodes = []
         min_node_text_size, max_node_text_size = 2, 10_000
 
         for node in dom_tree.iter():
@@ -151,10 +170,10 @@ class Featurizer:
                             if len_brs >= 2:
                                 xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
 
-                            page_features.append((xpath, etext))
+                            page_nodes.append((xpath, etext))
         # ? Make sure that it is returning a page with features
-        if len(page_features) > 0:
-            return page_features
+        if len(page_nodes) > 0:
+            return page_nodes
         else:
             print(f"No nodes from this html were able to be extracted - html: {html}")
 
@@ -177,35 +196,37 @@ class Featurizer:
         # ? Create a tokenization of the page by converting the text of each node into token_ids and concatenate them.
         # ? For each node append the number of tokens to first_token_pos.
         #! This has to assume that the nodes won't have tag or gt_text!
+        #? This is creating a tokenized version of the page going though the nodes and storing the position of the first token in each node  
         for node in nodes:
-            node_text, gt_text = node[1], node[3]
-
-            # ? Tokenize and convert tokens into ids
-            node_tokens_ids = self.tokenizer.convert_tokens_to_ids(
-                self.tokenizer.tokenize(node_text)
-            )
-            # ? Concatenate token_ids
-            node_tokens_ids = node_tokens_ids + [
-                self.tokenizer.pad_token_id
-            ]  # TODO: Check for a better token
-            page_tokens_ids += node_tokens_ids
-
-            # ? Append the position of the first token of the node
-            # ? We always use the first token to predict
-            absolute_first_tokens_node_indices.append(
-                len(page_labels_seq)
-            )  # ? E.g. len(all_labels_seq) = 71
-            # ? E.g. first_tokens_node_index = [71, 95, 100, 104, 184, 192, 198, 212]
+            # TODO(Aimore): Improve this way to get node[3]
+            if len(node) > 2:
+                node_text, gt_text = node[1], node[3]
+            else:
+                node_text = node[1]
+                gt_text = []
 
             if len(gt_text) > 0:
                 annotation_type = "PAST_CLIENT"
             else:
                 annotation_type = "none"
 
+            # ? Tokenize and convert tokens into ids
+            node_tokens_ids = self.tokenizer.convert_tokens_to_ids(
+                self.tokenizer.tokenize(node_text)
+            )
+            # ? Concatenate token_ids and add a pad token between them
+            node_tokens_ids = node_tokens_ids + [
+                self.tokenizer.pad_token_id
+            ]  # TODO: Check for a better token here
+            page_tokens_ids += node_tokens_ids
+
+            # ? Append the position of the first token of the node
+            # ? We always use the first token to predict
+            absolute_first_tokens_node_indices.append(len(page_labels_seq))
             page_labels_seq += [constants.ATTRIBUTES_PLUS_NONE.index(annotation_type)] * len(
                 node_tokens_ids
             )
-            # ? E. g. all_labels_seq = [1, 1, 1, 0, 1, 1, ..., 0, 1, 1]
+            # ? E. g. page_labels_seq = [1, 1, 1, 0, 1, 1, ..., 0, 1, 1]
             # ? The numbers in each token_ids indicates the label index in constants.ATTRIBUTES_PLUS_NONE
             # ? This means that all tokens_ids for the text in the xpath
             # ? will get labelled as something differently than -100 in case it is positive.
@@ -242,7 +263,6 @@ class Featurizer:
 
             relative_first_tokens_node_indices = []
             absolute_node_indices = []
-            # involved_first_tokens_text = []
 
             # ? This while gets the first token node indices between the start and end window
             # ? This while doesn't run if relative_first_tokens_node_index[curr_first_token_index] is very high (above 382)
@@ -321,7 +341,7 @@ class Featurizer:
         return dataset
 
 
-def clean_spaces(text: str) -> str:
+def _clean_spaces(text: str) -> str:
     r"""Clean extra spaces in a string.
 
     Example:
@@ -336,7 +356,7 @@ def clean_spaces(text: str) -> str:
     return " ".join(re.split(r"\s+", text.strip()))
 
 
-def clean_format_str(text: str) -> str:
+def _clean_format_str(text: str) -> str:
     """Cleans unicode control symbols, non-ascii chars, and extra blanks."""
     text = "".join(
         ch
@@ -347,7 +367,7 @@ def clean_format_str(text: str) -> str:
         c if ord(c) < 128 else ""
         for c in text
     ])
-    text = clean_spaces(text)
+    text = _clean_spaces(text)
     return text
 
 
@@ -367,7 +387,7 @@ def get_dom_tree(html: str) -> etree.ElementTree:
     html = html.replace("<BR/>", "--BRRB--")
     html = html.replace("<BR />", "--BRRB--")
 
-    html = clean_format_str(html)
+    html = _clean_format_str(html)
     # TODO(Aimore): Deal with XML cases. If there are problems here with XLM, is because it can only treat HTMLpages
 
     html = lxml.html.fromstring(html)
