@@ -4,12 +4,11 @@ import pandas as pd
 from lxml import html as lxml_html
 from microcosm.api import create_object_graph
 
+graph = create_object_graph("test")
 
 class LabelHandler:
     def __init__(self, tag: str = "PAST_CLIENT") -> None:
-
         self.tag = tag
-        graph = create_object_graph("test")
         self.taxonomy_to_value_mappings = dict(
             [
                 (company.uri, company.name)
