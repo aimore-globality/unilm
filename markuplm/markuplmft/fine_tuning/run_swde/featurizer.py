@@ -63,26 +63,6 @@ class SwdeDataset(Dataset):
     def __getitem__(self, index):
         return tuple(tensor[index] for tensor in self.tensors)
 
-
-# from sklearn.base import Basestimator, TransformerMixin
-# class InsertUrlTransformer(Basestimator, TransformerMixin):
-#     def __init__(self, variable) -> None:
-#         super().__init__()
-#         self.variable = variable
-
-#     def fit(self, X, y=None):
-#         return self
-
-#     def transform(self, X):
-#         X = X.copy()
-
-#         X[self.variable] = 
-
-#         return X
-
-
-
-
 class Featurizer:
     def __init__(
         self,
@@ -134,7 +114,8 @@ class Featurizer:
 
         return (text, xpath) or None
         """
-        dom_tree = etree.ElementTree(lxml.html.fromstring(html))
+        # dom_tree = etree.ElementTree(lxml.html.fromstring(html)) #! Faster but not correct use below
+        dom_tree = get_dom_tree(html)
 
         page_nodes = []
         min_node_text_size, max_node_text_size = 2, 10_000

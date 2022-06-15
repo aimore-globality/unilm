@@ -1,12 +1,14 @@
 import transformers
-from typing import Tuple
+from pathlib import Path
+from typing import Union, Tuple
 import numpy as np
 
+
 class NodeClassifier:
-    def __init__(self, config) -> None:
-        self.config = config
-        self.decision_threshold = self.config["decision_threshold"]
-        self.model = transformers.RobertaForTokenClassification.from_pretrained('roberta-base')
+    def __init__(self, decision_threshold:float=0.5, tag:str="PAST_CLIENT") -> None:
+        self.model = transformers.RobertaForTokenClassification.from_pretrained("roberta-base")
+        self.decision_threshold = decision_threshold
+        self.tag = tag
 
     def fit(self):
         pass
@@ -18,9 +20,10 @@ class NodeClassifier:
         # # self.logger.info(f"Model prediction:{prediction} | probability: {probability}")
         # return prediction, probability
 
+    def save(self, save_model_dir: Union[Path, str]):
+        print(f"Saving Model at: {save_model_dir}")
+        self.model.save_pretrained(save_model_dir)
 
-    def save(self):
-        pass
-
-    def load(self):
-        pass
+    def load(self, load_model_dir: Union[Path, str]):
+        print(f"Loading Model from: {load_model_dir}")
+        self.model = transformers.RobertaForTokenClassification.from_pretrained(load_model_dir)

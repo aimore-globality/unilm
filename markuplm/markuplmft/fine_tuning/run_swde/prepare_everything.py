@@ -20,28 +20,74 @@ class PrepareData:
     - Convert CF data into SWDE format
     - Create the labels
     - Remove some data
-    -
     """
 
     def __init__(
-        self, featurizer, label_handler, parallel, remove_folder_flag, shortcut, raw_data_folder
+        self, parallel, remove_folder_flag, shortcut, raw_data_folder
     ):
-        self.featurizer = Featurizer()
-        self.label_handler = LabelHandler()
         self.parallel = parallel
         self.remove_folder_flag = remove_folder_flag
         self.shortcut = shortcut
         self.raw_data_folder = raw_data_folder
 
-    def fit(self):
+    def prepare_domain(self, domain_name_and_df):
+        domain_name, domain_df = domain_name_and_df
+
+        save_folder = self.raw_data_folder / "processed"
+        save_folder.mkdir(parents=True, exist_ok=True)
+        save_path = save_folder / f"{domain_name}.pkl"
+
+        dedup_save_folder = self.raw_data_folder / "processed_dedup"
+        dedup_save_folder.mkdir(parents=True, exist_ok=True)
+        dedup_save_path = dedup_save_folder / f"{domain_name}.pkl"
+
+        logging.info(f"domain_name: {domain_name}")
+
+        domain_df["html"] = domain_df.apply(
+            lambda row: featurizer.insert_url_into_html(row["url"], row["html"]), axis=1
+        )
+        domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
+        #! During the inference this can be a problem - check how to deal with it when productionalizing
+        domain_df = domain_df.dropna(subset=["nodes"])
+
+        #! Training
+        domain_df = label_handler.add_gt_counts_and_sort(domain_df)
+        domain_df = label_handler.add_page_id(domain_df)
+
+        self.save_ground_truth(domain_df, domain_name, self.raw_data_folder)
+        self.save_htmls(domain_df, domain_name, self.raw_data_folder)
+
+        domain_df["page_features"] = domain_df["nodes"].apply(featurizer.get_swde_features)
+
+        domain_df = label_handler.add_classification_label_to_nodes(domain_df)
+
+        #! Inference
+        domain_df["swde_features"] = domain_df.apply(
+            lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
+        )
+
+        #! Save data
+        logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
+        domain_df.to_pickle(save_path)
+
+        # domain_df = self.create_dedup_data(domain_df)
+        # domain_df["swde_features"] = domain_df.apply(
+        #     lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
+        # )
+        # logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
+        # domain_df.to_pickle(dedup_save_path)
+
+        return domain_name
+        
+    def prepare(self):
         if self.remove_folder_flag:
             self.remove_folder(self.raw_data_folder)
 
         #! Shortcut for debugging:
         if not self.shortcut:
             df = self.load_data(wae_data_load_path, limit=page_limit)  # develop size = 75824
-            df = self.label_handler.format_annotation(df)
-            df_positives_negatives = self.label_handler.create_postive_negative_data(
+            df = label_handler.format_annotation(df)
+            df_positives_negatives = label_handler.create_postive_negative_data(
                 df, negative_fraction=negative_fraction
             )
             df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
@@ -58,77 +104,20 @@ class PrepareData:
         # websites_to_debug = ['walkerhamill.com']
         # df_domains = [x for x in df_domains if x[0] in websites_to_debug]
 
-        logging.info(f"Number of Domains: {len(df_domains)}")
-
-        def prepare(domain_name_and_df):
-            domain_name, domain_df = domain_name_and_df
-
-            save_folder = self.raw_data_folder / "processed"
-            save_folder.mkdir(parents=True, exist_ok=True)
-            save_path = save_folder / f"{domain_name}.pkl"
-
-            dedup_save_folder = self.raw_data_folder / "processed_dedup"
-            dedup_save_folder.mkdir(parents=True, exist_ok=True)
-            dedup_save_path = dedup_save_folder / f"{domain_name}.pkl"
-
-            # if (
-            #     not save_path.exists()
-            #     and not dedup_save_path.exists()
-            #     and domain_name not in ["ciphr.com"]
-            # ):
-            logging.info(f"domain_name: {domain_name}")
-
-            domain_df["html"] = domain_df.apply(
-                lambda row: self.insert_url_into_html(row["url"], row["html"]), axis=1
-            )
-            domain_df["nodes"] = domain_df["html"].apply(self.featurizer.get_nodes)
-            #! During the inference this can be a problem - check how to deal with it when productionalizing
-            domain_df = domain_df.dropna(subset=["nodes"])
-
-            #! Training
-            domain_df = self.label_handler.add_gt_counts_and_sort(domain_df)
-            domain_df = self.label_handler.add_page_id(domain_df)
-
-            self.save_ground_truth(domain_df, domain_name, self.raw_data_folder)
-            self.save_htmls(domain_df, domain_name, self.raw_data_folder)
-
-            domain_df["page_features"] = domain_df["nodes"].apply(self.featurizer.get_swde_features)
-
-            domain_df = self.label_handler.add_classification_label_to_nodes(domain_df)
-
-            #! Inference
-            domain_df["swde_features"] = domain_df.apply(
-                lambda page: self.featurizer.get_swde_features(page["nodes"]), axis=1
-            )
-
-            #! Save data
-            logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
-            domain_df.to_pickle(save_path)
-
-            domain_df = self.create_dedup_data(domain_df)
-            domain_df["swde_features"] = domain_df.apply(
-                lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
-            )
-            logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
-            domain_df.to_pickle(dedup_save_path)
-
-            return domain_name
+        logging.info(f"Number of Domains: {len(df_domains)}")        
 
         if parallel:
-            num_cores = mp.cpu_count()
+            num_cores = mp.cpu_count() -1 
             with mp.Pool(num_cores) as pool, tqdm(
                 total=len(df_domains), desc="Processing data"
             ) as t:
-                for res in pool.imap_unordered(prepare, df_domains):
-                    # for res in pool.imap(prepare, df_domains):
+                # for res in pool.imap_unordered(self.prepare_domain, df_domains):
+                for res in pool.imap(self.prepare_domain, df_domains):
                     t.set_description(f"Processed {res}")
                     t.update()
         else:
             for df_domain in df_domains:
-                prepare(df_domain)
-
-    def predict(self):
-        pass
+                self.prepare_domain(df_domain)
 
     def load_data(self, load_data_path: str, limit: int = -1) -> pd.DataFrame:
         logging.info("Load_data...")
@@ -151,9 +140,9 @@ class PrepareData:
         folder_path = root_folder / "ground_truth"
         folder_path.mkdir(parents=True, exist_ok=True)
 
-        page_annotations_df = df[["page_id", f"{self.tag}-gt_text_count", f"{self.tag}-gt_text"]]
+        page_annotations_df = df[["page_id", f"{label_handler.tag}-gt_text_count", f"{label_handler.tag}-gt_text"]]
         page_annotations_df.to_csv(
-            folder_path / f"{domain_name}-{self.tag}.csv", sep="\t", index=False
+            folder_path / f"{domain_name}-{label_handler.tag}.csv", sep="\t", index=False
         )
 
     def save_htmls(self, df: pd.DataFrame, domain_name: str, root_folder: Path):
@@ -237,6 +226,7 @@ class PrepareData:
         df = df.drop(["nodes"], axis=1)
         df = ddd.join(df)
         assert len(df) > 0
+        df.reset_index(inplace=True)
         return df
 
     def save_dedup(
@@ -260,26 +250,34 @@ if __name__ == "__main__":
     logging.basicConfig(format=FORMAT, level=logging.INFO)
 
     remove_folder_flag = True
-    shortcut = False
+    shortcut = True
     dataset_name = "develop"
     negative_fraction = 0.10  # ? 0.10
     page_limit = -1  # ? -1
     parallel = True
+    name_root_folder = "delete"
 
     # ? Full version
     wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
     # ? Smaller version
     # wae_data_load_path = Path(f"/data/GIT/delete/")
 
-    raw_data_folder = Path(f"/data/GIT/delete-/{dataset_name}")
+    raw_data_folder = Path(f"/data/GIT/{name_root_folder}/{dataset_name}")
 
     featurizer = Featurizer()
     label_handler = LabelHandler()
 
-    preparer = PrepareData(featurizer=featurizer, label_handler=label_handler, parallel=parallel, remove_folder_flag=remove_folder_flag, shortcut=shortcut, raw_data_folder=raw_data_folder)
+    preparer = PrepareData(
+        # featurizer=featurizer,
+        # label_handler=label_handler,
+        parallel=parallel,
+        remove_folder_flag=remove_folder_flag,
+        shortcut=shortcut,
+        raw_data_folder=raw_data_folder,
+    )
     preparer.load_data(wae_data_load_path)
 
-    preparer.fit()
+    preparer.prepare()
 
     # self.run.save[""]()
     # self.run.finish()

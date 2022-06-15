@@ -40,6 +40,14 @@ from markuplmft.fine_tuning.run_swde.eval_utils import compute_metrics_per_datas
 
 
 # %%
+import pandas as pd 
+df = pd.read_pickle("/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred.pkl")
+
+# %%
+# pd.set_option('max_columns', 200)
+# df.drop(["swde_features"],axis=1).to_pickle("/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred.pkl")
+
+# %%
 trainer_config = dict(
     dataset_to_use='all',
     train_dedup=True, #? Default: False
@@ -287,6 +295,7 @@ def training_function(evaluate_dataset):
 
 
 # %%
+
 from accelerate import notebook_launcher
 notebook_launcher(training_function, args=[evaluate_dataset],  num_processes=4, use_fp16=True, mixed_precision="bf16")
 

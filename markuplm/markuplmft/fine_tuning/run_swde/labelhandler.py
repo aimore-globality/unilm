@@ -4,8 +4,10 @@ import pandas as pd
 from lxml import html as lxml_html
 from microcosm.api import create_object_graph
 
+
 class LabelHandler:
     def __init__(self, tag: str = "PAST_CLIENT") -> None:
+
         self.tag = tag
         graph = create_object_graph("test")
         self.taxonomy_to_value_mappings = dict(
@@ -16,6 +18,7 @@ class LabelHandler:
         )
 
     def get_annotations(annotations: pd.Series, annotation_name: str) -> pd.Series:
+
         return annotations.apply(
             lambda annotations: [
                 annotation[annotation_name]
@@ -26,10 +29,12 @@ class LabelHandler:
 
     # ? Create mapping to convert gt_value_taxonomy into gt_value
     def untaxonomize_gt_value(self, gt_value: str) -> str:
+
         gt_value_untax = self.taxonomy_to_value_mappings.get(gt_value)
         return gt_value_untax
 
     def format_annotation(self, df: pd.DataFrame) -> pd.DataFrame:
+
         logging.info("Format_annotation...")
         df[f"{self.tag}-annotations"] = df["annotations"].apply(
             lambda annotation: annotation.get(self.tag)
@@ -61,6 +66,7 @@ class LabelHandler:
         df: pd.DataFrame,
         negative_fraction: float,
     ) -> pd.DataFrame:
+
         logging.info("Convert_annotated_data...")
         df_positives, df_negatives, df_negatives_sample = self.get_negative_fraction(
             df, negative_fraction
@@ -129,6 +135,7 @@ class LabelHandler:
         df: pd.DataFrame,
         negative_fraction: float,
     ) -> Sequence[pd.DataFrame]:
+
         logging.info("Get_negative_fraction...")
         df_positives = df[df[f"{self.tag}-gt_text_count"] > 0]
         df_negatives = df[df[f"{self.tag}-gt_text_count"] == 0]
@@ -165,6 +172,7 @@ class LabelHandler:
         return df[f"{self.tag}-gt_{tag_type}"].apply(len).sum()
 
     def remove_non_html_pages(self, df: pd.DataFrame) -> pd.DataFrame:
+
         pages_without_html_explicity = df[df["html"] == "PLACEHOLDER_HTML"]
         logging.info(f"# of Pages that are not html explicity: {len(pages_without_html_explicity)}")
         logging.info(
@@ -174,6 +182,7 @@ class LabelHandler:
 
         def get_only_html(t):
             """Deal with XLM cases"""
+
             text = "NOT HTML"
             try:
                 text = lxml_html.fromstring(t)
@@ -192,6 +201,7 @@ class LabelHandler:
         return df
 
     def remove_annotations_from_images(self, df: pd.DataFrame) -> pd.DataFrame:
+
         logging.info("remove_annotations_from_images")
         logging.info(f"# of Annotations (gt_text) before: {self.count_all_labels(df)}")
         df[f"{self.tag}-gt_text"] = df[f"{self.tag}-gt_text"].apply(
@@ -206,6 +216,7 @@ class LabelHandler:
         return df
 
     def remove_annotations_that_cannot_be_found_on_html(self, df: pd.DataFrame) -> pd.DataFrame:
+
         logging.info("remove_annotations_that_cannot_be_found_on_html")
         initial_amount_of_label = self.count_all_labels(df)
 
@@ -271,6 +282,7 @@ class LabelHandler:
         """
         Creates tag-gt_text_count column.
         """
+
         logging.debug("Add_gt_counts_and_sort...")
         df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
         return df.sort_values(f"{self.tag}-gt_text_count", ascending=False)
@@ -278,7 +290,10 @@ class LabelHandler:
     def add_page_id(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Creates page_id column.
+        0 -> 0000
+        1 -> 0001
         """
+
         df["page_id"] = [str(index).zfill(4) for index in range(len(df))]
         return df
 
@@ -313,6 +328,7 @@ class LabelHandler:
         return nodes_annotated
 
     def add_classification_label_to_nodes(self, df: pd.DataFrame) -> pd.DataFrame:
+
         df["nodes"] = df.apply(
             lambda row: self.add_classification_label(row["nodes"], row[f"{self.tag}-gt_text"]),
             axis=1,

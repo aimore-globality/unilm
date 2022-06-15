@@ -27,7 +27,7 @@ from web_annotation_extractor.evaluations.metric_functions import get_reconcilia
 from web_annotation_extractor.evaluations.visualization_functions import plot_performance
 from pathlib import Path
 graph = create_object_graph('test')
-# pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
+pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
 import wandb
 
 run = wandb.init(project="LanguageModel", resume=False, tags=["compare_with_production"])
@@ -55,7 +55,8 @@ if predict_and_segment:
     dataset = 'develop'
     print(dataset)
     if dataset == 'develop':
-        data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
+        # data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
+        data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4086)_intermediate.pkl"
         
     df = pd.read_pickle(data_path)
 
@@ -254,6 +255,14 @@ average_domains_metrics(domain_metrics)
 #     results = pd.read_pickle(save_load_data_path)
 
 # %%
+from microcosm.api import create_object_graph
+import pandas as pd
+from pathlib import Path
+
+# %%
+results
+
+# %%
 taxonomy_to_value_mappings = dict([(company.uri, company.name) for company in graph.known_company_taxonomy])
 
 # Train Segmenter on gt nodes
@@ -267,8 +276,9 @@ if not classified_nodes_folder_root.exists():
 # classified_nodes_data_path = "develop_set_nodes_classified_epoch_10.pkl"
 # classified_nodes_data_path = "develop_set_nodes_classified_epoch_4_dedup.pkl"
 # classified_nodes_data_path = "train_set_nodes_classified_epoch_4_dedup.pkl"
-classified_nodes_data_path = "develop_set_nodes_classified_epoch_4_dedup.pkl"
+# classified_nodes_data_path = "develop_set_nodes_classified_epoch_4_dedup.pkl"
 # classified_nodes_data_path = "develop_set_nodes_classified_epoch_4.pkl"
+classified_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred.pkl"
 
 
 load_file = str(classified_nodes_folder_root / classified_nodes_data_path)
@@ -276,14 +286,14 @@ print(f"Load file: {load_file}")
 results = pd.read_pickle(load_file)
 
 convert_text_into_segmentation_value_map = {a['text']:a['value'] for a in [z for y in [x for x in df["annotations"].apply(lambda x: x.get("PAST_CLIENT")).values if x] for z in y] if a['value']}
-results["value"] = results.apply(lambda row: [convert_text_into_segmentation_value_map.get(x) for x in row["gt_text"]], axis=1)
+results["value"] = results.apply(lambda row: [convert_text_into_segmentation_value_map.get(x) for x in row[f"{tag}-gt_text"]], axis=1)
 results["value"] = results["value"].apply(lambda row: [taxonomy_to_value_mappings.get(x) for x in row])
 
 results = results.reset_index().drop('index', axis=1)
-results["text"] = results["text"].apply(lambda x: f" {x} ")
+results["node_text"] = results["node_text"].apply(lambda x: f" {x} ")
 
-results["text"] = results["text"].str.replace("&amp;", "&")
-results["text"] = results["text"].str.replace("&AMP;", "&")
+results["node_text"] = results["node_text"].str.replace("&amp;", "&")
+results["node_text"] = results["node_text"].str.replace("&AMP;", "&")
 
 # #? Train a new gazetter:
 # from web_annotation_extractor.bundles.past_client.segmentation.segmenters import PastClientSegmenter
@@ -306,8 +316,8 @@ gazetteer = pd.read_pickle("trained_gazetteer.pkl")
 print(len(gazetteer.segmenter))
 optimal_paral = OptimalParallel()
 node_company_span = optimal_paral.parallelize_optimally(
-    series=results["text"],
-    series_measurement=results["text"].apply(len),
+    series=results["node_text"],
+    series_measurement=results["node_text"].apply(len),
     function=gazetteer._segment_companies,
 )
 
@@ -320,8 +330,8 @@ results["node_company_span_taxonomy"] = node_company_span.apply(lambda company_s
 # %%
 # # ? Get the Segmentations (company_span_taxonomy)
 mode_indices = dict(
-    model=results[results["pred_type"] == "PAST_CLIENT"].index,
-    ground_truth=results[results["truth"] == "PAST_CLIENT"].index,
+    model=results[results["node_pred_tag"] == "PAST_CLIENT"].index,
+    ground_truth=results[results["node_gt_tag"] == "PAST_CLIENT"].index,
     no_classification=results.index,
 )
 print("# Nodes:")
@@ -337,36 +347,17 @@ no_classification_count = results['no_classification-node_company_span_taxonomy'
 print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {ground_truth_count}, no_classification_count: {no_classification_count}")
 
 # %%
-# # ? Get the Segmentations (company_span_taxonomy)
-mode_indices = dict(
-    model=results[results["pred_type"] == "PAST_CLIENT"].index,
-    ground_truth=results[results["truth"] == "PAST_CLIENT"].index,
-    no_classification=results.index,
-)
-print("# Nodes:")
-for mode, index in mode_indices.items():
-    print(f"{mode}: {len(index)}")
-    results[f"{mode}-node_company_span_taxonomy"] = results["node_company_span_taxonomy"]
-    results.loc[~results.index.isin(index), f"{mode}-node_company_span_taxonomy"] = ''
-    results[f"{mode}-node_company_span_taxonomy"] = results[f"{mode}-node_company_span_taxonomy"].apply(list)
-
-model_count = results['model-node_company_span_taxonomy'].apply(len).sum()
-ground_truth_count = results['ground_truth-node_company_span_taxonomy'].apply(len).sum()
-no_classification_count = results['no_classification-node_company_span_taxonomy'].apply(len).sum()
-print(f"# Companies Found: \nmodel_count: {model_count}, ground_truth_count: {ground_truth_count}, no_classification_count: {no_classification_count}")
+# results["domain"] = results["html_path"].apply(lambda x: x.split(".pickle-0000.htm")[0])
 
 # %%
-results["domain"] = results["html_path"].apply(lambda x: x.split(".pickle-0000.htm")[0])
-
-# %%
-results["pred_type"].value_counts()
+results["node_gt_tag"].value_counts()
 
 # %%
 results
 
 # %%
-threshold = 0.9
-results["pred_type"] = results["final_probs"].apply(lambda x: "PAST_CLIENT" if x[0] > threshold else 'none')
+threshold = 0.5
+results["node_gt_tag"] = results["node_prob"].apply(lambda x: "PAST_CLIENT" if x > threshold else 'none')
 results_capped = results.copy(deep=True)
 
 columns = [
@@ -374,12 +365,12 @@ columns = [
 ]
 
 for c in columns:
-    results_capped[c] = results_capped[c].mask(results_capped["pred_type"] == 'none', '')
+    results_capped[c] = results_capped[c].mask(results_capped["node_pred_tag"] == 'none', '')
     results_capped[c] = results_capped[c].apply(list)
     results_capped[c].value_counts()
 
 # %%
-results_capped["pred_type"].value_counts()
+results_capped["node_gt_tag"].value_counts()
 
 # %%
 # # ? Group reconciliations per node into reconciliation per page
@@ -396,13 +387,13 @@ results_grouped = pd.DataFrame(
 )
 
 # # ? Load and apply pageid to url mapping
-pageid_url_mapping = pd.read_pickle(
-    "/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl"
-)
+# pageid_url_mapping = pd.read_pickle(
+#     "/data/GIT/swde/my_data/develop/my_CF_sourceCode/pageid_url_mapping.pkl"
+# )
 results_grouped.reset_index(inplace=True)
-results_grouped["url"] = results_grouped["html_path"].apply(
-    lambda x: pageid_url_mapping.get(x)[0]
-)
+# results_grouped["url"] = results_grouped["html_path"].apply(
+#     lambda x: pageid_url_mapping.get(x)[0]
+# )
 results_grouped = results_grouped.drop(["domain"], axis=1)
 
 # # ? Set index from both dataframes
