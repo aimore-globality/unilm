@@ -65,7 +65,8 @@ class LabelHandler:
         self,
         df: pd.DataFrame,
         negative_fraction: float,
-        wae_data_load_path:str, 
+        wae_data_load_path:str,
+        with_img:bool=False,
     ) -> pd.DataFrame:
 
         logging.info("Convert_annotated_data...")
@@ -78,8 +79,9 @@ class LabelHandler:
         logging.info("- Negatives:")
         df_negatives_sample = self.remove_non_html_pages(df_negatives_sample)
 
-        df_positives = self.remove_annotations_from_images(df_positives)
-        df_positives = self.remove_annotations_that_cannot_be_found_on_html(df_positives)
+        if not with_img:
+            df_positives = self.remove_annotations_from_images(df_positives)
+            df_positives = self.remove_annotations_that_cannot_be_found_on_html(df_positives)
 
         # ? From df_negatives_sample filter out domains that are not in df_positives
         df_negatives_sample = df_negatives_sample[

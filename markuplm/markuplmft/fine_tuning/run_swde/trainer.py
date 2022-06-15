@@ -265,20 +265,15 @@ class Trainer:
 
         #! Save model
         if self.overwrite_model:
-            try: 
-                self.classifier.save(self.save_model_dir)
-            except:
-                print("COULDN'T SAVE")
-            try: 
-                torch.save(self.classifier.model.state_dict(), self.save_model_dir + '.pth')
-            except:
-                print("COULDN'T SAVE with torch")
+            accelerator.print(f"Overwritting model...")
+            save_model_path = self.save_model_dir + "model.pth"
+            # accelerator.save(self.classifier.model.state_dict(), save_model_path)
+            accelerator.save_state(self.save_model_dir)
+            accelerator.print(f"Saved model at: {save_model_path}")
 
-            save_path = self.save_model_dir + "develop_df_pred.pkl"
-            accelerator.print(f"Saved infered data at: {save_path}")
-            self.evaluate_df.drop(["page_features"], axis=1).to_pickle(save_path)
-                
-
+            save_pred_data_path = self.save_model_dir + "develop_df_pred_with_img.pkl"
+            accelerator.print(f"Saved predicted data at: {save_pred_data_path}")
+            self.evaluate_df.drop(["page_features"], axis=1).to_pickle(save_pred_data_path)
 
     @staticmethod
     def get_prob_from_first_token_of_nodes(
@@ -314,7 +309,8 @@ class Trainer:
         )
 
         #! Load model
-        self.classifier.load(self.save_model_dir)
+        accelerator.print(f"Loading state from: {self.save_model_dir}")
+        # self.classifier.load(self.save_model_dir)
 
         (
             self.classifier.model,
@@ -323,6 +319,8 @@ class Trainer:
             self.classifier.model,
             evaluate_dataloader,
         )
+        
+        accelerator.load_state(self.save_model_dir)
 
         device = accelerator.device
         accelerator.print(f"device: {device}")
@@ -386,7 +384,7 @@ class Trainer:
         accelerator.print("... Infer Done")
 
         #! Save infered dataset
-        save_path = self.save_model_dir + "develop_df_pred.pkl"
+        save_path = self.save_model_dir + "develop_df_pred_with_img.pkl"
         accelerator.print(f"Saved infered data at: {save_path}")
         evaluate_df.drop(["page_features"], axis=1).to_pickle(save_path)
 
@@ -403,6 +401,12 @@ if __name__ == "__main__":
         overwrite_model=True,
     )
 
+    with_img = False
+    if with_img:
+        name_root_folder = "delete-img"
+    else:
+        name_root_folder = "delete"
+
     if trainer_config["train_dedup"]:
         train_dedup = "_dedup"
     else:
@@ -413,8 +417,12 @@ if __name__ == "__main__":
     else:
         develop_dedup = ""
 
-    train_domains_path = glob.glob(f"/data/GIT/delete/train/processed{train_dedup}/*.pkl")
-    develop_domains_path = glob.glob(f"/data/GIT/delete/develop/processed{develop_dedup}/*.pkl")
+    train_domains_path = glob.glob(
+        f"/data/GIT/{name_root_folder}/train/processed{train_dedup}/*.pkl"
+    )
+    develop_domains_path = glob.glob(
+        f"/data/GIT/{name_root_folder}/develop/processed{develop_dedup}/*.pkl"
+    )
 
     print(f"train_domains_path: {len(train_domains_path)} - {train_domains_path[0]}")
     print(f"develop_domains_path: {len(develop_domains_path)} - {develop_domains_path[0]}")
@@ -462,5 +470,5 @@ if __name__ == "__main__":
         overwrite_model=trainer_config["overwrite_model"],
     )
 
-    trainer.train()
-    # trainer.infer(df_develop)
+    # trainer.train()
+    trainer.infer(df_develop)

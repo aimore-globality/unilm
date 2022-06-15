@@ -1,3 +1,4 @@
+import torch
 import transformers
 from pathlib import Path
 from typing import Union, Tuple
@@ -25,5 +26,6 @@ class NodeClassifier:
         self.model.save_pretrained(save_model_dir)
 
     def load(self, load_model_dir: Union[Path, str]):
-        print(f"Loading Model from: {load_model_dir}")
+    #     print(f"Loading Model from: {load_model_dir}")
         self.model = transformers.RobertaForTokenClassification.from_pretrained(load_model_dir)
+        # self.model = torch.load()(load_model_dir)

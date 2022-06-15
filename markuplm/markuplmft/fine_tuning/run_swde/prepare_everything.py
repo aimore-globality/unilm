@@ -22,7 +22,7 @@ class PrepareData:
     - Remove some data
     """
 
-    def __init__(self, parallel, remove_folder_flag, shortcut, raw_data_folder):        
+    def __init__(self, parallel, remove_folder_flag, shortcut, raw_data_folder):
         self.parallel = parallel
         self.remove_folder_flag = remove_folder_flag
         self.shortcut = shortcut
@@ -167,11 +167,15 @@ if __name__ == "__main__":
 
     remove_folder_flag = True
     shortcut = False
-    dataset_name = "train"
+    dataset_name = "develop"
     negative_fraction = 0.10  # ? 0.10
     page_limit = -1  # ? -1
     parallel = True
-    name_root_folder = "delete"
+    with_img = True
+    if with_img:
+        name_root_folder = "delete-img"
+    else:
+        name_root_folder = "delete"
 
     # ? Full version
     wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
@@ -200,7 +204,10 @@ if __name__ == "__main__":
     if not preparer.shortcut:
         df = label_handler.format_annotation(df)
         df_positives_negatives = label_handler.create_postive_negative_data(
-            df, negative_fraction=negative_fraction, wae_data_load_path=wae_data_load_path
+            df,
+            negative_fraction=negative_fraction,
+            wae_data_load_path=wae_data_load_path,
+            with_img=with_img,
         )
         df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
     else:
@@ -270,7 +277,7 @@ if __name__ == "__main__":
         num_cores = mp.cpu_count() - 1
         with mp.Pool(num_cores) as pool, tqdm(total=len(df_domains), desc="Processing data") as t:
             for res in pool.imap_unordered(prepare_domain, df_domains):
-            # for res in pool.imap(prepare_domain, df_domains):
+                # for res in pool.imap(prepare_domain, df_domains):
                 t.set_description(f"Processed {res}")
                 t.update()
     else:
