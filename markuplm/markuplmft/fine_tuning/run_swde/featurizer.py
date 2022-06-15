@@ -12,7 +12,7 @@ from markuplmft.data.tag_utils import tags_dict
 from torch.utils.data import Dataset
 
 
-class SwdeFeature(object):  # BatchEncoding PageClassifierFeature
+class PageFeature(object):  # BatchEncoding PageClassifierFeature
     def __init__(
         self,
         input_ids,
@@ -158,7 +158,7 @@ class Featurizer:
         else:
             print(f"No nodes from this html were able to be extracted - html: {html}")
 
-    def get_swde_features(self, nodes: Sequence) -> Sequence[SwdeFeature]:
+    def get_page_features(self, nodes: Sequence) -> Sequence[PageFeature]:
         """
         nodes: [(xpath, node_text, tag, gt_text), ...]
         1. Tokenizer page
@@ -280,7 +280,7 @@ class Featurizer:
             #     print("EMPTY")
 
             features.append(
-                SwdeFeature(
+                PageFeature(
                     input_ids=splited_page_tokens_ids,
                     token_type_ids=token_type_ids,
                     attention_mask=attention_mask,
@@ -296,9 +296,9 @@ class Featurizer:
                 break
 
         return features
-        # ? features = [swde_feature_1, swde_feature_2, ...]
+        # ? features = [page_feature_1, page_feature_2, ...]
 
-    def feature_to_dataset(self, features: Sequence[SwdeFeature]) -> SwdeDataset:
+    def feature_to_dataset(self, features: Sequence[PageFeature]) -> SwdeDataset:
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
         all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)

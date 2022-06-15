@@ -6,6 +6,7 @@ from microcosm.api import create_object_graph
 
 graph = create_object_graph("test")
 
+
 class LabelHandler:
     def __init__(self, tag: str = "PAST_CLIENT") -> None:
         self.tag = tag
@@ -16,7 +17,7 @@ class LabelHandler:
             ]
         )
 
-    def get_annotations(annotations: pd.Series, annotation_name: str) -> pd.Series:
+    def get_annotations(self, annotations: pd.Series, annotation_name: str) -> pd.Series:
 
         return annotations.apply(
             lambda annotations: [
@@ -64,6 +65,7 @@ class LabelHandler:
         self,
         df: pd.DataFrame,
         negative_fraction: float,
+        wae_data_load_path:str, 
     ) -> pd.DataFrame:
 
         logging.info("Convert_annotated_data...")
@@ -114,7 +116,7 @@ class LabelHandler:
 
         # ? Save this dataset that is used to compare with production
         save_intermediate_path = (
-            self.wae_data_load_path
+            wae_data_load_path
             / f"dataset_pos({len(df_positives)})_neg({len(df_negatives_sample)})_intermediate.pkl"
         )
         logging.info(f"Saving file: {save_intermediate_path}")

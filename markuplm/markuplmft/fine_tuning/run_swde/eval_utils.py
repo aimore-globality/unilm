@@ -5,8 +5,8 @@ from typing import Sequence
 
 def compute_metrics(truth:Sequence[str], pred:Sequence[str]):
     """
-    truth: ['none', 'none', 'tag']
-    pred: ['none', 'tag', 'tag']
+    truth: ['none', 'none', 'tag', ...]
+    pred: ['none', 'tag', 'tag', ...]
     """
     metrics = {}
     

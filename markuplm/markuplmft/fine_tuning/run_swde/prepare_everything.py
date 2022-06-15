@@ -31,14 +31,15 @@ class PrepareData:
     def load_data(self, load_data_path: str, limit: int = -1) -> pd.DataFrame:
         logging.info("Load_data...")
         self.wae_data_load_path = load_data_path
-        self.df = pdx.read_avro(str(load_data_path / "dataset.avro"))
-        self.df = self.df[:limit]
-        self.df.annotations = self.df.annotations.apply(literal_eval)
+        df = pdx.read_avro(str(load_data_path / "dataset.avro"))
+        df = df[:limit]
+        df.annotations = df.annotations.apply(literal_eval)
 
         for column in ["url", "domain", "annotations"]:
-            assert column in self.df.columns, f"Column: {column} not in DF"
+            assert column in df.columns, f"Column: {column} not in DF"
 
-        logging.info(len(self.df))
+        logging.info(len(df))
+        return df
 
     def save_ground_truth(self, df, domain_name, root_folder):
         """
@@ -165,8 +166,8 @@ if __name__ == "__main__":
     logging.basicConfig(format=FORMAT, level=logging.INFO)
 
     remove_folder_flag = True
-    shortcut = True
-    dataset_name = "develop"
+    shortcut = False
+    dataset_name = "train"
     negative_fraction = 0.10  # ? 0.10
     page_limit = -1  # ? -1
     parallel = True
@@ -183,14 +184,12 @@ if __name__ == "__main__":
     label_handler = LabelHandler()
 
     preparer = PrepareData(
-        # featurizer=featurizer,
-        # label_handler=label_handler,
         parallel=parallel,
         remove_folder_flag=remove_folder_flag,
         shortcut=shortcut,
         raw_data_folder=raw_data_folder,
     )
-    preparer.load_data(wae_data_load_path)
+    df = preparer.load_data(wae_data_load_path)
 
     # self.run.save[""]()
     # self.run.finish()
@@ -199,10 +198,9 @@ if __name__ == "__main__":
 
     #! Shortcut for debugging:
     if not preparer.shortcut:
-        df = preparer.load_data(wae_data_load_path, limit=page_limit)  # develop size = 75824
         df = label_handler.format_annotation(df)
         df_positives_negatives = label_handler.create_postive_negative_data(
-            df, negative_fraction=negative_fraction
+            df, negative_fraction=negative_fraction, wae_data_load_path=wae_data_load_path
         )
         df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
     else:
@@ -246,13 +244,13 @@ if __name__ == "__main__":
         preparer.save_ground_truth(domain_df, domain_name, preparer.raw_data_folder)
         preparer.save_htmls(domain_df, domain_name, preparer.raw_data_folder)
 
-        domain_df["page_features"] = domain_df["nodes"].apply(featurizer.get_swde_features)
+        domain_df["page_features"] = domain_df["nodes"].apply(featurizer.get_page_features)
 
         domain_df = label_handler.add_classification_label_to_nodes(domain_df)
 
         #! Inference
-        domain_df["swde_features"] = domain_df.apply(
-            lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
+        domain_df["page_features"] = domain_df.apply(
+            lambda page: featurizer.get_page_features(page["nodes"]), axis=1
         )
 
         #! Save data
@@ -260,8 +258,8 @@ if __name__ == "__main__":
         domain_df.to_pickle(save_path)
 
         domain_df = preparer.create_dedup_data(domain_df)
-        domain_df["swde_features"] = domain_df.apply(
-            lambda page: featurizer.get_swde_features(page["nodes"]), axis=1
+        domain_df["page_features"] = domain_df.apply(
+            lambda page: featurizer.get_page_features(page["nodes"]), axis=1
         )
         logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
         domain_df.to_pickle(dedup_save_path)

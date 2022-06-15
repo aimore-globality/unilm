@@ -33,16 +33,9 @@ class Trainer:
         learning_rate: float = 1e-05,
         adam_epsilon: float = 1e-8,
         warmup_ratio: float = 0,
-        run=None,
     ):
         self.featurizer = featurizer
         self.classifier = classifier
-        # ? Setting WandB Log
-        if run:
-            self.run = run
-        else:
-            defaults = {}
-            self.run = wandb.init(project="LanguageModel", config=defaults, resume=False)
 
         # ? Setting Data
         self.train_df = train_df
@@ -61,14 +54,8 @@ class Trainer:
         # ? Setting Model
         self.overwrite_model = overwrite_model
         self.save_model_dir = save_model_dir
-        training_samples = len(train_df)
-        evaluation_samples = len(evaluate_df)
-        print(f"training_pages: {training_samples}")
-        print(f"evaluation_pages: {evaluation_samples}")
-        if self.run:
-            self.run.log(
-                {"training_samples": training_samples, "evaluation_samples": evaluation_samples}
-            )
+        self.training_samples = len(train_df)
+        self.evaluation_samples = len(evaluate_df)
 
     def create_data_loader(self, features, batch_size: int, is_train: bool = True):
         return DataLoader(
@@ -80,7 +67,20 @@ class Trainer:
         )
 
     def train(self):
-        accelerator = Accelerator()
+        # wandb.login()
+        # wandb.setup()
+
+        accelerator = Accelerator(log_with="wandb")
+
+        # defaults = {}
+        # self.run = wandb.init(project="LanguageModel", config=defaults, resume=False)
+        # if self.run:
+        #     self.run.log(
+        #         {"training_samples": self.training_samples, "evaluation_samples": self.evaluation_samples}
+        #     )
+
+        accelerator.print(f"training_pages: {self.training_samples}")
+        accelerator.print(f"evaluation_pages: {self.evaluation_samples}")
 
         if accelerator.is_main_process:
             transformers.utils.logging.set_verbosity_info()
@@ -88,10 +88,10 @@ class Trainer:
             transformers.utils.logging.set_verbosity_error()
 
         train_features = self.featurizer.feature_to_dataset(
-            self.train_df["swde_features"].explode().values
+            self.train_df["page_features"].explode().values
         )
         evaluate_features = self.featurizer.feature_to_dataset(
-            self.evaluate_df["swde_features"].explode().values
+            self.evaluate_df["page_features"].explode().values
         )
 
         set_seed(66)
@@ -107,7 +107,6 @@ class Trainer:
             False,
         )
         self.num_training_steps = self.num_epochs * len(train_dataloader)
-
 
         train_batches = len(train_dataloader)
         evaluate_batches = len(evaluate_dataloader)
@@ -125,7 +124,7 @@ class Trainer:
         device = accelerator.device
         accelerator.print(f"device: {device}")
 
-        self.classifier.model.to(device)
+        # wandb.watch(self.classifier.model)
 
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
@@ -150,6 +149,14 @@ class Trainer:
             params=optimizer_grouped_parameters, lr=self.learning_rate, eps=self.adam_epsilon
         )
 
+        accelerator.print(f"Model State - before training:")
+        accelerator.print(
+            f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}"
+        )
+        accelerator.print(
+            f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}"
+        )
+
         (
             self.classifier.model,
             optimizer,
@@ -168,9 +175,6 @@ class Trainer:
             num_training_steps=self.num_training_steps,
         )
 
-        accelerator.print(f"Model State:")
-        accelerator.print(f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}")
-        accelerator.print(f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}")
 
         #! Training step
         accelerator.print("Train...")
@@ -201,13 +205,14 @@ class Trainer:
             if self.evaluate_during_training:
                 pass  # ! Implement Evaluation function here
 
-        accelerator.print(f"Model State:")
-        accelerator.print(f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}")
-        accelerator.print(f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}")
-
         #! Evaluation step
         accelerator.print("Evaluate...")
         self.classifier.model.eval()
+
+        # accelerator.print(f"Model State - after trained:")
+        # accelerator.print(f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}")
+        # accelerator.print(f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}")
+
         all_logits = []
         for step, batch in enumerate(evaluate_dataloader):
             with torch.no_grad():
@@ -221,23 +226,11 @@ class Trainer:
             logits = outputs.logits
             all_logits.append(accelerator.gather(logits).detach().cpu())
 
-        # all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)
-        # node_probs = []
-        # first_tokens_node_index = evaluate_features.relative_first_tokens_node_index
-        # for feature_index, feature_ids in enumerate(first_tokens_node_index):
-        #     node_probs.extend(
-        #         all_probs[
-        #             feature_index,
-        #             [first_tokens_node_index[feature_index]],
-        #             0,
-        #         ][0]
-        #     )
-
         first_tokens_node_index = evaluate_features.relative_first_tokens_node_index
         node_probs = self.get_prob_from_first_token_of_nodes(all_logits, first_tokens_node_index)
 
         # TODO: Add some function to encapsulate these lines
-        self.evaluate_df["html"] = self.evaluate_df[["html"]].astype("category")
+        self.evaluate_df["html"] = self.evaluate_df["html"].astype("category")
         accelerator.print(f"Memory: {sum(self.evaluate_df.memory_usage(deep=True))/10**6:.2f} Mb")
         self.evaluate_df = self.evaluate_df.explode("nodes", ignore_index=True).reset_index()
         self.evaluate_df = self.evaluate_df.join(
@@ -272,23 +265,33 @@ class Trainer:
 
         #! Save model
         if self.overwrite_model:
-            self.classifier.save(self.save_model_dir)
+            try: 
+                self.classifier.save(self.save_model_dir)
+            except:
+                print("COULDN'T SAVE")
+            try: 
+                torch.save(self.classifier.model.state_dict(), self.save_model_dir + '.pth')
+            except:
+                print("COULDN'T SAVE with torch")
+
+            save_path = self.save_model_dir + "develop_df_pred.pkl"
+            accelerator.print(f"Saved infered data at: {save_path}")
+            self.evaluate_df.drop(["page_features"], axis=1).to_pickle(save_path)
+                
+
 
     @staticmethod
     def get_prob_from_first_token_of_nodes(
-            all_logits: List[float], 
-            first_tokens_node_index: List[List[int]]
-        ) -> Sequence[float]:
-            all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)[:,:,0]
-            node_probs = []
-            for feature_index, feature_ids in enumerate(first_tokens_node_index):
-                node_probs.extend(
-                    all_probs[
-                        feature_index,
-                        feature_ids,
-                    ]
-                )
-            return np.array(node_probs)
+        all_logits: List[float], first_tokens_node_index: List[List[int]]
+    ) -> Sequence[float]:
+
+        all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)[:, :, 0]
+        indices = pd.Series(first_tokens_node_index).explode()
+        indices = (
+            indices.dropna()
+        )  # TODO: There might be empty lists meaning that the window wasn't big enough to capture the beginning of any node
+        node_probs = all_probs[indices.index.values, np.asarray(indices.values, int)]
+        return node_probs
 
     def infer(self, evaluate_df):
         accelerator = Accelerator()
@@ -299,7 +302,7 @@ class Trainer:
             transformers.utils.logging.set_verbosity_error()
 
         evaluate_features = self.featurizer.feature_to_dataset(
-            evaluate_df["swde_features"].explode().values
+            evaluate_df["page_features"].explode().values
         )
 
         set_seed(66)
@@ -310,17 +313,23 @@ class Trainer:
             False,
         )
 
-        device = accelerator.device
-        accelerator.print(f"device: {device}")
-
-        self.classifier.model.to(device)
-
         #! Load model
         self.classifier.load(self.save_model_dir)
 
-        accelerator.print(f"Model State:")
-        accelerator.print(f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}")
-        accelerator.print(f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}")
+        (
+            self.classifier.model,
+            evaluate_dataloader,
+        ) = accelerator.prepare(
+            self.classifier.model,
+            evaluate_dataloader,
+        )
+
+        device = accelerator.device
+        accelerator.print(f"device: {device}")
+
+        accelerator.print(f"Model State - loaded:")
+        # accelerator.print(f"roberta.embeddings.word_embeddings.weight:\n{self.classifier.model.state_dict()['roberta.embeddings.word_embeddings.weight']}")
+        # accelerator.print(f"roberta.encoder.layer.0.attention.self.query.weight:\n{self.classifier.model.state_dict()['roberta.encoder.layer.0.attention.self.query.weight']}")
 
         # TODO: Inference
         accelerator.print("Infer...")
@@ -332,13 +341,13 @@ class Trainer:
                     "input_ids": batch[0],
                     "attention_mask": batch[1],
                     "token_type_ids": batch[2],
-                    "labels": batch[3],
+                    # "labels": batch[3],
                 }
                 outputs = self.classifier.model(**inputs)
             logits = outputs.logits
             all_logits.append(accelerator.gather(logits).detach().cpu())
 
-        accelerator.print(logits)
+        # accelerator.print(logits)
 
         first_tokens_node_index = evaluate_features.relative_first_tokens_node_index
         node_probs = self.get_prob_from_first_token_of_nodes(all_logits, first_tokens_node_index)
@@ -377,18 +386,21 @@ class Trainer:
         accelerator.print("... Infer Done")
 
         #! Save infered dataset
-        evaluate_df.to_pickle(self.save_model_dir + 'develop_df_pred.pkl')
+        save_path = self.save_model_dir + "develop_df_pred.pkl"
+        accelerator.print(f"Saved infered data at: {save_path}")
+        evaluate_df.drop(["page_features"], axis=1).to_pickle(save_path)
 
 
 if __name__ == "__main__":
     trainer_config = dict(
-        dataset_to_use="debug",
+        dataset_to_use="all",
         train_dedup=True,  # ? Default: False
         develop_dedup=True,  # ? Default: False
-        num_epochs=1,
-        train_batch_size=30,
-        evaluate_batch_size=8 * 30,
+        num_epochs=4,
+        train_batch_size=32,  # train_batch_size 30
+        evaluate_batch_size=12 * 32,
         save_model_dir="/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
+        overwrite_model=True,
     )
 
     if trainer_config["train_dedup"]:
@@ -447,8 +459,8 @@ if __name__ == "__main__":
         evaluate_df=df_develop,
         evaluate_batch_size=trainer_config["evaluate_batch_size"],
         num_epochs=trainer_config["num_epochs"],
-        run=None,
+        overwrite_model=trainer_config["overwrite_model"],
     )
 
     trainer.train()
-    trainer.infer(df_develop)
+    # trainer.infer(df_develop)
