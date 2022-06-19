@@ -32,77 +32,36 @@ class WindowFeature(object):  # BatchEncoding PageClassifierFeature
         self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
         self.labels = labels
 
-from torch import Tensor
-
-class EncodedInput(TypedDict):
-    """Describes tensorized text - or batch of texts, as returned by HuggingFace tokenizers"""
-
-    input_ids: Tensor
-    token_type_ids: Tensor
-    attention_mask: Tensor
-
-class EncodedDatapoint(EncodedInput):
-    """Describes a pair of (input, labels)"""
-
-    labels: Tensor
-
 
 class SwdeDataset(Dataset):
-    def __init__(self, 
-        encodings: EncodedInput, 
-        labels: Tensor,
-        urls: Sequence[int],
-        node_ids: Sequence[int],
-        relative_first_tokens_node_indices: Sequence[int],
-        labels=None,
-        ):
-        self.encodings = encodings
+    def __init__(
+        self,
+        all_input_ids,
+        all_attention_mask,
+        all_token_type_ids,
+        urls,
+        node_ids,
+        relative_first_tokens_node_indices,
+        all_labels=None,
+    ):
+
+        self.tensors = [
+            all_input_ids,
+            all_attention_mask,
+            all_token_type_ids,
+        ]
         self.urls = urls
         self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
         self.node_ids = node_ids
 
-    def __getitem__(self, idx: int) -> EncodedDatapoint:
-        # fmt: off
-        item = {
-            key: tensor[idx]  # type: ignore
-            for key, tensor in self.encodings.items()
-        }
-        # fmt: on
-        item["labels"] = self.labels[idx]
-        return cast(EncodedDatapoint, item)
+        if not all_labels is None:
+            self.tensors.append(all_labels)
 
-    def __len__(self) -> int:
-        return len(self.labels)
+    def __len__(self):
+        return len(self.tensors[0])
 
-# class SwdeDataset(Dataset):
-#     def __init__(
-#         self,
-#         all_input_ids,
-#         all_attention_mask,
-#         all_token_type_ids,
-#         urls,
-#         node_ids,
-#         relative_first_tokens_node_indices,
-#         all_labels=None,
-#     ):
-
-#         self.tensors = [
-#             all_input_ids,
-#             all_attention_mask,
-#             all_token_type_ids,
-#         ]
-#         self.urls = urls
-#         self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
-#         self.node_ids = node_ids
-
-#         if not all_labels is None:
-#             self.tensors.append(all_labels)
-
-#     def __len__(self):
-#         return len(self.tensors[0])
-
-#     def __getitem__(self, index):
-#         return tuple(tensor[index] for tensor in self.tensors)
+    def __getitem__(self, index):
+        return tuple(tensor[index] for tensor in self.tensors)
 
 class Featurizer:
     def __init__(
