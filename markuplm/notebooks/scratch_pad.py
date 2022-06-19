@@ -15,6 +15,7 @@
 
 # %%
 import pandas as pd
+import pandavro as pdx
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 from markuplmft.fine_tuning.run_swde.featurizer import SwdeDataset
 from transformers import RobertaTokenizer
@@ -26,6 +27,127 @@ tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
 DOC_STRIDE = 128
 MAX_SEQ_LENGTH = 384
 featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+
+# %%
+import glob
+
+develop_domains_path = glob.glob(
+        f"/data/GIT/delete-abs/develop/processed_dedup/*.pkl"
+    )
+print(f"develop_domains_path: {len(develop_domains_path)} - {develop_domains_path[0]}")
+
+# %%
+df_develop = pd.DataFrame()
+for domain_path in develop_domains_path:
+    df_develop = df_develop.append(pd.read_pickle(domain_path))
+
+# %%
+df_nodes = df_develop.explode("nodes").reset_index()
+# # ? Join expanded nodes into df
+df_nodes = df_nodes.join(
+    pd.DataFrame(
+        df_nodes.pop("nodes").tolist(),
+        columns=["xpath", "node_text", "node_gt_tag", "node_gt_text"],
+    )
+)
+
+# %%
+df_nodes["node_tok_ids"] = df_nodes["node_text"].apply(lambda x: tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x)))
+
+# %%
+df_nodes['node_tok_ids_len'] = df_nodes['node_tok_ids'].apply(len).values
+
+# %%
+df_nodes
+
+# %%
+big_nodes = df_nodes[df_nodes['node_tok_ids_len'] > 128][["node_tok_ids_len", "node_text", "node_gt_tag", "node_gt_text"]].sort_values(["node_tok_ids_len"], ascending=False)
+
+# %%
+batch_sentences = [
+    "But what about second breakfast?",
+    "Don't think he knows about second breakfast, Pip.",
+    "What about elevensies?",
+]
+encoded_input = tokenizer(batch_sentences, padding=True, truncation=True)
+print(encoded_input)
+# {'input_ids': [[101, 1252, 1184, 1164, 1248, 6462, 136, 102, 0, 0, 0, 0, 0, 0, 0], 
+#                [101, 1790, 112, 189, 1341, 1119, 3520, 1164, 1248, 6462, 117, 21902, 1643, 119, 102], 
+#                [101, 1327, 1164, 5450, 23434, 136, 102, 0, 0, 0, 0, 0, 0, 0, 0]], 
+#  'token_type_ids': [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+#                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+#                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], 
+#  'attention_mask': [[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], 
+#                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
+#                     [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]}
+
+
+# %%
+
+# %%
+batch_sentences = [
+    "But what about second breakfast?",
+    "Don't think hehink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Piphink he knows about second breakfast, Pip knows about second breakfast, Pip.",
+]
+encoded_input = tokenizer(batch_sentences, padding=True, truncation=True)
+tokenizer.prepare_for_model()
+# print(encoded_input)
+# {'input_ids': [[101, 1252, 1184, 1164, 1248, 6462, 136, 102, 0, 0, 0, 0, 0, 0, 0], 
+#                [101, 1790, 112, 189, 1341, 1119, 3520, 1164, 1248, 6462, 117, 21902, 1643, 119, 102], 
+#                [101, 1327, 1164, 5450, 23434, 136, 102, 0, 0, 0, 0, 0, 0, 0, 0]], 
+#  'token_type_ids': [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+#                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+#                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], 
+#  'attention_mask': [[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], 
+#                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
+#                     [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]}
+
+
+# %%
+tokenizer2.prepare_for_model(tokenizer2.convert_tokens_to_ids(tokenizer.tokenize(df_nodes["node_text"].iloc[0])))
+
+
+# %%
+from transformers import AutoTokenizer
+tokenizer2 = AutoTokenizer.from_pretrained("bert-base-uncased")
+# tokenizer.prepare_for_model(df_nodes["node_tok_ids"].iloc[0])['input_ids']
+df_nodes["node_tok_ids"].iloc[0]
+
+# %%
+big_nodes[["node_tok_ids_len", "node_text", "node_gt_tag", "node_gt_text"]].sort_values(["node_tok_ids_len"], ascending=False)[big_nodes['node_gt_tag']=='PAST_CLIENT']
+
+# %%
+# t = 
+for t in range(222):
+    gt_text = big_nodes[["node_tok_ids_len", "node_text", "node_gt_tag", "node_gt_text"]].sort_values(["node_tok_ids_len"], ascending=False)[big_nodes['node_gt_tag']=='PAST_CLIENT'].iloc[t]["node_gt_text"]
+    # print(gt_text)
+    seg_text = big_nodes[["node_tok_ids_len", "node_text", "node_gt_tag"]].sort_values(["node_tok_ids_len"], ascending=False)[big_nodes['node_gt_tag']=='PAST_CLIENT'].iloc[t].values[1].split('. ')
+    # print(seg_text)
+
+    ok = []
+    for x in gt_text:
+        for y in seg_text:
+            if x.lower() in y.lower():
+                ok.append(x)
+                break
+        if len(y) > 128:
+            break
+
+    if len(gt_text) != len(ok):
+        print("ok:", ok)
+        print("gt_text:", gt_text)
+        print("ERROR ")
+        print(gt_text)
+        print(seg_text)
+        break
+
+# %%
+df_develop
+
+# %%
+df["page_features"] = df.apply(
+            lambda page: featurizer.get_page_features(page["url"], page["nodes"]), axis=1
+        )
 
 # %%
 # df = pd.read_pickle("/data/GIT/delete/develop/prepared/1820productions.com.pkl")

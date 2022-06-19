@@ -10,58 +10,99 @@ import unicodedata
 from markuplmft.fine_tuning.run_swde import constants
 from markuplmft.data.tag_utils import tags_dict
 from torch.utils.data import Dataset
+import pandas as pd
 
 
-class PageFeature(object):  # BatchEncoding PageClassifierFeature
+class WindowFeature(object):  # BatchEncoding PageClassifierFeature
     def __init__(
         self,
         input_ids,
         token_type_ids,
         attention_mask,
+        url,
+        node_ids,
+        relative_first_tokens_node_indices,
         labels,
-        relative_first_tokens_node_index,
-        # absolute_node_index,
-        # url,
     ):
-        """ """
         self.input_ids = input_ids
         self.token_type_ids = token_type_ids
         self.attention_mask = attention_mask
+        self.url = url
+        self.node_ids = node_ids
+        self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
         self.labels = labels
-        self.relative_first_tokens_node_index = relative_first_tokens_node_index
-        # self.absolute_node_index = absolute_node_index
-        # self.url = url
+
+from torch import Tensor
+
+class EncodedInput(TypedDict):
+    """Describes tensorized text - or batch of texts, as returned by HuggingFace tokenizers"""
+
+    input_ids: Tensor
+    token_type_ids: Tensor
+    attention_mask: Tensor
+
+class EncodedDatapoint(EncodedInput):
+    """Describes a pair of (input, labels)"""
+
+    labels: Tensor
 
 
 class SwdeDataset(Dataset):
-    def __init__(
-        self,
-        all_input_ids,
-        all_attention_mask,
-        all_token_type_ids,
-        relative_first_tokens_node_index,
-        # absolute_node_index,
-        # url,
-        all_labels=None,
-    ):
+    def __init__(self, 
+        encodings: EncodedInput, 
+        labels: Tensor,
+        urls: Sequence[int],
+        node_ids: Sequence[int],
+        relative_first_tokens_node_indices: Sequence[int],
+        labels=None,
+        ):
+        self.encodings = encodings
+        self.urls = urls
+        self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
+        self.node_ids = node_ids
 
-        self.tensors = [
-            all_input_ids,
-            all_attention_mask,
-            all_token_type_ids,
-        ]
-        self.relative_first_tokens_node_index = relative_first_tokens_node_index
-        # self.absolute_node_index = absolute_node_index
-        # self.url = url
+    def __getitem__(self, idx: int) -> EncodedDatapoint:
+        # fmt: off
+        item = {
+            key: tensor[idx]  # type: ignore
+            for key, tensor in self.encodings.items()
+        }
+        # fmt: on
+        item["labels"] = self.labels[idx]
+        return cast(EncodedDatapoint, item)
 
-        if not all_labels is None:
-            self.tensors.append(all_labels)
+    def __len__(self) -> int:
+        return len(self.labels)
 
-    def __len__(self):
-        return len(self.tensors[0])
+# class SwdeDataset(Dataset):
+#     def __init__(
+#         self,
+#         all_input_ids,
+#         all_attention_mask,
+#         all_token_type_ids,
+#         urls,
+#         node_ids,
+#         relative_first_tokens_node_indices,
+#         all_labels=None,
+#     ):
 
-    def __getitem__(self, index):
-        return tuple(tensor[index] for tensor in self.tensors)
+#         self.tensors = [
+#             all_input_ids,
+#             all_attention_mask,
+#             all_token_type_ids,
+#         ]
+#         self.urls = urls
+#         self.relative_first_tokens_node_indices = relative_first_tokens_node_indices
+#         self.node_ids = node_ids
+
+#         if not all_labels is None:
+#             self.tensors.append(all_labels)
+
+#     def __len__(self):
+#         return len(self.tensors[0])
+
+#     def __getitem__(self, index):
+#         return tuple(tensor[index] for tensor in self.tensors)
 
 class Featurizer:
     def __init__(
@@ -112,7 +153,7 @@ class Featurizer:
         """
         Get important nodes and their important attributes as a tuple.
 
-        return (text, xpath) or None
+        return (xpath, text, node_tag, gt_texts) or None
         """
         # dom_tree = etree.ElementTree(lxml.html.fromstring(html)) #! Faster but not correct use below
         dom_tree = get_dom_tree(html)
@@ -125,7 +166,6 @@ class Featurizer:
                 "node_text": node.text,
                 "node_tail_text": node.tail,
             }
-
             for text_part_flag, node_text in node_text_dict.items():
                 if node_text:
                     if (
@@ -140,8 +180,7 @@ class Featurizer:
                         node_text_split = node_text.split("--BRRB--")
                         len_brs = len(node_text_split)  # The number of the <br>s.
 
-                        for index, etext in enumerate(node_text_split):
-
+                        for index, etext in enumerate(node_text_split):                            
                             if text_part_flag == "node_text":
                                 xpath = dom_tree.getpath(node)
 
@@ -151,159 +190,216 @@ class Featurizer:
                             if len_brs >= 2:
                                 xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
 
-                            page_nodes.append((xpath, etext))
+                            page_nodes.append((xpath, etext, 'none', []))
         # ? Make sure that it is returning a page with features
         if len(page_nodes) > 0:
             return page_nodes
         else:
             print(f"No nodes from this html were able to be extracted - html: {html}")
 
-    def get_page_features(self, nodes: Sequence) -> Sequence[PageFeature]:
+    def get_page_features(self, url, nodes: Sequence) -> Sequence[WindowFeature]:
         """
-        nodes: [(xpath, node_text, tag, gt_text), ...]
-        1. Tokenizer page
+        nodes: [(xpath, node_text, node_tag, gt_text), ...]
+        1. Tokenizer node texts
         2. Convert tokens into ids
-        3. Split 384 tokens ids into features that go into the model
-        4. Move features by a doc_stride of 128
+        3. Stride over all tokens ids and create a 384 token window view feature
+        4. Move window by a doc_stride of 128
         """
-        real_max_token_num = self.max_length - 2  # for cls and sep
+        # TODO: Move this to a function called tokenize_all_nodes_in_a_page
+        # TODO: Deal when there is no tag
+        nodes_df = pd.DataFrame(nodes, columns= ['xpath', 'node_text', 'node_tag', 'node_gt_text'])
 
-        page_tokens_ids = []
-        page_labels_seq = []
-        # ? A list of indices pointing to the first tokens in each node of the all tokens list
-        absolute_first_tokens_node_indices = []
+        # nodes_df["node_text_tok"] = nodes_df["node_text"].apply(self.tokenizer.tokenize)
+        # nodes_df["node_text_tok_ids"] = nodes_df["node_text_tok"].apply(self.tokenizer.convert_tokens_to_ids)
+        nodes_df["node_text_tok_ids"] = nodes_df["node_text"].apply(lambda row: self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(row)))
 
-        # TODO: Move this to a function called tokenize_page_nodes
-        # ? Create a tokenization of the page by converting the text of each node into token_ids and concatenate them.
-        # ? For each node append the number of tokens to first_token_pos.
-        #! This has to assume that the nodes won't have tag or gt_text!
-        #? This is creating a tokenized version of the page going though the nodes and storing the position of the first token in each node  
-        for node in nodes:
-            # TODO(Aimore): Improve this way to get node[3]
-            if len(node) > 2:
-                node_text, gt_text = node[1], node[3]
-            else:
-                node_text = node[1]
-                gt_text = []
+        nodes_df["node_text_tok_ids_padded"] = nodes_df["node_text_tok_ids"].apply(lambda row: row + [self.tokenizer.pad_token_id])
+        nodes_df["node_text_tok_ids_padded_len"] = nodes_df["node_text_tok_ids_padded"].apply(len)
+        nodes_df["node_text_tok_ids_padded_labels_seq"] = nodes_df.apply(lambda row: [constants.ATTRIBUTES_PLUS_NONE.index(row["node_tag"])] * len(row["node_text_tok_ids"]) + [-100], axis=1) 
+        nodes_df["node_text_tok_ids_padded_first_token_node_absolute_index"] = nodes_df["node_text_tok_ids_padded_len"].cumsum().shift(periods=1, fill_value=0).values
 
-            if len(gt_text) > 0:
-                annotation_type = "PAST_CLIENT"
-            else:
-                annotation_type = "none"
+        tokens_df = nodes_df.explode(["node_text_tok_ids_padded", "node_text_tok_ids_padded_labels_seq"])
+        tokens_df.reset_index(inplace=True)
+        tokens_df = tokens_df.rename({"index": 'node_ids'}, axis=1)
+        last_token = len(tokens_df)
 
-            # ? Tokenize and convert tokens into ids
-            node_tokens_ids = self.tokenizer.convert_tokens_to_ids(
-                self.tokenizer.tokenize(node_text)
-            )
-            # ? Concatenate token_ids and add a pad token between them
-            node_tokens_ids = node_tokens_ids + [
-                self.tokenizer.pad_token_id
-            ]  # TODO: Check for a better token here
-            page_tokens_ids += node_tokens_ids
+        page_features = []
+        for window in range(0, last_token, self.doc_stride):
+            feat = tokens_df[["node_ids", "node_text_tok_ids_padded", "node_text_tok_ids_padded_first_token_node_absolute_index", "node_text_tok_ids_padded_labels_seq"]].loc[window:(window + self.max_length-3)]
+            feat["relative_first_tokens_node_indices"] = feat["node_text_tok_ids_padded_first_token_node_absolute_index"] - window
+            
+            splited_page_tokens_ids = [self.tokenizer.cls_token_id] + feat["node_text_tok_ids_padded"].to_list() + [self.tokenizer.sep_token_id]
 
-            # ? Append the position of the first token of the node
-            # ? We always use the first token to predict
-            absolute_first_tokens_node_indices.append(len(page_labels_seq))
-            page_labels_seq += [constants.ATTRIBUTES_PLUS_NONE.index(annotation_type)] * len(
-                node_tokens_ids
-            )
-            # ? E. g. page_labels_seq = [1, 1, 1, 0, 1, 1, ..., 0, 1, 1]
-            # ? The numbers in each token_ids indicates the label index in constants.ATTRIBUTES_PLUS_NONE
-            # ? This means that all tokens_ids for the text in the xpath
-            # ? will get labelled as something differently than -100 in case it is positive.
+            current_len = len(splited_page_tokens_ids)
+            token_type_ids = [0] * self.max_length
+            attention_mask = [1] * current_len
+            splited_labels_seq = [-100] + feat["node_text_tok_ids_padded_labels_seq"].to_list() + [-100]
+            node_ids = feat["node_ids"].values
+            relative_first_tokens_node_indices = feat["relative_first_tokens_node_indices"]
 
-        number_of_nodes = len(nodes)
-        features = []
-        start_pos = 0
-        page_over_flag = False
+            # node_ids_relative_first_tokens_indices = feat[feat["relative_first_tokens_node_indices"] >= 0]
+            # if len(node_ids_relative_first_tokens_indices) > 0:
+            #     node_ids_relative_first_tokens_indices = node_ids_relative_first_tokens_indices[["node_ids", "relative_first_tokens_node_indices"]].drop_duplicates().values
+            #     node_ids, relative_first_tokens_node_indices = zip(*node_ids_relative_first_tokens_indices)
+            #     assert max(relative_first_tokens_node_indices) < self.max_length
+            # else:
+            # node_ids, relative_first_tokens_node_indices = [], []
+            
+            #?Pad
+            # input_ids, attention_mask = self.tokenizer.prepare_for_model(feat["node_text_tok_ids_padded"].to_list())[["input_ids", "attention_mask"]]
+            if current_len < self.max_length:
+                tokens_left = self.max_length - current_len
+                splited_page_tokens_ids += [self.tokenizer.pad_token_id] * tokens_left
+                splited_labels_seq += [-100] * tokens_left
+                attention_mask += [0] * tokens_left
 
-        node_index = 0
+            page_features.append(WindowFeature(
+                input_ids=splited_page_tokens_ids, #? len = 384,
+                token_type_ids=token_type_ids, #? Always 0. len = 384,
+                attention_mask=attention_mask, #? Always 1. len = 384,
+                url=url,
+                node_ids=node_ids,
+                relative_first_tokens_node_indices=relative_first_tokens_node_indices,
+                labels=splited_labels_seq,
+            ))
+        # assert len(nodes) == node_ids[-1] + 1
+        return page_features
 
-        # TODO (Aimore): Check if the nodes are being dropped somehow. It seems there are less nodes than it should be?
-        while True:
-            # ? This loop goes over page_tokens_ids in a stride manner.
-            # ? Gets a subset of the page_tokens_ids and appends cls_token_id(0) at the beginning and cls_token_id(2) at the end.
+        # # ? Create a tokenization of the page by converting the text of each node into token_ids and concatenate them.
+        # # ? For each node append the number of tokens to first_token_pos.
+        # #! This has to assume that the nodes won't have tag or gt_text!
+        # #? This is creating a tokenized version of the page going though the nodes and storing the position of the first token in each node  
+        # for node in nodes:
+        #     # TODO(Aimore): Improve this way to get node[3]
+        #     if len(node) > 2:
+        #         node_text, gt_text = node[1], node[3]
+        #     else:
+        #         node_text = node[1]
+        #         gt_text = []
 
-            end_pos = start_pos + real_max_token_num
+        #     if len(gt_text) > 0:
+        #         annotation_type = "PAST_CLIENT"
+        #     else:
+        #         annotation_type = "none"
 
-            splited_page_tokens_ids = (
-                [self.tokenizer.cls_token_id]
-                + page_tokens_ids[start_pos:end_pos]
-                + [self.tokenizer.sep_token_id]
-            )
-            # ? tokenizer.cls_token_id = 0
-            # ? tokenizer.sep_token_id = 2
-            # ? The length of the subset is given by the real_max_token_num 382.
-            # ? E.g. splited_token_ids [len(382)] = [42996, 4, 23687, 48159, 5457, 2931, ...]
+        #     # ? Tokenize and convert tokens into ids
+        #     node_tokens_ids = self.tokenizer.convert_tokens_to_ids(
+        #         self.tokenizer.tokenize(node_text)
+        #     )
+        #     # ? Concatenate token_ids and add a pad token between them
+        #     node_tokens_ids = node_tokens_ids + [
+        #         self.tokenizer.pad_token_id
+        #     ]  # TODO: Check for a better token here
+        #     page_tokens_ids += node_tokens_ids
 
-            token_type_ids = [0] * self.max_length  # ? It is always a list of 0
+        #     # ? Append the position of the first token of the node
+        #     # ? We always use the first token to predict
+        #     absolute_first_tokens_node_indices.append(len(page_tokens_ids))
+        #     page_labels_seq += [constants.ATTRIBUTES_PLUS_NONE.index(annotation_type)] * len(
+        #         node_tokens_ids
+        #     )
+        #     # ? E. g. page_labels_seq = [1, 1, 1, 0, 1, 1, ..., 0, 1, 1]
+        #     # ? The numbers in each token_ids indicates the label index in constants.ATTRIBUTES_PLUS_NONE
+        #     # ? This means that all tokens_ids for the text in the xpath
+        #     # ? will get labelled as something differently than -100 in case it is positive.
 
-            splited_labels_seq = [-100] + page_labels_seq[start_pos:end_pos] + [-100]
-            # ? E. g. splited_labels_seq = [-100, 1, 1, 1, 0, 1, 1, ..., 0, 1, 1, -100]
-            # ? This is to mask the CLS and SEP tokens
+        # page_tokens_ids = nodes_df["node_text_tok_ids_padded"].explode().to_list()
+        # page_labels_seq = nodes_df["node_text_tok_ids_padded_labels_seq"].explode().to_list()
+        # absolute_first_tokens_node_indices = nodes_df["node_text_tok_ids_padded_first_token_node_absolute_index"].explode()
+        # absolute_first_tokens_node_indices = (absolute_first_tokens_node_indices - absolute_first_tokens_node_indices[0]).to_list()
 
-            relative_first_tokens_node_indices = []
-            absolute_node_indices = []
+        # number_of_nodes = len(nodes)
+        # page_features = []
+        # start_pos = 0
+        # page_over_flag = False
 
-            # ? This while gets the first token node indices between the start and end window
-            # ? This while doesn't run if relative_first_tokens_node_index[curr_first_token_index] is very high (above 382)
-            # ? This while loops over the relative_first_tokens_node_index and breaks if relative_first_tokens_node_index is higher than the end_pos
-            while (
-                node_index < number_of_nodes
-                and start_pos <= absolute_first_tokens_node_indices[node_index] < end_pos
-            ):
+        # node_index = 0
 
-                # ? +1 because of the first token: [cls]
-                relative_first_tokens_node_indices.append(
-                    absolute_first_tokens_node_indices[node_index] - start_pos + 1
-                )
-                absolute_node_indices.append(node_index)
-                node_index += 1
+        # # TODO (Aimore): Check if the nodes are being dropped somehow. It seems there are less nodes than it should be?
+        # while True:
+        #     # ? This loop goes over page_tokens_ids in a stride manner.
+        #     # ? Gets a subset of the page_tokens_ids and appends cls_token_id(0) at the beginning and cls_token_id(2) at the end.
 
-            if end_pos >= len(page_tokens_ids):
-                # ? This will be the last time of this loop. When the page is over.
-                page_over_flag = True
-                # ? The first step is to get the features for the window, which means we need to pad in this feature with -100
-                current_len = len(splited_page_tokens_ids)
-                splited_page_tokens_ids += [self.tokenizer.pad_token_id] * (
-                    self.max_length - current_len
-                )
-                splited_labels_seq += [-100] * (self.max_length - current_len)
-                attention_mask = [1] * current_len + [0] * (self.max_length - current_len)
+        #     end_pos = start_pos + real_max_token_num
 
-            else:
-                # ? no need to pad, the splited seq is exactly with the length `self.max_length`
-                assert len(splited_page_tokens_ids) == self.max_length
-                attention_mask = [1] * self.max_length
+        #     splited_page_tokens_ids = (
+        #         [self.tokenizer.cls_token_id]
+        #         + page_tokens_ids[start_pos:end_pos]
+        #         + [self.tokenizer.sep_token_id]
+        #     )
+        #     # ? tokenizer.cls_token_id = 0
+        #     # ? tokenizer.sep_token_id = 2
+        #     # ? The length of the subset is given by the real_max_token_num 382.
+        #     # ? E.g. splited_token_ids [len(382)] = [42996, 4, 23687, 48159, 5457, 2931, ...]
 
-            # if len(relative_first_tokens_node_indices) == 0:
-            #     print("EMPTY")
+        #     token_type_ids = [0] * self.max_length  # ? It is always a list of 0
 
-            features.append(
-                PageFeature(
-                    input_ids=splited_page_tokens_ids,
-                    token_type_ids=token_type_ids,
-                    attention_mask=attention_mask,
-                    labels=splited_labels_seq,
-                    relative_first_tokens_node_index=relative_first_tokens_node_indices,
-                    # absolute_node_index=absolute_node_indices,
-                    # url=url
-                )
-            )
-            start_pos += self.doc_stride
+        #     splited_labels_seq = [-100] + page_labels_seq[start_pos:end_pos] + [-100]
+        #     # ? E. g. splited_labels_seq = [-100, 1, 1, 1, 0, 1, 1, ..., 0, 1, 1, -100]
+        #     # ? This is to mask the CLS and SEP tokens
 
-            if page_over_flag:
-                break
+        #     relative_first_tokens_node_indices = []
+        #     node_ids = []
 
-        return features
+        #     # ? This while gets the first token node indices between the start and end window
+        #     # ? This while doesn't run if relative_first_tokens_node_indices[curr_first_token_index] is very high (above 382)
+        #     # ? This while loops over the relative_first_tokens_node_indices and breaks if relative_first_tokens_node_indices is higher than the end_pos
+        #     while (
+        #         node_index < number_of_nodes
+        #         and start_pos <= absolute_first_tokens_node_indices[node_index] < end_pos
+        #     ):
+
+        #         # ? +1 because of the first token: [cls]
+        #         relative_first_tokens_node_indices.append(
+        #             absolute_first_tokens_node_indices[node_index] - start_pos + 1
+        #         )
+        #         node_ids.append(node_index)
+        #         node_index += 1
+
+        #     if end_pos >= len(page_tokens_ids): #? This will pad in case the end_pos is more than the lenght of the page
+        #         # ? This will be the last time of this loop. When the page is over.
+        #         page_over_flag = True
+        #         # ? The first step is to get the features for the window, which means we need to pad in this feature with -100
+        #         current_len = len(splited_page_tokens_ids)
+        #         #? Padding
+        #         tokens_left = self.max_length - current_len
+        #         splited_page_tokens_ids += [self.tokenizer.pad_token_id] * tokens_left
+        #         splited_labels_seq += [-100] * tokens_left
+        #         attention_mask = [1] * current_len + [0] * tokens_left
+
+        #     else:
+        #         # ? no need to pad, the splited seq is exactly with the length `self.max_length`
+        #         assert len(splited_page_tokens_ids) == self.max_length
+        #         attention_mask = [1] * self.max_length
+
+        #     # if len(relative_first_tokens_node_indices) == 0:
+        #     #     print("EMPTY")
+        #     page_features.append(
+        #         WindowFeature(
+        #             input_ids=splited_page_tokens_ids, #? len = 384
+        #             token_type_ids=token_type_ids, #? Always 0. len = 384
+        #             attention_mask=attention_mask, #? Always 1. len = 384
+        #             labels=splited_labels_seq,
+        #             relative_first_tokens_node_indices=relative_first_tokens_node_indices,
+        #             node_ids=node_ids,
+        #             # url=url
+        #         )
+        #     )
+        #     start_pos += self.doc_stride
+
+        #     if page_over_flag:
+        #         break
+
+        # return page_features
         # ? features = [page_feature_1, page_feature_2, ...]
 
-    def feature_to_dataset(self, features: Sequence[PageFeature]) -> SwdeDataset:
+    def feature_to_dataset(self, features: Sequence[WindowFeature]) -> SwdeDataset:
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
         all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-        relative_first_tokens_node_index = [f.relative_first_tokens_node_index for f in features]
-        # absolute_node_index = [f.absolute_node_index for f in features]
+        urls = [f.url for f in features]
+        node_ids = [f.node_ids for f in features]
+        relative_first_tokens_node_indices = [f.relative_first_tokens_node_indices for f in features]
         # url = [f.url for f in features]
 
         #! If there are labels then create with labels
@@ -313,9 +409,9 @@ class Featurizer:
             all_input_ids,
             all_attention_mask,
             all_token_type_ids,
-            relative_first_tokens_node_index,
-            # absolute_node_index,
-            # url,
+            urls,
+            node_ids,
+            relative_first_tokens_node_indices,
             all_labels,
         )
 

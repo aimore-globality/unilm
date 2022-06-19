@@ -55,7 +55,7 @@ class LabelHandler:
                 for annotation in annotations
             ]
         )
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values 
 
         logging.info(f" # Annotations (gt_text): {self.count_all_labels(df)}")
         logging.info(f" # Annotations (gt_value): {self.count_all_labels(df, 'value')}")
@@ -276,7 +276,7 @@ class LabelHandler:
         )
 
         df[f"{self.tag}-gt_text"] = all_annotations_left
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values
         df = df[df[f"{self.tag}-gt_text_count"] > 0]
         logging.info("done")
         return df
@@ -287,7 +287,7 @@ class LabelHandler:
         """
 
         logging.debug("Add_gt_counts_and_sort...")
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len)
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values
         return df.sort_values(f"{self.tag}-gt_text_count", ascending=False)
 
     def add_page_id(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -306,28 +306,25 @@ class LabelHandler:
         node_gt_text: Sequence[str],
     ) -> Sequence[str]:
         """
-        Node: [(xpath, text), (...)]
-        node_gt_text: [node_gt_text1, node_gt_text2]
-        Annotated_Node: [(xpath, text, node_gt_tag, [node_gt_text1, node_gt_text2]), (...)]
+        Input:
+            nodes: [(xpath, text, 'none', []), (...)]
+            node_gt_text: [node_gt_text1, node_gt_text2]
+        Output:
+            nodes_annotated: [(xpath, text, node_gt_tag, [node_gt_text1, node_gt_text2]), (...)]
         """
 
         nodes_annotated = []
-        for xpath, node_text in nodes:
-            gt_text_in_node = []
+        for xpath, node_text, tag, gt_text_in_node in nodes:
             for gt_text in node_gt_text:
                 if f" {gt_text.strip()} ".lower() in f" {node_text.strip()} ".lower():
                     gt_text_in_node.append(gt_text)
 
-            if len(gt_text_in_node) == 0:
-                new_node_text = (xpath, node_text, "none", [])
-            else:
-                new_node_text = (
-                    xpath,
-                    node_text,
-                    self.tag,
-                    gt_text_in_node,
-                )
+            if len(gt_text_in_node) != 0:
+                tag = self.tag
+
+            new_node_text = (xpath, node_text, tag, gt_text_in_node)
             nodes_annotated.append(new_node_text)
+            
         return nodes_annotated
 
     def add_classification_label_to_nodes(self, df: pd.DataFrame) -> pd.DataFrame:

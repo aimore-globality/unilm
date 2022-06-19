@@ -121,111 +121,42 @@ class PrepareData:
         # ? Remove duplicates
         df_nodes_dedup = df_nodes.drop_duplicates("node_text")
         # ? Group dedup nodes by page
-        ddd = (
+        df_dedup = (
             df_nodes_dedup[["url", "xpath", "node_text", "node_gt_tag", "node_gt_text"]]
             .groupby("url")
             .agg(lambda x: list(x))
             .reset_index()
         )
-        # ? Combine dedup nodes into a single column (as they were before )
-        ddd["nodes"] = ddd.apply(
+        # ? Combine dedup nodes into a single column (as they were before)
+        df_dedup["nodes"] = df_dedup.apply(
             lambda x: list(zip(x["xpath"], x["node_text"], x["node_gt_tag"], x["node_gt_text"])),
             axis=1,
         )
         # ? Remove pages that don't contain nodes anymore due to dedup
-        ddd = ddd.dropna(subset=["nodes"])
+        df_dedup = df_dedup.dropna(subset=["nodes"])
         # ? Remove columns that are not relevant anymore
-        ddd = ddd.drop(["xpath", "node_text", "node_gt_tag", "node_gt_text"], axis=1)
-        # ? Merge both datasets (size of ddd might be different from the original df)
-        ddd = ddd.set_index("url")
+        df_dedup = df_dedup.drop(["xpath", "node_text", "node_gt_tag", "node_gt_text"], axis=1)
+        # ? Merge both datasets (size of df_dedup might be different from the original df)
+        df_dedup = df_dedup.set_index("url")
         df = df.set_index("url")
         df = df.drop(["nodes"], axis=1)
-        df = ddd.join(df)
+        df = df_dedup.join(df)
         assert len(df) > 0
         df.reset_index(inplace=True)
         return df
 
-    def save_dedup(
+    def save_processed_data(
         self,
         df: pd.DataFrame,
-        domain_name: str,
-        raw_data_folder: Path,
+        save_path: str,
     ):
-        folder_path = raw_data_folder / "dedup"
-        folder_path.mkdir(parents=True, exist_ok=True)
-        save_path = folder_path / f"{domain_name}.pkl"
-        logging.debug(f"Saved dedup file at: {save_path} ({len(df)})")
         df.to_pickle(save_path)
 
 
 if __name__ == "__main__":
-    # wandb.login()
-    # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
-
-    FORMAT = "[ %(asctime)s ] %(filename)s:%(lineno)5s - %(funcName)35s() : %(message)s"
-    logging.basicConfig(format=FORMAT, level=logging.INFO)
-
-    remove_folder_flag = True
-    shortcut = False
-    dataset_name = "develop"
-    negative_fraction = 0.10  # ? 0.10
-    page_limit = -1  # ? -1
-    parallel = True
-    with_img = True
-    if with_img:
-        name_root_folder = "delete-img"
-    else:
-        name_root_folder = "delete"
-
-    # ? Full version
-    wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
-    # ? Smaller version
-    # wae_data_load_path = Path(f"/data/GIT/delete/")
-
-    raw_data_folder = Path(f"/data/GIT/{name_root_folder}/{dataset_name}")
-
-    featurizer = Featurizer()
-    label_handler = LabelHandler()
-
-    preparer = PrepareData(
-        parallel=parallel,
-        remove_folder_flag=remove_folder_flag,
-        shortcut=shortcut,
-        raw_data_folder=raw_data_folder,
-    )
-    df = preparer.load_data(wae_data_load_path)
-
-    # self.run.save[""]()
-    # self.run.finish()
-    if preparer.remove_folder_flag:
-        preparer.remove_folder(preparer.raw_data_folder)
-
-    #! Shortcut for debugging:
-    if not preparer.shortcut:
-        df = label_handler.format_annotation(df)
-        df_positives_negatives = label_handler.create_postive_negative_data(
-            df,
-            negative_fraction=negative_fraction,
-            wae_data_load_path=wae_data_load_path,
-            with_img=with_img,
-        )
-        df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
-    else:
-        logging.info(f"Short cutting...")
-        df_positives_negatives = pd.read_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
-
-    logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
-
-    df_domains = list(df_positives_negatives.groupby("domain"))
-
-    # websites_to_debug = ['walkerhamill.com']
-    # df_domains = [x for x in df_domains if x[0] in websites_to_debug]
-
-    logging.info(f"Number of Domains: {len(df_domains)}")
-    # TODO: Simplify this function - Becareful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
-
     def prepare_domain(domain_name_and_domain_df):
         domain_name, domain_df = domain_name_and_domain_df
+        logging.info(f"domain_name: {domain_name}")
 
         save_folder = preparer.raw_data_folder / "processed"
         save_folder.mkdir(parents=True, exist_ok=True)
@@ -235,51 +166,116 @@ if __name__ == "__main__":
         dedup_save_folder.mkdir(parents=True, exist_ok=True)
         dedup_save_path = dedup_save_folder / f"{domain_name}.pkl"
 
-        logging.info(f"domain_name: {domain_name}")
-
+        #! Inference
         domain_df["html"] = domain_df.apply(
             lambda row: featurizer.insert_url_into_html(row["url"], row["html"]), axis=1
         )
+
         domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
+
         #! During the inference this can be a problem - check how to deal with it when productionalizing
         domain_df = domain_df.dropna(subset=["nodes"])
 
         #! Training
         domain_df = label_handler.add_gt_counts_and_sort(domain_df)
         domain_df = label_handler.add_page_id(domain_df)
-
-        preparer.save_ground_truth(domain_df, domain_name, preparer.raw_data_folder)
-        preparer.save_htmls(domain_df, domain_name, preparer.raw_data_folder)
-
-        domain_df["page_features"] = domain_df["nodes"].apply(featurizer.get_page_features)
-
         domain_df = label_handler.add_classification_label_to_nodes(domain_df)
 
-        #! Inference
-        domain_df["page_features"] = domain_df.apply(
-            lambda page: featurizer.get_page_features(page["nodes"]), axis=1
-        )
+        # preparer.save_ground_truth(domain_df, domain_name, preparer.raw_data_folder)
+        # preparer.save_htmls(domain_df, domain_name, preparer.raw_data_folder)
+
+        # #! Inference
+        # domain_df["page_features"] = domain_df.apply(
+        #     lambda page: featurizer.get_page_features(page["url"], page["nodes"]), axis=1
+        # )
 
         #! Save data
-        logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
-        domain_df.to_pickle(save_path)
+        # logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
+        # preparer.save_processed_data(domain_df, save_path)
 
         domain_df = preparer.create_dedup_data(domain_df)
         domain_df["page_features"] = domain_df.apply(
-            lambda page: featurizer.get_page_features(page["nodes"]), axis=1
+            lambda page: featurizer.get_page_features(page["url"], page["nodes"]), axis=1
         )
+
         logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
-        domain_df.to_pickle(dedup_save_path)
+        preparer.save_processed_data(domain_df, dedup_save_path)
 
         return domain_name
+    # wandb.login()
+    # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
 
-    if parallel:
-        num_cores = mp.cpu_count() - 1
-        with mp.Pool(num_cores) as pool, tqdm(total=len(df_domains), desc="Processing data") as t:
-            for res in pool.imap_unordered(prepare_domain, df_domains):
-                # for res in pool.imap(prepare_domain, df_domains):
-                t.set_description(f"Processed {res}")
-                t.update()
-    else:
-        for df_domain in df_domains:
-            prepare_domain(df_domain)
+    FORMAT = "[ %(asctime)s ] %(filename)20s:%(lineno)5s - %(funcName)35s() : %(message)s"
+    logging.basicConfig(format=FORMAT, level=logging.INFO)
+
+    for dataset_name in ["train", "develop"][:]:
+        # ? Config
+        remove_folder_flag = True
+        shortcut = True
+        negative_fraction = 0.10  # ? 0.10
+        page_limit = -1  # ? -1
+        parallel = True
+        with_img = False
+        if with_img:
+            name_root_folder = "delete-img"
+        else:
+            name_root_folder = "delete-abs"
+
+        logging.info(f"DATASET: {dataset_name}")
+        # ? Full version
+        wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
+        # ? Smaller version
+        # wae_data_load_path = Path(f"/data/GIT/delete/")
+
+        raw_data_folder = Path(f"/data/GIT/{name_root_folder}/{dataset_name}")
+
+        featurizer = Featurizer()
+        label_handler = LabelHandler()
+
+        preparer = PrepareData(
+            parallel=parallel,
+            remove_folder_flag=remove_folder_flag,
+            shortcut=shortcut,
+            raw_data_folder=raw_data_folder,
+        )
+        df = preparer.load_data(wae_data_load_path)
+
+        if preparer.remove_folder_flag:
+            preparer.remove_folder(preparer.raw_data_folder)
+
+        #! Shortcut for debugging:
+        if not preparer.shortcut:
+            df = label_handler.format_annotation(df)
+            df_positives_negatives = label_handler.create_postive_negative_data(
+                df,
+                negative_fraction=negative_fraction,
+                wae_data_load_path=wae_data_load_path,
+                with_img=with_img,
+            )
+            df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+        else:
+            logging.info(f"Short cutting...")
+            df_positives_negatives = pd.read_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+
+        logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
+
+        df_domains = list(df_positives_negatives.groupby("domain"))
+
+        # websites_to_debug = ['walkerhamill.com']
+        # df_domains = [x for x in df_domains if x[0] in websites_to_debug]
+
+        logging.info(f"Number of Domains: {len(df_domains)}")
+        # TODO: Simplify this function - Becareful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
+
+        
+
+        if parallel:
+            num_cores = mp.cpu_count() - 1
+            with mp.Pool(num_cores) as pool, tqdm(total=len(df_domains), desc="Processing data") as t:
+                for res in pool.imap_unordered(prepare_domain, df_domains):
+                    # for res in pool.imap(prepare_domain, df_domains):
+                    t.set_description(f"Processed {res}")
+                    t.update()
+        else:
+            for df_domain in df_domains:
+                prepare_domain(df_domain)
