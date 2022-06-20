@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # ---
 # jupyter:
 #   jupytext:
@@ -12,6 +13,40 @@
 #     language: python
 #     name: python3
 # ---
+
+# %%
+from tokenizers import normalizers
+from tokenizers.normalizers import NFD, StripAccents
+normalizer = normalizers.Sequence([NFD(), StripAccents()])
+normalizer.normalize_str("Héllò hôw+-'!@£$%^&*() are ü?")
+
+
+# %%
+from tokenizers.pre_tokenizers import Whitespace
+pre_tokenizer = Whitespace()
+pre_tokenizer.pre_tokenize_str("Hello! How are you? I'm fine, thank you.")
+
+
+# %%
+from transformers import AutoConfig, AutoModel, AutoTokenizer
+
+from typing_extensions import TypedDict
+from  torch import Tensor
+class EncodedInput(TypedDict):
+    """Describes tensorized text - or batch of texts, as returned by HuggingFace tokenizers"""
+
+    input_ids: Tensor
+    token_type_ids: Tensor
+    attention_mask: Tensor
+
+
+# %%
+a = EncodedInput()
+
+# %%
+e = AutoModel().from_pretrained()
+
+# %%
 
 # %%
 import pandas as pd

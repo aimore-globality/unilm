@@ -12,7 +12,6 @@ from markuplmft.data.tag_utils import tags_dict
 from torch.utils.data import Dataset
 import pandas as pd
 
-
 class WindowFeature(object):  # BatchEncoding PageClassifierFeature
     def __init__(
         self,
@@ -170,7 +169,7 @@ class Featurizer:
 
         # nodes_df["node_text_tok"] = nodes_df["node_text"].apply(self.tokenizer.tokenize)
         # nodes_df["node_text_tok_ids"] = nodes_df["node_text_tok"].apply(self.tokenizer.convert_tokens_to_ids)
-        nodes_df["node_text_tok_ids"] = nodes_df["node_text"].apply(lambda row: self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(row)))
+        nodes_df["node_text_tok_ids"] = nodes_df["node_text"].apply(lambda row: self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(row))) #TODO (speed up): Make use of tokenize batches
 
         nodes_df["node_text_tok_ids_padded"] = nodes_df["node_text_tok_ids"].apply(lambda row: row + [self.tokenizer.pad_token_id])
         nodes_df["node_text_tok_ids_padded_len"] = nodes_df["node_text_tok_ids_padded"].apply(len)
