@@ -13,6 +13,7 @@ from pathlib import Path
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 from markuplmft.fine_tuning.run_swde.labelhandler import LabelHandler
 import os
+import glob
 
 
 class PrepareData:
@@ -30,10 +31,9 @@ class PrepareData:
 
     def load_data(self, load_data_path: str, limit: int = -1) -> pd.DataFrame:
         logging.info("Load_data...")
-        self.wae_data_load_path = load_data_path
         df = pdx.read_avro(str(load_data_path / "dataset.avro"))
         df = df[:limit]
-        df.annotations = df.annotations.apply(literal_eval)
+        df.annotations = df.annotations.apply(literal_eval)  # TODO: Change this for the new data
 
         for column in ["url", "domain", "annotations"]:
             assert column in df.columns, f"Column: {column} not in DF"
@@ -76,22 +76,7 @@ class PrepareData:
         folder_path.mkdir(parents=True, exist_ok=True)
         df.apply(lambda row: save_html(row["html"], folder_path / f"{row['page_id']}.htm"), axis=1)
 
-    # def save_domain_node_features(self, df, raw_data_folder, domain_name):
-    #     folder_path = raw_data_folder / "prepared"
-    #     folder_path.mkdir(parents=True, exist_ok=True)
-    #     domain_nodes = []
-    #     for page_nodes in df["nodes"]:
-    #         domain_nodes.extend(page_nodes)
-    #     domain_nodes_df = pd.DataFrame(
-    #         domain_nodes, columns=["xpath", "text", "node_gt_tag", "node_gt_text"]
-    #     )
-    #     save_path = folder_path / f"{domain_name}.pkl"
-    #     logging.info(f"save_path: {save_path}")
-    #     domain_nodes_df.to_pickle(save_path)
-    #     return domain_nodes_df
-
     def remove_folder(self, raw_data_folder: str):
-        logging.info("Remove folder...")
         self.raw_data_folder = raw_data_folder
         if os.path.exists(self.raw_data_folder):
             logging.info(f"Overwriting this folder: \n{self.raw_data_folder}")
@@ -118,6 +103,7 @@ class PrepareData:
                 columns=["xpath", "node_text", "node_gt_tag", "node_gt_text"],
             )
         )
+
         # ? Remove duplicates
         df_nodes_dedup = df_nodes.drop_duplicates("node_text")
         # ? Group dedup nodes by page
@@ -129,7 +115,9 @@ class PrepareData:
         )
         # ? Combine dedup nodes into a single column (as they were before)
         df_dedup["nodes"] = df_dedup.apply(
-            lambda x: list(zip(x["xpath"], x["node_text"], x["node_gt_tag"], x["node_gt_text"])),
+            lambda row: list(
+                zip(row["xpath"], row["node_text"], row["node_gt_tag"], row["node_gt_text"])
+            ),
             axis=1,
         )
         # ? Remove pages that don't contain nodes anymore due to dedup
@@ -145,137 +133,167 @@ class PrepareData:
         df.reset_index(inplace=True)
         return df
 
-    def save_processed_data(
-        self,
-        df: pd.DataFrame,
-        save_path: str,
-    ):
-        df.to_pickle(save_path)
+
+def save_processed_data(
+    df: pd.DataFrame,
+    save_path: Path,
+):
+    save_path.parents[0].mkdir(parents=True, exist_ok=True)
+    logging.info(f"Saved data ({len(df)}) at: {save_path}")
+    df.to_pickle(save_path)
+
+
+def prepare_domain(domain_name_and_domain_df):
+    domain_name, domain_df = domain_name_and_domain_df
+    logging.info(f"domain_name: {domain_name}")
+
+    #! Inference
+    domain_df["html"] = domain_df.apply(
+        lambda row: featurizer.insert_url_into_html(row["url"], row["html"]), axis=1
+    )
+
+    domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
+
+    #! During the inference this can be a problem - check how to deal with it when productionalizing
+    domain_df = domain_df.dropna(subset=["nodes"])
+
+    #! Training
+    domain_df = label_handler.add_gt_counts_and_sort(domain_df)
+    domain_df = label_handler.add_page_id(domain_df)
+    domain_df = label_handler.add_classification_label_to_nodes(domain_df)
+
+    preparer.save_ground_truth(domain_df, domain_name, raw_data_folder)
+    preparer.save_htmls(domain_df, domain_name, raw_data_folder)
+
+    domain_df_dedup = preparer.create_dedup_data(domain_df)
+
+    return domain_name, domain_df, domain_df_dedup
 
 
 if __name__ == "__main__":
-    def prepare_domain(domain_name_and_domain_df):
-        domain_name, domain_df = domain_name_and_domain_df
-        logging.info(f"domain_name: {domain_name}")
 
-        save_folder = preparer.raw_data_folder / "processed"
-        save_folder.mkdir(parents=True, exist_ok=True)
-        save_path = save_folder / f"{domain_name}.pkl"
-
-        dedup_save_folder = preparer.raw_data_folder / "processed_dedup"
-        dedup_save_folder.mkdir(parents=True, exist_ok=True)
-        dedup_save_path = dedup_save_folder / f"{domain_name}.pkl"
-
-        #! Inference
-        domain_df["html"] = domain_df.apply(
-            lambda row: featurizer.insert_url_into_html(row["url"], row["html"]), axis=1
-        )
-
-        domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
-
-        #! During the inference this can be a problem - check how to deal with it when productionalizing
-        domain_df = domain_df.dropna(subset=["nodes"])
-
-        #! Training
-        domain_df = label_handler.add_gt_counts_and_sort(domain_df)
-        domain_df = label_handler.add_page_id(domain_df)
-        domain_df = label_handler.add_classification_label_to_nodes(domain_df)
-
-        # preparer.save_ground_truth(domain_df, domain_name, preparer.raw_data_folder)
-        # preparer.save_htmls(domain_df, domain_name, preparer.raw_data_folder)
-
-        # #! Inference
-        # domain_df["page_features"] = domain_df.apply(
-        #     lambda page: featurizer.get_page_features(page["url"], page["nodes"]), axis=1
-        # )
-
-        #! Save data
-        # logging.debug(f"Saved full file at: {save_path} ({len(domain_df)})")
-        # preparer.save_processed_data(domain_df, save_path)
-
-        domain_df = preparer.create_dedup_data(domain_df)
-        domain_df["page_features"] = domain_df.apply(
-            lambda page: featurizer.get_page_features(page["url"], page["nodes"]), axis=1
-        )
-
-        logging.debug(f"Saved dedup file at: {save_path} ({len(domain_df)})")
-        preparer.save_processed_data(domain_df, dedup_save_path)
-
-        return domain_name
     # wandb.login()
     # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
 
     FORMAT = "[ %(asctime)s ] %(filename)20s:%(lineno)5s - %(funcName)35s() : %(message)s"
     logging.basicConfig(format=FORMAT, level=logging.INFO)
+    remove_folder_flag = True
+    shortcut = True
+    negative_fraction = 0.10  # ? 0.10
+    parallel = True
+    with_img = False
 
-    for dataset_name in ["train", "develop"][:]:
-        # ? Config
-        remove_folder_flag = True
-        shortcut = True
-        negative_fraction = 0.10  # ? 0.10
-        page_limit = -1  # ? -1
-        parallel = True
-        with_img = False
-        if with_img:
-            name_root_folder = "delete-img"
-        else:
-            name_root_folder = "delete-abs"
+    if with_img:
+        name_root_folder = "delete-img"
+    else:
+        name_root_folder = "delete-abs"
 
+    logging.info(f"name_root_folder: {name_root_folder}")
+    featurizer = Featurizer()
+    label_handler = LabelHandler()
+
+    for dataset_name in ["develop", "train"][:]:
         logging.info(f"DATASET: {dataset_name}")
-        # ? Full version
-        wae_data_load_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
-        # ? Smaller version
-        # wae_data_load_path = Path(f"/data/GIT/delete/")
+
+        wae_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
+        logging.info(f"Loaded data from: {wae_data_path}")
 
         raw_data_folder = Path(f"/data/GIT/{name_root_folder}/{dataset_name}")
 
-        featurizer = Featurizer()
-        label_handler = LabelHandler()
-
-        preparer = PrepareData(
-            parallel=parallel,
-            remove_folder_flag=remove_folder_flag,
-            shortcut=shortcut,
-            raw_data_folder=raw_data_folder,
-        )
-        df = preparer.load_data(wae_data_load_path)
-
-        if preparer.remove_folder_flag:
-            preparer.remove_folder(preparer.raw_data_folder)
-
-        #! Shortcut for debugging:
-        if not preparer.shortcut:
-            df = label_handler.format_annotation(df)
-            df_positives_negatives = label_handler.create_postive_negative_data(
-                df,
-                negative_fraction=negative_fraction,
-                wae_data_load_path=wae_data_load_path,
-                with_img=with_img,
+        save_path = raw_data_folder / "processed.pkl"
+        dedup_save_path = raw_data_folder / "processed_dedup.pkl"
+        if not save_path.exists() and not dedup_save_path.exists():
+            #! Prepare data for training #TODO: Move into a function
+            preparer = PrepareData(
+                parallel=parallel,
+                remove_folder_flag=remove_folder_flag,
+                shortcut=shortcut,
+                raw_data_folder=raw_data_folder,
             )
-            df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+
+            wae_df = preparer.load_data(wae_data_path)
+
+            # if preparer.remove_folder_flag:
+            #     preparer.remove_folder(raw_data_folder)
+
+            #! Shortcut for debugging:
+            if not preparer.shortcut:
+                df = label_handler.format_annotation(wae_df)
+                df_positives_negatives = label_handler.create_postive_negative_data(
+                    df,
+                    negative_fraction=negative_fraction,
+                    wae_data_path=wae_data_path,
+                    with_img=with_img,
+                )
+                df_positives_negatives.to_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+            else:
+                logging.info(f"Short cutting...")
+                df_positives_negatives = pd.read_pickle(
+                    f"{dataset_name}_df_positives_negatives_temp.pkl"
+                )
+
+            logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
+
+            df_domains = list(df_positives_negatives.groupby("domain"))
+
+            logging.info(f"Number of Domains: {len(df_domains)}")
+            # TODO: Simplify this function - Becareful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
+
+            if parallel:
+                num_cores = mp.cpu_count()
+                with mp.Pool(num_cores) as pool, tqdm(
+                    total=len(df_domains), desc="Preparing domain data"
+                ) as t:
+                    all_df, all_df_dedup = pd.DataFrame(), pd.DataFrame()
+                    for domain_name, domain_df, domain_df_dedup in pool.imap_unordered(
+                        prepare_domain, df_domains
+                    ):
+                        # for res in pool.imap(prepare_domain, df_domains):
+                        all_df = all_df.append(domain_df)
+                        all_df_dedup = all_df_dedup.append(domain_df_dedup)
+                        t.set_description(f"Processed {domain_name}")
+                        t.update()
+            else:
+                for df_domain in df_domains:
+                    prepare_domain(df_domain)
+
+            all_df = sorted(all_df)
+            save_processed_data(all_df, save_path)
+
+            all_df_dedup = sorted(all_df_dedup)
+            save_processed_data(all_df_dedup, dedup_save_path)
         else:
-            logging.info(f"Short cutting...")
-            df_positives_negatives = pd.read_pickle(f"{dataset_name}_df_positives_negatives_temp.pkl")
+            load_path = f"/data/GIT/delete-abs/{dataset_name}/processed_dedup.pkl"
+            save_path = Path(load_path.replace(".pkl", "_feat.pkl"))
+            if not save_path.exists():
+                #! Genereate Features #TODO: Move into a function
+                dfs = pd.read_pickle(load_path)
 
-        logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
+                num_data_points = len(dfs)
+                print(num_data_points)
 
-        df_domains = list(df_positives_negatives.groupby("domain"))
+                def return_page_features(url_nodes):
+                    url, nodes = url_nodes
+                    return featurizer.get_page_features(url, nodes)
 
-        # websites_to_debug = ['walkerhamill.com']
-        # df_domains = [x for x in df_domains if x[0] in websites_to_debug]
+                if parallel:
+                    num_cores = mp.cpu_count()
+                    with mp.Pool(num_cores) as pool, tqdm(
+                        total=num_data_points, desc="Processing data"
+                    ) as t:
+                        all_page_features = []
+                        # for res in pool.imap_unordered(cache_page_features, all_df.values):
+                        for page_features in pool.imap(
+                            return_page_features, dfs[["url", "nodes"]].values
+                        ):
+                            all_page_features.append(page_features)
+                            t.update()
+                        print(len(all_page_features))
+                        dfs["page_features"] = all_page_features
+                else:
+                    dfs.apply(
+                        lambda page: featurizer.get_page_features(page["url"], page["nodes"]),
+                        axis=1,
+                    )
 
-        logging.info(f"Number of Domains: {len(df_domains)}")
-        # TODO: Simplify this function - Becareful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
-
-        
-
-        if parallel:
-            num_cores = mp.cpu_count() - 1
-            with mp.Pool(num_cores) as pool, tqdm(total=len(df_domains), desc="Processing data") as t:
-                for res in pool.imap_unordered(prepare_domain, df_domains):
-                    # for res in pool.imap(prepare_domain, df_domains):
-                    t.set_description(f"Processed {res}")
-                    t.update()
-        else:
-            for df_domain in df_domains:
-                prepare_domain(df_domain)
+                save_processed_data(dfs, save_path)

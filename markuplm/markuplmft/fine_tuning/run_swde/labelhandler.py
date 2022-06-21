@@ -65,7 +65,7 @@ class LabelHandler:
         self,
         df: pd.DataFrame,
         negative_fraction: float,
-        wae_data_load_path:str,
+        wae_data_path:str,
         with_img:bool=False,
     ) -> pd.DataFrame:
 
@@ -118,7 +118,7 @@ class LabelHandler:
 
         # ? Save this dataset that is used to compare with production
         save_intermediate_path = (
-            wae_data_load_path
+            wae_data_path
             / f"dataset_pos({len(df_positives)})_neg({len(df_negatives_sample)})_intermediate.pkl"
         )
         logging.info(f"Saving file: {save_intermediate_path}")
@@ -308,7 +308,7 @@ class LabelHandler:
         """
         Input:
             nodes: [(xpath, text, 'none', []), (...)]
-            node_gt_text: [node_gt_text1, node_gt_text2]
+            node_gt_text: [tag_gt_text1, tag_gt_text2]
         Output:
             nodes_annotated: [(xpath, text, node_gt_tag, [node_gt_text1, node_gt_text2]), (...)]
         """
