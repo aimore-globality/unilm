@@ -77,6 +77,8 @@ class Trainer:
             dataset=dataset_features,
             batch_size=batch_size,
             shuffle=shuffle,
+            pin_memory=True,
+            num_workers=4,
         )
 
         accelerator.print(
@@ -227,13 +229,14 @@ class Trainer:
             .agg(list)
             .sort_values(["urls", "node_ids"])
         )
-
-        node_probs = sorted_selected_probs.apply(
-            lambda probs: np.mean(probs["selected_probs"]), axis=1
-        ).values
-        # node_probs = sorted_selected_probs.apply(
-        #     lambda x: np.max(x["selected_probs"]), axis=1
-        # ).values
+        if trainer_config['method'] == 'mean':
+            node_probs = sorted_selected_probs.apply(
+                lambda probs: np.mean(probs["selected_probs"]), axis=1
+            ).values
+        else:
+            node_probs = sorted_selected_probs.apply(
+                lambda x: np.max(x["selected_probs"]), axis=1
+            ).values
 
         # TODO: Add some function to encapsulate these lines
         self.evaluate_df["html"] = self.evaluate_df["html"].astype("category")
@@ -317,13 +320,14 @@ if __name__ == "__main__":
     trainer_config = dict(
         name_root_folder="delete-abs",
         dataset_to_use="all",
-        num_epochs=1,
-        train_batch_size=32,
-        evaluate_batch_size=32 * 10,
+        num_epochs=3,
+        train_batch_size=28,
+        evaluate_batch_size=28 * 10,
         save_model_dir="/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
-        evaluate_during_training=False,
+        evaluate_during_training=True,
         overwrite_model=True,
         with_img=False,
+        method="max",
     )
 
     if trainer_config["dataset_to_use"] == "mini":

@@ -8,25 +8,34 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
-#     display_name: Python 3.8.12 ('wae_test')
+#     display_name: Python 3.9.12 ('wae39')
 #     language: python
 #     name: python3
 # ---
 
 # %%
-from microcosm_sagemaker.bundle import BundleInputArtifact
 from microcosm.api import create_object_graph
 import pandas as pd
 from web_annotation_extractor.common.utils.parallel_tools import OptimalParallel
-from web_annotation_extractor.bundles.past_client.bundle import PastClientBundle
-from web_annotation_extractor.bundles.past_client.segmentation import *
-from web_annotation_extractor.evaluations.metric_functions import calculate_metrics_for_dataset, get_reconciliations_metrics_for_all_domains, average_domains_metrics
-from web_annotation_extractor.evaluations.visualization_functions import plot_performance
-from web_annotation_extractor.evaluations.metric_functions import combine_and_get_sorted_list
 from web_annotation_extractor.bundles.past_client.segmentation.segmenters import PastClientSegmenter
+from web_annotation_extractor.common.utils.general_utils import deserialize_annotations
+import re2 as re
+import pandavro as pdx
+from pathlib import Path
+from ast import literal_eval
+import numpy as np
+import pandas as pd
+import unidecode
+import string
+from marquez.enums.annotation import EntityTag
+
+# %%
+pd.set_option("display.max_colwidth", 20)
+pd.set_option("display.max_columns", 100)
+pd.set_option("display.max_rows", 4)
+pd.set_option("display.min_rows", 4)
 
 graph = create_object_graph('test')
-pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
 
 # %% [markdown]
 # # Taxonomy Known companies duplicated Names
@@ -52,111 +61,319 @@ known_company_names = pd.DataFrame([company.name for company in known_company_ta
 known_company_names_taxonomy = pd.DataFrame([(company, company.name) for company in known_company_taxonomy], columns=["taxonomy_id", "company_name"])
 
 # %%
+# known_company_names_taxonomy.to_html("known_company_names_taxonomy.html")
 known_company_names.value_counts()
 
-# %%
-known_company_names_taxonomy.to_html("known_company_names_taxonomy.html")
-
-# %%
-company.
 
 # %% [markdown]
 # # Load Data
 
 # %%
-dataset = 'develop'
-print(dataset)
-if dataset == 'develop':
-    data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
-df = pd.read_pickle(data_path)
+def load_data(datasets):
+    all_df = pd.DataFrame()
+    for dataset in datasets: #! Only Train for now
+        data_path = f"/data/GIT/web-annotation-extractor/data/processed/{dataset}/dataset.avro"
+        df = pdx.read_avro(data_path)    
+        print(f"{dataset}: {len(df)}")
+        all_df = pd.concat([all_df, df])
+    print(len(all_df))
+    return all_df
 
-print(len(df))
-df = df.set_index("url")
-df.head(2)
+def get_positives(df, tag):    
+    df[tag.name] = df['annotations'].apply(lambda row: row.get(tag))
+    return df.dropna(subset=tag.name)
+
 
 # %%
-gazetteer = PastClientSegmenter(graph.html_gazetteer.config)
-gazetteer.config["stop_words"] = True
-gazetteer.stop_word_path = "/data/GIT/web-annotation-extractor/data/processed/train/enwiki_vocab_word_freqs.csv"
-gazetteer.prepare_to_segment()
+tag = EntityTag.PAST_CLIENT
+
+overwrite = False
+
+# datasets = ['train', 'develop', 'test']
+datasets = ['train']
+
+if len(datasets) == 3: 
+    dataset_name = 'all'
+else:
+    dataset_name = "_".join(datasets)
 
 # %%
-print(len(gazetteer.segmenter))
+cached_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}_{tag.name}_positives.pkl")
+if cached_data_path.exists() and not overwrite:
+    print(f"Loaded data from: {cached_data_path}")
+    positives_df = pd.read_pickle(cached_data_path)
+else:
+    all_df = load_data(datasets)
+    all_df["annotations"] = all_df["annotations"].apply(deserialize_annotations)
+    positives_df = get_positives(all_df, tag)
+    print(f"Saved data at: {cached_data_path}")
+    positives_df.to_pickle(cached_data_path)
+
 
 # %% [markdown]
-# ## Similar Company Names
+# # Breakdown Label
 
 # %%
-gazetteer_df = pd.DataFrame(gazetteer.segmenter, columns=["company_name", "company_regex"])
-
-above_one = gazetteer_df[~gazetteer_df["company_regex"].isin([' bank of ', ' university of '])]["company_regex"].value_counts()[gazetteer_df[~gazetteer_df["company_regex"].isin([' bank of ', ' university of '])]["company_regex"].value_counts() > 1]
-
-similar_company_names = gazetteer_df[(gazetteer_df["company_regex"].isin(above_one.index)) & ~(gazetteer_df["company_regex"].isin([" banca "])) ].sort_values("company_regex")
-similar_company_names
-
-
-# %%
-similar_company_names.to_html("similar_company_names.html")
-
-# %%
-df.head(3)
-
-# %%
-for d_name, d in df.groupby("domain").aggregate("PAST_CLIENT-annotations"):
-    d
-
-# %%
-from web_annotation_extractor.evaluations.metric_functions import *
-
-gt_text_value = pd.DataFrame([y for x in d for y in x if y.get('value') is not None ])
-gt_text_value
-
-# %%
-gt_text_value['segmentations'] = gazetteer._segment_companies(gt_text_value["text"].apply(lambda x: f" {x} ")).dropna()
-
-# %%
-gt_text_value
-
-# %%
-pd.set_option("max_rows", 10, "min_rows", 10)
-gazetteer = PastClientSegmenter(graph.html_gazetteer.config)
-gazetteer.config["stop_words"] = False
-gazetteer.config["stop_words_percent"] = 0
-gazetteer.stop_word_path = "/data/GIT/web-annotation-extractor/data/processed/train/enwiki_vocab_word_freqs.csv"
-gazetteer.prepare_to_segment()
-
-gazetteer_df = pd.DataFrame(gazetteer.segmenter, columns=["company_name", "company_regex"])
-print(len(gazetteer_df))
-# gazetteer_df.to_html("extreme_untrained_gazetteer.html")
+def explode_and_separate_annotations(df, tag_name):
+    df = df.explode(tag_name)
+    df["gt_text"] = df[tag_name].apply(lambda row: row.get('text'))
+    df["gt_value"] = df[tag_name].apply(lambda row: row.get('value'))
+    df["gt_value_untax"] = df["gt_value"].apply(lambda row: uri_to_company_name_map.get(row))
+    return df
 
 
 # %%
-gt_seg_df = pd.DataFrame()
-gt_seg_df["gt_text"] = df["PAST_CLIENT-gt_text"]
-gt_seg_df["gt_text_joined"] = gt_seg_df["gt_text"].apply(lambda x: " ".join(x))
+# datasets = ['train', 'develop', 'test']
+
+# for dataset in datasets:
+#     data_path = f"/data/GIT/web-annotation-extractor/data/processed/{dataset}/dataset.avro"
+#     df = pdx.read_avro(data_path)
+#     df["annotations"] = df["annotations"].apply(deserialize_annotations)
+#     # df["annotations"] = df["annotations"].apply(literal_eval)
+#     positives_df = get_positives(df, tag)
+#     positives_exploded_df = explode_annotations(positives_df, tag.name)
+#     # positives_exploded_df = explode_annotations(positives_df, tag)
+#     positives_exploded_df = separate_annotations(positives_exploded_df, tag.name)
+#     gt_value_counts = len(positives_exploded_df.dropna(subset="gt_value"))
+
+#     print(f"Dataset: {dataset} = Pages with at least 1 annotation: {len(positives_df)} - Total number of annotations: {len(positives_exploded_df)} - Annotations with value: {gt_value_counts}")
 
 # %%
-gt_seg_df = gt_seg_df[gt_seg_df["gt_text"].apply(len) > 0 ]
+positives_exploded_df = explode_and_separate_annotations(positives_df, tag.name)
+print(f"Pages with at least one annotation: {len(positives_df)}")
+print(f"Total number of gt_text: {len(positives_exploded_df)}")
+print(f"Total number of gt_value: {len(positives_exploded_df.gt_value.dropna())}")
+print(f"Total number of gt_value_untax: {len(positives_exploded_df.gt_value_untax.dropna())}")
 
 # %%
-# gt_seg_df
+pd.set_option("max_colwidth", 200)
+
+def aggregate_per_gt_value_untax(df):
+    gt_text_agg = df.groupby("gt_value_untax").agg(lambda x: sorted(list(x)))[["gt_text"]].copy()
+    gt_text_agg.reset_index(inplace=True)
+    gt_text_agg["regexes"] = gt_text_agg["gt_value_untax"].apply(lambda x: [x]).values
+    gt_text_agg["gt_text_len"] = gt_text_agg["gt_text"].apply(len).values
+    gt_text_agg = gt_text_agg.sort_values("gt_text_len")
+    gt_text_agg["gt_text_no_img"] = gt_text_agg["gt_text"].apply(lambda row: [x for x in row if "http" not in x])
+    gt_text_agg["gt_text_no_img_len"] = gt_text_agg["gt_text_no_img"].apply(len).values
+    gt_text_agg["numb_imgs"] = gt_text_agg["gt_text_len"] - gt_text_agg["gt_text_no_img_len"]
+    gt_text_agg = gt_text_agg.reset_index().drop('index',axis=1)
+    return gt_text_agg
+
 
 # %%
-optimal_paral = OptimalParallel()
-company_spam = optimal_paral.parallelize_optimally(
-    series=gt_seg_df["gt_text_joined"],
-    series_measurement=gt_seg_df["gt_text_joined"].apply(len),
-    function=gazetteer._segment_companies,
-)
+gt_text_agg = aggregate_per_gt_value_untax(positives_exploded_df.drop(['annotations', 'PAST_CLIENT'],axis=1))
+print(f"Total distinct number of gt_value_untax: {len(gt_text_agg)}")
 
 # %%
-gt_seg_df["company_spam"] = company_spam
+# def create_augmentation():
+# ["gt_value_untax", "regexes"]
 
 # %%
-df["comany_spam"] = company_spam
+if dataset_name == "train":
+    train_unique_companies = set(gt_text_agg["gt_value_untax"].unique())
+if dataset_name == "develop":
+    develop_unique_companies = set(gt_text_agg["gt_value_untax"].unique())
 
 # %%
-df
+print(f"train_unique_companies: {len(train_unique_companies)}, develop_unique_companies: {len(develop_unique_companies)}")
+print(f"intersection: {len(train_unique_companies & develop_unique_companies)}")
+print(f"difference (develop-train): {len(develop_unique_companies - train_unique_companies)}")
 
 # %%
-gt_seg_df
+develop_unique_companies
+
+
+# %% [markdown]
+# # Transform
+
+# %%
+class Transform():
+    def __init__(self, transformations=["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "normalize"]):
+        all_transformations = dict(
+            decode=self.decode,
+            lower=self.lower,
+            replace_ampersand=self.replace_ampersand,
+            replace_symbols=self.replace_symbols,
+            remove_symbols=self.remove_symbols,
+            normalize=self.normalize,
+        )
+        self.transform_sequence = [all_transformations.get(transformation) for transformation in transformations]
+        print(self.transform_sequence)
+        
+    @staticmethod
+    def decode(input_text:str):
+        return unidecode.unidecode(input_text)
+
+    @staticmethod
+    def lower(input_text:str):
+        return input_text.lower()
+    
+    @staticmethod
+    def replace_ampersand(input_text:str):
+        return input_text.replace('amp&', '&')
+
+    @staticmethod
+    def replace_symbols(input_text:str, symbol_to_replace=' '):
+        all_symbols = set(string.punctuation)
+        for symbol in all_symbols:
+            input_text = input_text.replace(symbol, symbol_to_replace)
+        return input_text
+
+    @staticmethod
+    def remove_symbols(input_text:str): 
+        all_symbols = set(string.punctuation) - {'&'}
+        for symbol in all_symbols:
+            input_text = input_text.replace(symbol, '')
+        return input_text
+
+    @staticmethod
+    def normalize(input_text:str):
+        return f" {input_text.strip()} "
+
+    def transform(self, texts):        
+        new_texts = []
+        for text in texts:
+            if text is not None: 
+                for transformation in self.transform_sequence:
+                    text = transformation(text)
+                new_texts.append(text)
+        return new_texts
+        
+transformer = Transform()
+
+# %%
+gt_text_agg["regexes"] = gt_text_agg["regexes"].apply(transformer.transform)
+gt_text_agg["gt_text_no_img"] = gt_text_agg["gt_text_no_img"].apply(transformer.transform)
+gt_text_agg
+
+# %% [markdown]
+# # Match
+
+# %%
+from typing import Sequence
+class Matcher():
+    def __init__(self, method):
+        compare_methods = dict(equal=self.equal, equal_token=self.equal_token, inside=self.inside)
+        assert method in compare_methods.keys()
+        self.method = compare_methods.get(method)
+
+    def match(self, regex:Sequence[str], text:Sequence[str]):
+        matches, not_matches, not_matches_at_all = [], [], ()
+        for text_item in text:
+            for regex_item in regex:
+                if self.method(regex_item, text_item): #! Here for example, instead of the first item in the regex, we could have multiple
+                    matches.append((regex_item, text_item))
+                else:
+                    not_matches.append((regex_item, text_item))
+        if len(matches) == 0 and len(text) > 0: 
+            not_matches_at_all = (regex, sorted(list(set(text))))
+                
+        return (matches, not_matches, not_matches_at_all)
+
+    def equal(self, regex_item:str, text_item:str):
+        return regex_item == text_item
+
+    def equal_token(self, regex_item:str, text_item:str):
+        return regex_item in f" {text_item} "
+
+    def inside(self, regex_item:str, text_item:str):
+        return regex_item in text_item
+
+def count_matches(gt_text_agg_matched):
+    gt_text_agg_matched["matched_len"] = gt_text_agg_matched["matches"].apply(len)
+    gt_text_agg_matched["not_matched_len"] = gt_text_agg_matched["not_matches"].apply(len)
+    gt_text_agg_matched["not_matches_at_all_len"] = gt_text_agg_matched["not_matches_at_all"].apply(len)
+    return gt_text_agg_matched
+
+def print_count_matches(gt_text_agg_matched):
+    total_unique_names = len(gt_text_agg_matched['gt_text_no_img'].explode().dropna().unique())
+    total_unique_names_not_matched = len(gt_text_agg_matched["not_matches_at_all"].explode().dropna().explode().unique())
+    print(f"total_unique_names_not_matched: {total_unique_names_not_matched} out of {total_unique_names}")
+
+    sum_all = gt_text_agg_matched[["gt_text_len", "numb_imgs", "gt_text_no_img_len", "matched_len"]].sum()
+    results = pd.DataFrame(sum_all, columns=["count"])
+    denominator = results.loc["gt_text_len"].values[0]
+    results["percent_of_total"] = results["count"].apply(lambda x: 100*x/denominator)
+    denominator = results.loc["gt_text_no_img_len"].values[0]
+    results["percent_of_no_img"] = results["count"].apply(lambda x: 100*x/denominator)
+    display(results)
+    
+equal_matcher = Matcher(method="equal")
+inside_matcher = Matcher(method="inside")
+
+# %%
+print("Equal matcher:")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+gt_text_agg_matched = count_matches(gt_text_agg_matched)
+print_count_matches(gt_text_agg_matched)
+
+# print("Inside matcher:")
+# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+# gt_text_agg_matched = count_matches(gt_text_agg_matched)
+# print_count_matches(gt_text_agg_matched)
+
+# %% [markdown]
+# ## Get Missed matches
+
+# %%
+def get_not_matched_at_all_mapping(gt_text_agg_matched):
+    return pd.DataFrame.from_records(gt_text_agg_matched["not_matches_at_all"].values, columns=["not_matches_at_all_regexes", "not_matches_at_all_texts"]).dropna().join(gt_text_agg_matched).sort_values("not_matches_at_all_len", ascending=False)[["gt_value_untax", "not_matches_at_all_texts"]]
+    
+not_matched_at_all_mapping = get_not_matched_at_all_mapping(gt_text_agg_matched)
+
+with pd.option_context("display.min_rows", 10, "display.max_rows", 10):    
+    display(not_matched_at_all_mapping)
+
+
+# %% [markdown]
+# # Augment CompanyNames
+
+# %%
+class NameAugmenter:
+    def __init__(self, augmentations_map=None):
+        if augmentations_map is None:
+            self.augmentations_map = {"bt group": ["bt"]}
+        else:
+            self.augmentations_map = augmentations_map
+
+    def augment_name(self, key, values):
+        augmentations = self.augmentations_map.get(key, [])
+        new_text = sorted(list(set(values + augmentations)))
+        return new_text
+
+def convert_not_matches_into_augmentation_map(not_matched_at_all_mapping):
+    augmentations_map = not_matched_at_all_mapping.set_index("gt_value_untax").to_dict()
+    return augmentations_map["not_matches_at_all_texts"]
+
+
+# %%
+augmentations_map = convert_not_matches_into_augmentation_map(not_matched_at_all_mapping)
+augmentations_map
+
+# %%
+name_augmenter = NameAugmenter(augmentations_map_train)
+
+# %%
+gt_text_agg["new_regexes"] = gt_text_agg.apply(lambda row: (name_augmenter.augment_name(key=row["gt_value_untax"], values=row["regexes"])), axis=1)
+gt_text_agg["new_regexes_len"] = gt_text_agg["new_regexes"].apply(len)
+gt_text_agg.sort_values("new_regexes_len")
+
+# %%
+print("Equal matcher:")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+gt_text_agg_matched = count_matches(gt_text_agg_matched)
+print_count_matches(gt_text_agg_matched)
+
+# print("Inside matcher:")
+# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+# gt_text_agg_matched = count_matches(gt_text_agg_matched)
+# print_count_matches(gt_text_agg_matched)
+
+# %%
+augmentations_map_train = augmentations_map
+
+# %%
+
+# %%
+augmentations_map_train

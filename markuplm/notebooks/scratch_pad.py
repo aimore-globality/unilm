@@ -15,6 +15,78 @@
 # ---
 
 # %%
+import pandavro as pdx
+from pathlib import Path
+def create_small_sample(load_path):
+    df = pdx.read_avro(load_path)
+    save_path = Path(load_path.replace(dataset, f"{dataset}_sample"))
+    save_path.parents[0].mkdir(parents=True, exist_ok=True)
+    df = df.sample(1000, random_state=66)
+    print(f"saved at: {save_path}")
+    pdx.to_avro(str(save_path), df)
+
+for dataset in ["develop", "train"]:
+    load_path = f"/data/GIT/web-annotation-extractor/data/processed/{dataset}/dataset.avro"
+    create_small_sample(load_path)
+
+# %%
+from transformers import AutoTokenizer
+
+model_checkpoint = "roberta-base"
+# model_checkpoint = "roberta-base-cased"
+
+tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+tokenizer.is_fast
+
+
+# %%
+# from datasets import load_dataset
+
+# raw_datasets = load_dataset("conll2003")
+
+# %%
+s1 = "Aimore Aimore Aimore Aimore Aimore Aimore Aimore Aimore"
+s2 = "asdasd asd as d"
+s = [s1, s2, None]
+inputs = tokenizer(s1)
+inputs.tokens()
+
+# %%
+tokenizer.tokenize(
+    pd.Series([s1,s2]).values, 
+    return_overflowing_tokens = True,
+    return_special_tokens_mask = True,
+    return_offsets_mapping = True,
+    return_length = True,
+    stride=2
+)
+
+
+# %%
+max_len = 30
+tokenizer.tokenize(s2,
+return_tensors="pt",
+padding="max_length",
+max_length=max_len,
+truncation=True
+)
+
+# %%
+s1
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
 from tokenizers import normalizers
 from tokenizers.normalizers import NFD, StripAccents
 normalizer = normalizers.Sequence([NFD(), StripAccents()])
@@ -62,6 +134,15 @@ tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
 DOC_STRIDE = 128
 MAX_SEQ_LENGTH = 384
 featurizer = Featurizer(tokenizer=tokenizer, doc_stride=DOC_STRIDE, max_length=MAX_SEQ_LENGTH)
+
+# %%
+
+# %%
+tokenizer.prepare_for_model(tokenizer.convert_tokens_to_ids(tokenizer. (df_nodes["node_text"].values)))
+
+# %%
+sent = "hasdhas odsos aodjasodoasjd"
+tokenizer.prepare_for_model(tokenizer.convert_tokens_to_ids(tokenizer.tokenize(sent)))
 
 # %%
 import glob
