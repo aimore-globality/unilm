@@ -64,6 +64,26 @@ known_company_names_taxonomy = pd.DataFrame([(company, company.name) for company
 # known_company_names_taxonomy.to_html("known_company_names_taxonomy.html")
 known_company_names.value_counts()
 
+# %% [markdown]
+# # Analyse symbols in company names
+
+# %%
+companies_with_punc = {}
+for punc in string.punctuation:
+    for company in [x[0] for x in known_company_names.values]:
+        if punc in company:
+            company_list = companies_with_punc.get(punc, [])
+            company_list.append(company)
+            companies_with_punc[punc] = company_list
+
+# %%
+# pd.DataFrame.from_dict()
+df = pd.DataFrame.from_dict(companies_with_punc, orient='index').T
+with pd.option_context('display.max_rows', 20): 
+    sorted_df = df.count().sort_values(ascending=False)
+    display(sorted_df)
+    display(df[sorted_df.index])
+
 
 # %% [markdown]
 # # Load Data
@@ -91,6 +111,7 @@ overwrite = False
 
 # datasets = ['train', 'develop', 'test']
 datasets = ['train']
+# datasets = ['develop']
 
 if len(datasets) == 3: 
     dataset_name = 'all'
@@ -175,28 +196,26 @@ if dataset_name == "train":
 if dataset_name == "develop":
     develop_unique_companies = set(gt_text_agg["gt_value_untax"].unique())
 
-# %%
-print(f"train_unique_companies: {len(train_unique_companies)}, develop_unique_companies: {len(develop_unique_companies)}")
-print(f"intersection: {len(train_unique_companies & develop_unique_companies)}")
-print(f"difference (develop-train): {len(develop_unique_companies - train_unique_companies)}")
 
 # %%
-develop_unique_companies
-
+# print(f"train_unique_companies: {len(train_unique_companies)}, develop_unique_companies: {len(develop_unique_companies)}")
+# print(f"intersection: {len(train_unique_companies & develop_unique_companies)}")
+# print(f"difference (develop-train): {len(develop_unique_companies - train_unique_companies)}")
 
 # %% [markdown]
 # # Transform
 
 # %%
 class Transform():
-    def __init__(self, transformations=["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "normalize"]):
+    def __init__(self, transformations=["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "remove_common_words", "normalize_any_space"]):
         all_transformations = dict(
             decode=self.decode,
             lower=self.lower,
             replace_ampersand=self.replace_ampersand,
             replace_symbols=self.replace_symbols,
             remove_symbols=self.remove_symbols,
-            normalize=self.normalize,
+            remove_common_words=self.remove_common_words,
+            normalize_any_space=self.normalize_any_space,
         )
         self.transform_sequence = [all_transformations.get(transformation) for transformation in transformations]
         print(self.transform_sequence)
@@ -228,9 +247,19 @@ class Transform():
         return input_text
 
     @staticmethod
-    def normalize(input_text:str):
-        return f" {input_text.strip()} "
+    def remove_common_words(input_text:str):
+        input_text = f" {input_text.strip()} "
+        common_words = [" the ", " enterprise ", " enterprises ", " group "]
+        for common_word in common_words:
+            return input_text.replace(common_word, " ")
 
+    @staticmethod
+    def normalize_any_space(input_text:str):
+        input_text = f" {input_text.strip()} "
+        input_text = re.sub('\s+', ' ', input_text)
+        return input_text
+
+        
     def transform(self, texts):        
         new_texts = []
         for text in texts:
@@ -239,13 +268,16 @@ class Transform():
                     text = transformation(text)
                 new_texts.append(text)
         return new_texts
-        
-transformer = Transform()
+
+transformer = Transform(["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "remove_common_words", "normalize_any_space"])
 
 # %%
 gt_text_agg["regexes"] = gt_text_agg["regexes"].apply(transformer.transform)
 gt_text_agg["gt_text_no_img"] = gt_text_agg["gt_text_no_img"].apply(transformer.transform)
 gt_text_agg
+# with pd.option_context('display.max_colwidth', 200, 'display.min_rows', 200, 'display.max_rows', 200): 
+#    display(gt_text_agg)
+
 
 # %% [markdown]
 # # Match
@@ -303,27 +335,29 @@ equal_matcher = Matcher(method="equal")
 inside_matcher = Matcher(method="inside")
 
 # %%
-print("Equal matcher:")
-gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+# print("Equal matcher:")
+# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+# gt_text_agg_matched = count_matches(gt_text_agg_matched)
+# print_count_matches(gt_text_agg_matched)
+
+print("Inside matcher:")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
 gt_text_agg_matched = count_matches(gt_text_agg_matched)
 print_count_matches(gt_text_agg_matched)
 
-# print("Inside matcher:")
-# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
-# gt_text_agg_matched = count_matches(gt_text_agg_matched)
-# print_count_matches(gt_text_agg_matched)
 
 # %% [markdown]
 # ## Get Missed matches
 
 # %%
-def get_not_matched_at_all_mapping(gt_text_agg_matched):
-    return pd.DataFrame.from_records(gt_text_agg_matched["not_matches_at_all"].values, columns=["not_matches_at_all_regexes", "not_matches_at_all_texts"]).dropna().join(gt_text_agg_matched).sort_values("not_matches_at_all_len", ascending=False)[["gt_value_untax", "not_matches_at_all_texts"]]
-    
-not_matched_at_all_mapping = get_not_matched_at_all_mapping(gt_text_agg_matched)
+def get_not_matched_at_all(gt_text_agg_matched):
+    return pd.DataFrame.from_records(gt_text_agg_matched["not_matches_at_all"].values, columns=["not_matches_at_all_regexes", "not_matches_at_all_texts"]).dropna().join(gt_text_agg_matched).sort_values("not_matches_at_all_len", ascending=False)[["gt_value_untax", "not_matches_at_all_texts", "not_matches_at_all_regexes"]]
 
-with pd.option_context("display.min_rows", 10, "display.max_rows", 10):    
-    display(not_matched_at_all_mapping)
+not_matched_at_all = get_not_matched_at_all(gt_text_agg_matched)
+not_matched_at_all_mapping = not_matched_at_all[["gt_value_untax", "not_matches_at_all_texts"]]
+
+with pd.option_context("display.min_rows", 10, "display.max_rows", 10):
+    display(not_matched_at_all)
 
 
 # %% [markdown]
@@ -352,7 +386,8 @@ augmentations_map = convert_not_matches_into_augmentation_map(not_matched_at_all
 augmentations_map
 
 # %%
-name_augmenter = NameAugmenter(augmentations_map_train)
+# name_augmenter = NameAugmenter(augmentations_map_train)
+name_augmenter = NameAugmenter(augmentations_map)
 
 # %%
 gt_text_agg["new_regexes"] = gt_text_agg.apply(lambda row: (name_augmenter.augment_name(key=row["gt_value_untax"], values=row["regexes"])), axis=1)
@@ -360,20 +395,29 @@ gt_text_agg["new_regexes_len"] = gt_text_agg["new_regexes"].apply(len)
 gt_text_agg.sort_values("new_regexes_len")
 
 # %%
-print("Equal matcher:")
-gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
-gt_text_agg_matched = count_matches(gt_text_agg_matched)
-print_count_matches(gt_text_agg_matched)
-
-# print("Inside matcher:")
-# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+# print("Equal matcher:")
+# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
 # gt_text_agg_matched = count_matches(gt_text_agg_matched)
 # print_count_matches(gt_text_agg_matched)
+
+print("Inside matcher:")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+gt_text_agg_matched = count_matches(gt_text_agg_matched)
+print_count_matches(gt_text_agg_matched)
 
 # %%
 augmentations_map_train = augmentations_map
 
 # %%
+gt_text_agg_matched
 
 # %%
-augmentations_map_train
+if gt_text_agg_matched["not_matches_at_all_len"].sum() > 0:
+    not_matched_at_all = get_not_matched_at_all(gt_text_agg_matched)
+    not_matched_at_all_mapping = not_matched_at_all[["gt_value_untax", "not_matches_at_all_texts"]]
+
+    with pd.option_context("display.min_rows", 10, "display.max_rows", 10):
+        display(not_matched_at_all)
+
+# %%
+gt_text_agg_matched
