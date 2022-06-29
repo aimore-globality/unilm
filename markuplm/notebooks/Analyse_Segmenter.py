@@ -18,7 +18,7 @@ from microcosm.api import create_object_graph
 import pandas as pd
 from web_annotation_extractor.common.utils.parallel_tools import OptimalParallel
 from web_annotation_extractor.bundles.past_client.segmentation.segmenters import PastClientSegmenter
-from web_annotation_extractor.common.utils.general_utils import deserialize_annotations
+# from web_annotation_extractor.common.utils.general_utils import deserialize_annotations
 import re2 as re
 import pandavro as pdx
 from pathlib import Path
@@ -30,7 +30,7 @@ import string
 from marquez.enums.annotation import EntityTag
 
 # %%
-pd.set_option("display.max_colwidth", 20)
+pd.set_option("display.max_colwidth", 200)
 pd.set_option("display.max_columns", 100)
 pd.set_option("display.max_rows", 4)
 pd.set_option("display.min_rows", 4)
@@ -99,9 +99,15 @@ def load_data(datasets):
     print(len(all_df))
     return all_df
 
-def get_positives(df, tag):    
+def get_positives(df, tag):
+    df["annotations"] = df["annotations"].apply(deserialize_annotations)    
     df[tag.name] = df['annotations'].apply(lambda row: row.get(tag))
     return df.dropna(subset=tag.name)
+
+def get_positives(df, tag_name):
+    df["annotations"] = df["annotations"].apply(literal_eval)
+    df[tag_name] = df['annotations'].apply(lambda row: row.get(tag_name))
+    return df.dropna(subset=tag_name)
 
 
 # %%
@@ -110,8 +116,8 @@ tag = EntityTag.PAST_CLIENT
 overwrite = False
 
 # datasets = ['train', 'develop', 'test']
-datasets = ['train']
-# datasets = ['develop']
+# datasets = ['train']
+datasets = ['develop']
 
 if len(datasets) == 3: 
     dataset_name = 'all'
@@ -123,10 +129,12 @@ cached_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dat
 if cached_data_path.exists() and not overwrite:
     print(f"Loaded data from: {cached_data_path}")
     positives_df = pd.read_pickle(cached_data_path)
+
 else:
     all_df = load_data(datasets)
-    all_df["annotations"] = all_df["annotations"].apply(deserialize_annotations)
-    positives_df = get_positives(all_df, tag)
+    # positives_df = get_positives(all_df, tag)
+    positives_df = get_positives(all_df, tag.name)
+    # positives_df = positives_df.drop("html")
     print(f"Saved data at: {cached_data_path}")
     positives_df.to_pickle(cached_data_path)
 
@@ -161,21 +169,20 @@ def explode_and_separate_annotations(df, tag_name):
 
 # %%
 positives_exploded_df = explode_and_separate_annotations(positives_df, tag.name)
+positives_exploded_df.reset_index(inplace=True)
 print(f"Pages with at least one annotation: {len(positives_df)}")
 print(f"Total number of gt_text: {len(positives_exploded_df)}")
 print(f"Total number of gt_value: {len(positives_exploded_df.gt_value.dropna())}")
 print(f"Total number of gt_value_untax: {len(positives_exploded_df.gt_value_untax.dropna())}")
 
-# %%
-pd.set_option("max_colwidth", 200)
 
+# %%
 def aggregate_per_gt_value_untax(df):
-    gt_text_agg = df.groupby("gt_value_untax").agg(lambda x: sorted(list(x)))[["gt_text"]].copy()
-    gt_text_agg.reset_index(inplace=True)
-    gt_text_agg["regexes"] = gt_text_agg["gt_value_untax"].apply(lambda x: [x]).values
+    gt_text_agg = df.groupby("gt_value_untax").agg(lambda row: sorted(list(row)))[["gt_text"]].copy()
+    gt_text_agg.reset_index(inplace=True)    
     gt_text_agg["gt_text_len"] = gt_text_agg["gt_text"].apply(len).values
     gt_text_agg = gt_text_agg.sort_values("gt_text_len")
-    gt_text_agg["gt_text_no_img"] = gt_text_agg["gt_text"].apply(lambda row: [x for x in row if "http" not in x])
+    gt_text_agg["gt_text_no_img"] = gt_text_agg["gt_text"].apply(lambda row: [gt_text for gt_text in row if "http" not in gt_text])
     gt_text_agg["gt_text_no_img_len"] = gt_text_agg["gt_text_no_img"].apply(len).values
     gt_text_agg["numb_imgs"] = gt_text_agg["gt_text_len"] - gt_text_agg["gt_text_no_img_len"]
     gt_text_agg = gt_text_agg.reset_index().drop('index',axis=1)
@@ -183,12 +190,8 @@ def aggregate_per_gt_value_untax(df):
 
 
 # %%
-gt_text_agg = aggregate_per_gt_value_untax(positives_exploded_df.drop(['annotations', 'PAST_CLIENT'],axis=1))
+gt_text_agg = aggregate_per_gt_value_untax(positives_exploded_df.drop(['annotations', 'PAST_CLIENT'], axis=1))
 print(f"Total distinct number of gt_value_untax: {len(gt_text_agg)}")
-
-# %%
-# def create_augmentation():
-# ["gt_value_untax", "regexes"]
 
 # %%
 if dataset_name == "train":
@@ -197,17 +200,13 @@ if dataset_name == "develop":
     develop_unique_companies = set(gt_text_agg["gt_value_untax"].unique())
 
 
-# %%
-# print(f"train_unique_companies: {len(train_unique_companies)}, develop_unique_companies: {len(develop_unique_companies)}")
-# print(f"intersection: {len(train_unique_companies & develop_unique_companies)}")
-# print(f"difference (develop-train): {len(develop_unique_companies - train_unique_companies)}")
-
 # %% [markdown]
 # # Transform
 
 # %%
 class Transform():
     def __init__(self, transformations=["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "remove_common_words", "normalize_any_space"]):
+        self.transformations = transformations
         all_transformations = dict(
             decode=self.decode,
             lower=self.lower,
@@ -249,9 +248,10 @@ class Transform():
     @staticmethod
     def remove_common_words(input_text:str):
         input_text = f" {input_text.strip()} "
-        common_words = [" the ", " enterprise ", " enterprises ", " group "]
+        common_words = ["the", "enterprise", "enterprises", "group", "plc", "company", "limited"]
         for common_word in common_words:
-            return input_text.replace(common_word, " ")
+            input_text = input_text.replace(f" {common_word} ", " ")
+        return input_text
 
     @staticmethod
     def normalize_any_space(input_text:str):
@@ -270,6 +270,14 @@ class Transform():
         return new_texts
 
 transformer = Transform(["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "remove_common_words", "normalize_any_space"])
+# transformer = Transform(["decode", "lower"])
+# transformer = Transform(["decode"])
+
+# %%
+gt_text_agg["regexes"] = gt_text_agg["gt_value_untax"].apply(lambda row: [row]).values
+
+# %%
+gt_text_agg["regexes"]
 
 # %%
 gt_text_agg["regexes"] = gt_text_agg["regexes"].apply(transformer.transform)
@@ -286,15 +294,15 @@ gt_text_agg
 from typing import Sequence
 class Matcher():
     def __init__(self, method):
-        compare_methods = dict(equal=self.equal, equal_token=self.equal_token, inside=self.inside)
+        compare_methods = dict(equal=self.equal, inside=self.inside)
         assert method in compare_methods.keys()
-        self.method = compare_methods.get(method)
+        self._method = compare_methods.get(method)
 
     def match(self, regex:Sequence[str], text:Sequence[str]):
         matches, not_matches, not_matches_at_all = [], [], ()
         for text_item in text:
             for regex_item in regex:
-                if self.method(regex_item, text_item): #! Here for example, instead of the first item in the regex, we could have multiple
+                if self._method(regex_item, text_item): #! Here for example, instead of the first item in the regex, we could have multiple
                     matches.append((regex_item, text_item))
                 else:
                     not_matches.append((regex_item, text_item))
@@ -305,9 +313,6 @@ class Matcher():
 
     def equal(self, regex_item:str, text_item:str):
         return regex_item == text_item
-
-    def equal_token(self, regex_item:str, text_item:str):
-        return regex_item in f" {text_item} "
 
     def inside(self, regex_item:str, text_item:str):
         return regex_item in text_item
@@ -330,18 +335,12 @@ def print_count_matches(gt_text_agg_matched):
     denominator = results.loc["gt_text_no_img_len"].values[0]
     results["percent_of_no_img"] = results["count"].apply(lambda x: 100*x/denominator)
     display(results)
-    
-equal_matcher = Matcher(method="equal")
-inside_matcher = Matcher(method="inside")
+
+matcher = Matcher(method="inside")
 
 # %%
-# print("Equal matcher:")
-# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
-# gt_text_agg_matched = count_matches(gt_text_agg_matched)
-# print_count_matches(gt_text_agg_matched)
-
-print("Inside matcher:")
-gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+print(f"Dataset: {dataset_name} | Transformations: {transformer.transformations}")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: matcher.match(row["regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
 gt_text_agg_matched = count_matches(gt_text_agg_matched)
 print_count_matches(gt_text_agg_matched)
 
@@ -356,9 +355,9 @@ def get_not_matched_at_all(gt_text_agg_matched):
 not_matched_at_all = get_not_matched_at_all(gt_text_agg_matched)
 not_matched_at_all_mapping = not_matched_at_all[["gt_value_untax", "not_matches_at_all_texts"]]
 
-with pd.option_context("display.min_rows", 10, "display.max_rows", 10):
+with pd.option_context("display.min_rows", 100, "display.max_rows", 100):
     display(not_matched_at_all)
-
+# not_matched_at_all.to_csv(f"not_matched_at_all_{dataset_name}.csv")
 
 # %% [markdown]
 # # Augment CompanyNames
@@ -383,11 +382,13 @@ def convert_not_matches_into_augmentation_map(not_matched_at_all_mapping):
 
 # %%
 augmentations_map = convert_not_matches_into_augmentation_map(not_matched_at_all_mapping)
-augmentations_map
 
 # %%
-# name_augmenter = NameAugmenter(augmentations_map_train)
-name_augmenter = NameAugmenter(augmentations_map)
+if dataset_name == 'train':
+    name_augmenter = NameAugmenter(augmentations_map)
+    augmentations_map_train = augmentations_map
+if dataset_name == 'develop':
+    name_augmenter = NameAugmenter(augmentations_map_train)
 
 # %%
 gt_text_agg["new_regexes"] = gt_text_agg.apply(lambda row: (name_augmenter.augment_name(key=row["gt_value_untax"], values=row["regexes"])), axis=1)
@@ -395,21 +396,15 @@ gt_text_agg["new_regexes_len"] = gt_text_agg["new_regexes"].apply(len)
 gt_text_agg.sort_values("new_regexes_len")
 
 # %%
-# print("Equal matcher:")
-# gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: equal_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
-# gt_text_agg_matched = count_matches(gt_text_agg_matched)
-# print_count_matches(gt_text_agg_matched)
-
-print("Inside matcher:")
-gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: inside_matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
+print(f"Dataset: {dataset_name} | Transformations: {transformer.transformations}")
+print("Augmented with training data")
+gt_text_agg_matched = gt_text_agg.join(pd.DataFrame.from_records(gt_text_agg.apply(lambda row: matcher.match(row["new_regexes"], row["gt_text_no_img"]), axis=1), columns=["matches","not_matches", "not_matches_at_all"])).copy()
 gt_text_agg_matched = count_matches(gt_text_agg_matched)
 print_count_matches(gt_text_agg_matched)
 
 # %%
-augmentations_map_train = augmentations_map
-
-# %%
-gt_text_agg_matched
+# "McDonald's"
+gt_text_agg_matched[gt_text_agg_matched["gt_value_untax"] == "McDonald's"]
 
 # %%
 if gt_text_agg_matched["not_matches_at_all_len"].sum() > 0:
@@ -418,6 +413,103 @@ if gt_text_agg_matched["not_matches_at_all_len"].sum() > 0:
 
     with pd.option_context("display.min_rows", 10, "display.max_rows", 10):
         display(not_matched_at_all)
+        
+not_matched_at_all.to_csv(f"not_matched_at_all_{dataset_name}.csv")
+
+# %% [markdown]
+# # Evaluate
 
 # %%
-gt_text_agg_matched
+from typing import Optional, Sequence
+import pandas as pd
+import unidecode
+from web_annotation_extractor.bundles.past_client.constants import MIN_DATA_TO_PARALLELIZE
+from web_annotation_extractor.bundles.past_client.segmentation.tools import get_performance
+from web_annotation_extractor.common.utils.parallel_tools import OptimalParallel
+from web_annotation_extractor.constants import ROOT_DIR
+
+
+class PastClientSegmenter:
+    parallelization: bool = True
+
+    def __init__(self):
+        self.segmenter: list = []
+        self.optimal_paral = OptimalParallel()
+
+    def initialize_segmenter(self, gt_text_agg, regex_column="new_regexes"):
+        self.segmenter = list(gt_text_agg.set_index("gt_value_untax")[[regex_column]].explode(regex_column).to_records())
+
+    def _search_first_occurrence(self, _text: str) -> Optional[list[tuple[str, str]]]:
+        findings = []
+        for (company, string_to_find) in self.segmenter:
+            searches = _text.find(string_to_find)
+            if searches != -1:
+                findings.append((company, string_to_find))
+        if findings:
+            return list(set(findings))
+        return None
+
+
+# %%
+p_seg = PastClientSegmenter()
+p_seg.initialize_segmenter(gt_text_agg, "regexes")
+
+# %%
+positives_exploded_df["clean_gt_text"] = positives_exploded_df["gt_text"].apply(lambda x: transformer.transform([x])[0])
+positives_exploded_df["findings"] = positives_exploded_df["clean_gt_text"].apply(p_seg._search_first_occurrence)
+
+# %%
+positives_exploded_df["company_findings"] = positives_exploded_df["findings"].dropna().apply(lambda row: [company_regex[0] for company_regex in row])
+# positives_exploded_df
+
+# %% [markdown]
+# # Compute Metrics
+
+# %%
+print("company_findings", positives_exploded_df["company_findings"].dropna().iloc[:3])
+print("gt_value_untax", positives_exploded_df["gt_value_untax"].iloc[:3])
+
+# %%
+positives_exploded_df["company_findings"] = positives_exploded_df["company_findings"]
+positives_exploded_df["gt_value_untax"] = positives_exploded_df["gt_value_untax"]
+
+# %%
+positives_exploded_df["gt_value_untax"].dropna() as dsa
+
+# %%
+positives_exploded_df
+
+# %%
+positives_exploded_df.groupby("domain").agg(list)
+
+# %%
+domains_metrics = dict()
+for domain_name, domain_df in positives_exploded_df.groupby("domain"):
+    print(domain_name)
+    domains_metrics[domain_name] = get_reconciliations_metrics_for_domain(
+        ground_truth_taxonomy=domain_df[gt_col],
+        company_span_taxonomy=domain_df[predicted_col],
+        annotations_series=domain_df[annotations_col],
+        negative_percentage=negative_percentage,
+    )
+    domains_metrics[domain_name][gt_col] = sorted(list(combine_and_get_set(domain_df[gt_col])))
+    domains_metrics[domain_name][predicted_col] = sorted(
+        list(combine_and_get_set(domain_df[predicted_col]))
+    )
+
+domains_metrics = pd.DataFrame(domains_metrics).T.sort_values("num_positives")
+return domains_metrics
+
+# %%
+positives_exploded_df.groupby("domains")
+
+# %%
+from web_annotation_extractor.evaluations.metric_functions import *
+gt = positives_exploded_df["company_findings"]
+
+# get_reconciliations_metrics_for_domain(ground_truth_taxonomy=)
+get_reconciliations_metrics_for_all_domains(positives_exploded_df,
+    gt_col= "gt_value_untax",
+    predicted_col= "company_findings",
+    annotations_col= "annotations",
+    negative_percentage= 1)
