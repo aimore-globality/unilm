@@ -1,4 +1,5 @@
 import string
+from pathlib import Path
 import pandas as pd
 from microcosm.api import create_object_graph
 import re2 as re
@@ -28,29 +29,6 @@ class Matcher:
         compare_methods = dict(equal=self.equal, inside=self.inside)
         assert method in compare_methods.keys()
         self._method = compare_methods.get(method)
-
-    # def match(self, regexes:Sequence[str], text:Sequence[str]):
-    #     matches, not_matches, not_matches_at_all = [], [], ()
-    #     for text_item in text:
-    #         for regex_item in regexes:
-    #             if self._method(regex_item, text_item): #! Here for example, instead of the first item in the regex, we could have multiple
-    #                 matches.append((regex_item, text_item))
-    #             else:
-    #                 not_matches.append((regex_item, text_item))
-    #     if len(matches) == 0 and len(text) > 0: 
-    #         not_matches_at_all = (regexes, sorted(list(set(text))))
-                
-    #     return (matches, not_matches, not_matches_at_all)
-    
-    # def match(self, regexes:Sequence[str], text:str):
-    #     matches, not_matches = [], []
-    #     for regex_item in regexes:
-    #         if self._method(regex_item, text): #! Here for example, instead of the first item in the regex, we could have multiple
-    #             matches.append((regex_item, text))
-    #         else:
-    #             not_matches.append((regex_item, text))
-                        
-    #     return (matches, not_matches)
 
     def match(self, regexes:Sequence[str], text:str):
         matches, not_matches = [], []
@@ -146,24 +124,12 @@ class Transform:
         input_text = f" {input_text.strip()} "
         return input_text
 
-        
-    # def transform(self, texts):        
-    #     new_texts = []
-    #         if text is not None: 
-    #             for transformation in self.transform_sequence:
-    #                 text = transformation(text)
-    #             new_texts.append(text)
-    #     return new_texts
-
     def transform(self, text):
         if text is not None: 
             for transformation in self.transform_sequence:
                 text = transformation(text)
             return text
 
-# transformer = Transform(["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "remove_common_words", "normalize_any_space"])
-# transformer = Transform(["decode", "lower"])
-# transformer = Transform(["decode"])
 
 class Segmenter:
     def __init__(self):
@@ -183,9 +149,6 @@ class Segmenter:
             if matches:              
                 new_items = {"company_id":[company["company_id"]]*len(company['regexes']), "matches":matches, "not_matches":not_matches}
                 text_results.append(new_items)
-            # else:
-                # not_matches_at_all = (regexes, sorted(list(set(text))))
-
         
         return text_results
 
@@ -196,9 +159,20 @@ class Segmenter:
     def transform_texts(self, texts):
         return self.transformer.transform(texts)
 
-    def augment_library_with_training_data(self, company_id_company_name_regexes:pd.DataFrame):
+    def train(self, positives_df:pd.DataFrame):
+        company_id_company_name_and_regexes = self.get_company_id_and_regexes_from_annotations(positives_df)
+        self.augment_library_with_training_data(company_id_company_name_and_regexes)
+        
+    def get_company_id_and_regexes_from_annotations(self, df:pd.DataFrame) -> pd.DataFrame:
+        new_regexes = df["annotations"].apply(lambda row: [(x.get('value'), x.get('text')) for x in row.get("PAST_CLIENT") if x.get('value') and "http" not in x.get('text')])
+        new_regexes = new_regexes.dropna().explode()
+        new_regexes = pd.DataFrame(list(new_regexes.dropna()), columns=["company_id", "regexes"])
+        new_regexes["company_name"] = new_regexes["company_id"].apply(lambda x:uri_to_company_name_map.get(x))
+        return new_regexes #? company_id: [regexes]
+
+    def augment_library_with_training_data(self, company_id_regexes:pd.DataFrame):        
         companies_library_exploded = pd.DataFrame(self.companies_library).explode("regexes")
-        new_companies_library = pd.concat([companies_library_exploded, company_id_company_name_regexes])
+        new_companies_library = pd.concat([companies_library_exploded, company_id_regexes])
 
         new_companies_library["company_id"] = new_companies_library["company_id"].astype(str)
 
@@ -206,4 +180,19 @@ class Segmenter:
         new_companies_library = new_companies_library.groupby(['company_id', 'company_name']).agg(lambda x: sorted(list(set(x))))
 
         new_companies_library.reset_index(inplace=True)
-        self.companies_library = new_companies_library
+        self.companies_library = new_companies_library.to_dict('records')
+
+    def save_model(self, model_name="segmenter_trained"):
+        companies_library_size = len(pd.DataFrame(self.companies_library).explode('regexes'))
+        save_path = f"models/segmenter/{model_name}-{companies_library_size}.pkl"
+        print(f"Saved the model at: {save_path}")
+        save_path = Path(save_path)
+        if not save_path.parents[0].exists():
+            print(save_path.parents[0].mkdir())
+        pd.to_pickle(self.companies_library, save_path)
+
+    def load_model(self, model_name="segmenter_trained"):
+        load_path = f"models/segmenter/{model_name}.pkl"
+        print(f"Loaded the model at: {load_path}")
+        load_path = Path(load_path)
+        self.companies_library = pd.read_pickle(load_path)
