@@ -1,4 +1,6 @@
 import string
+from collections import Counter
+
 from pathlib import Path
 import pandas as pd
 from microcosm.api import create_object_graph
@@ -158,10 +160,39 @@ class Segmenter:
     def transform_texts(self, texts):
         return self.transformer.transform(texts)
 
-    def train(self, positives_df:pd.DataFrame):
-        company_id_company_name_and_regexes = self.get_company_id_and_regexes_from_annotations(positives_df)
-        self.augment_library_with_training_data(company_id_company_name_and_regexes)
+
+    def remove_frequent_terms_with_training_metrics(self, domain_metrics:pd.DataFrame, f1_min_percentage = 0.2, save_df=False):
+        tp_c_df = pd.DataFrame(Counter([x for y in domain_metrics["TP_seg"].values for x in y]).items(), columns=["regex", "tp_count"]).set_index("regex")
+        fp_c_df = pd.DataFrame(Counter([x for y in domain_metrics["FP_seg"].values for x in y]).items(), columns=["regex", "fp_count"]).set_index("regex")
+        fn_c_df = pd.DataFrame(Counter([x[1] for y in domain_metrics["FN_seg"].values for x in y]).items(), columns=["regex", "fn_count"]).set_index("regex")
+
+        tp_fp_c_df = tp_c_df.join(fp_c_df)
+        tp_fp_fn_c_df = tp_fp_c_df.join(fn_c_df)
+        tp_fp_fn_c_df = tp_fp_fn_c_df.fillna(0)
+
+        tp_fp_fn_c_df["Precision"] = tp_fp_fn_c_df.apply(lambda row: (row['tp_count']/(row['tp_count']+row['fp_count'])), axis=1)
+        tp_fp_fn_c_df["Recall"] = tp_fp_fn_c_df.apply(lambda row: (row['tp_count']/(row['tp_count']+row['fn_count'])), axis=1)
+        tp_fp_fn_c_df["F1"] = tp_fp_fn_c_df.apply(lambda row: 2*(row['Precision']*row["Recall"]) / (row['Precision']+row["Recall"]) , axis=1)
+
+        tp_fp_fn_c_df.sort_values("F1", inplace=True)
+        if save_df:
+            tp_fp_fn_c_df.to_csv("f1_score_per_regex.csv")
         
+        regexes_to_remove = tp_fp_fn_c_df[tp_fp_fn_c_df["F1"] < f1_min_percentage].index.values
+
+        companies_library_df = pd.DataFrame(self.companies_library)
+        companies_library_df['regexes'].explode()
+
+        companies_library_df["regexes"] = companies_library_df["regexes"].apply(lambda row: [x for x in row if x not in regexes_to_remove] )
+        companies_library_df = companies_library_df[companies_library_df["regexes"].apply(len) > 0 ]
+        self.companies_library = companies_library_df.to_dict('records')
+
+
+    def augment_company_names_with_training_data(self, df:pd.DataFrame):
+        company_id_company_name_and_regexes = self.get_company_id_and_regexes_from_annotations(df)
+        self.augment_library_with_training_data(company_id_company_name_and_regexes)
+
+
     def get_company_id_and_regexes_from_annotations(self, df:pd.DataFrame) -> pd.DataFrame:
         new_regexes = df["annotations"].apply(lambda row: row.get("PAST_CLIENT") ).dropna().apply(lambda row: [(x.get('value'), x.get('text')) for x in row if x.get('value') and "http" not in x.get('text')])
         new_regexes = new_regexes.dropna().explode()
@@ -179,6 +210,7 @@ class Segmenter:
         new_companies_library = new_companies_library.groupby(['company_id', 'company_name']).agg(lambda x: sorted(list(set(x))))
 
         new_companies_library.reset_index(inplace=True)
+        new_companies_library["regexes"] = new_companies_library["regexes"].apply(lambda x: sorted(list(set(x))))
         self.companies_library = new_companies_library.to_dict('records')
 
     def save_model(self, model_name="segmenter_trained"):

@@ -104,8 +104,8 @@ tag = EntityTag.PAST_CLIENT
 overwrite = False
 
 # datasets = ['train', 'develop', 'test']
-datasets = ['train']
-# datasets = ['develop']
+# datasets = ['train']
+datasets = ['develop']
 
 if len(datasets) == 3: 
     dataset_name = 'all'
@@ -116,43 +116,52 @@ else:
 # cached_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}_{tag.name}_positives.pkl")
 # if cached_data_path.exists() and not overwrite:
 #     print(f"Loaded data from: {cached_data_path}")
-#     positives_df = pd.read_pickle(cached_data_path)
+#     df = pd.read_pickle(cached_data_path)
     
 # else:
 #     all_df = load_data(datasets)
 #     # positives_df = get_positives(all_df, tag)
-#     positives_df = get_positives(all_df, tag.name)
-#     positives_df = positives_df[positives_df["content_type"] == "text/html"]
+#     df = get_positives(all_df, tag.name)
+#     df = df[df["content_type"] == "text/html"]
 #     print(f"Saved data at: {cached_data_path}")
-#     positives_df.to_pickle(cached_data_path)
+#     df.to_pickle(cached_data_path)
 
 # %%
-data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl"
 # data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4086)_intermediate.pkl"
+# classified_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_with_img.pkl"
+if datasets[0] == 'train':
+    predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/train_df_pred_after_training(522031).pkl"
+    data_path = "/data/GIT/web-annotation-extractor/data/processed/train/dataset_pos(4319)_neg(13732)_intermediate.pkl"
+
+if datasets[0] == 'develop':
+    predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_after_training(178346).pkl"
+    data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl"
+
 df = pd.read_pickle(data_path)
 df = df.rename(columns={"PAST_CLIENT-annotations": "PAST_CLIENT"})
 print(len(df))
-classified_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_with_img.pkl"
-classified_df = pd.read_pickle(classified_nodes_data_path)
-print(len(classified_df))
+
+predicted_df = pd.read_pickle(predicted_nodes_data_path)
+print(len(predicted_df))
 
 # %%
-# set(df['domain']) & set(classified_df['domain']) 
-classified_df
+classified_df = predicted_df.copy()
+threshold = 0.5
+classified_df = classified_df[classified_df["node_prob"] > threshold]
+len(classified_df)
 
 # %% [markdown]
 # # Load Model
 
 # %%
 s = Segmenter()
-s.transform_regexes()
+# s.transform_regexes()
 
 # %% [markdown]
 # ## Train Model
 
 # %%
-company_id_company_name_and_regexes = s.get_company_id_and_regexes_from_annotations(df)
-s.augment_library_with_training_data(company_id_company_name_and_regexes)
+s.augment_company_names_with_training_data(df)
 s.transform_regexes()
 saved_path = s.save_model()
 
@@ -167,7 +176,7 @@ s.load_model(str(saved_path).split('/')[-1].split('.pkl')[0])
 import multiprocessing as mp
 p = mp.Pool(mp.cpu_count())
 transformed_texts = []
-for transformed_text in p.imap(s.transform_texts, classified_df["node_text"]):
+for transformed_text in p.imap(s.transform_texts, classified_df["node_text"], chunksize = 50):
     transformed_texts.append(transformed_text)
 print(len(transformed_texts))
 classified_df["node_text_t"] = transformed_texts
@@ -178,7 +187,7 @@ classified_df["node_text_t"] = transformed_texts
 # %%
 p = mp.Pool(mp.cpu_count())
 matches = []
-for match in p.imap(s.find_companies, classified_df["node_text_t"]):
+for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 50):
     matches.append(match)
 print(len(matches))
 classified_df["matches"] = matches
@@ -186,17 +195,13 @@ classified_df["matches"] = matches
 # %%
 classified_df = classified_df[["url", "matches"]]
 classified_df = classified_df.groupby("url").agg(lambda x: x)
-classified_df["matches"] = classified_df["matches"].apply(lambda row: [y for x in row for y in x])
+classified_df["matches"] = classified_df["matches"].apply(lambda row: [y for x in row for y in x if type(x) == list])
 
 # %%
 merge = df.set_index('url').join(classified_df).reset_index()
 merge["matches"] = merge["matches"].fillna('').apply(list)
 
 # %%
-len(merge)
-
-# %%
-# #? Extract just the company_id from matches
 merge['predicted_tag'] = merge['matches']
 
 # %%
@@ -208,16 +213,31 @@ merge["gt_tag_without_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get(
 # # Evaluate
 
 # %%
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col = "gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+s.remove_frequent_terms_with_training_metrics(domain_metrics)
+saved_path = s.save_model()
+
+# %%
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+# domain_metrics
 
 # %%
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col = "gt_tag_without_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
 
 # %%
-pd.set_option('display.max_columns',200, 'display.max_colwidth', 2000, 'display.max_rows',2, 'display.min_rows',2)
-domain_metrics[domain_metrics["TP"] > 1]["predicted_tag"].index
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 2000, 'display.max_rows',200, 'display.min_rows',200)
+
 
 # %%
 # pd.set_option('display.max_columns',200, 'display.max_colwidth', 2000, 'display.max_rows',2, 'display.min_rows',2)

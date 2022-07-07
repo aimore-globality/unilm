@@ -183,17 +183,19 @@ class Trainer:
 
             epoch_progress_bar.update(1)
 
-        self.evaluate(accelerator=accelerator)
+        evaluate_df = self.evaluate(accelerator=accelerator)
 
         #! Save model
         if self.overwrite_model:
             accelerator.print(f"Overwritting model...")
-            save_model_path = self.save_model_dir + "pytorch_model_1.pth"
-            save_pred_data_path = self.save_model_dir + "develop_pred.pkl"
+            # save_model_path = self.save_model_dir + "/pytorch_model_1.pth"
+            # accelerator.print(f"Saved model at:\n {save_model_path}")
             accelerator.save_state(self.save_model_dir)
-            accelerator.print(f"Saved model at:\n {save_model_path}")
+            accelerator.print(f"Saved model at:\n {self.save_model_dir}")
+
+            save_pred_data_path = self.save_model_dir + f"develop_df_pred_after_training({len(evaluate_df)}).pkl"
             accelerator.print(f"Saved predicted data at:\n {save_pred_data_path}")
-            self.evaluate_df.drop(["page_features"], axis=1).to_pickle(save_pred_data_path)
+            evaluate_df.drop(["page_features"], axis=1).to_pickle(save_pred_data_path)
 
     def evaluate(self, accelerator):
         accelerator.print("Evaluate...")
@@ -311,7 +313,7 @@ class Trainer:
         accelerator.print("... Infer Done")
 
         #! Save infered dataset
-        save_path = self.save_model_dir + "develop_df_pred.pkl"
+        save_path = self.save_model_dir + f"train_df_pred_after_training({len(evaluate_df)}).pkl"
         accelerator.print(f"Saved infered data at: {save_path}")
         evaluate_df.drop(["page_features"], axis=1).to_pickle(save_path)
 
@@ -320,16 +322,17 @@ if __name__ == "__main__":
     trainer_config = dict(
         name_root_folder="delete-abs",
         dataset_to_use="all",
-        num_epochs=3,
+        num_epochs=4,
         train_batch_size=28,
         evaluate_batch_size=28 * 10,
         save_model_dir="/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
         evaluate_during_training=True,
         overwrite_model=True,
         with_img=False,
-        method="max",
+        method="mean",
     )
-
+    infer = False
+    
     if trainer_config["dataset_to_use"] == "mini":
         trainer_config["num_epochs"] = 4
 
@@ -373,7 +376,8 @@ if __name__ == "__main__":
 
     classifier_config = dict(decision_threshold=0.5)
     classifier = NodeClassifier(**classifier_config)
-
+    if infer:
+        df_develop = df_train
     trainer = Trainer(
         featurizer=featurizer,
         classifier=classifier,
@@ -390,6 +394,7 @@ if __name__ == "__main__":
     accelerator.print(f"train: {len(df_train)} - {train_data_path}")
     accelerator.print(f"develop: {len(df_develop)} - {develop_data_path}")
 
-    trainer.train(accelerator)
-    accelerator.end_training()
-    trainer.infer(accelerator)
+    # trainer.train(accelerator)
+    # accelerator.end_training()
+    if infer:
+        trainer.infer(accelerator)
