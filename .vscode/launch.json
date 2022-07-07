@@ -13,6 +13,13 @@
             "program": "/data/GIT/unilm/markuplm/notebooks/check_debug.py",
         },
         {            
+            "justMyCode": false,
+            "name": "Python",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/GIT/unilm/markuplm/notebooks/PastClientTaxonomy_Wikipedia.py",
+        },
+        {            
             "name": "Python: Run train and evaluate - testing mode",
             "type": "python",
             "request": "launch",

@@ -31,14 +31,12 @@ class Matcher:
         self._method = compare_methods.get(method)
 
     def match(self, regexes:Sequence[str], text:str):
-        matches, not_matches = [], []
+        matches = []
         for regex_item in regexes:
             if self._method(regex_item, text): #! Here for example, instead of the first item in the regex, we could have multiple
                 matches.append(regex_item)
-            else:
-                not_matches.append(regex_item)
                         
-        return (matches, not_matches)
+        return matches
 
 
     def equal(self, regex_item:str, text_item:str):
@@ -143,14 +141,15 @@ class Segmenter:
         self.companies_library = known_company_names_taxonomy.to_dict('records')
 
     def find_companies(self, text:str):
-        text_results = []
-        for company in self.companies_library:
-            matches, not_matches = self.matcher.match(company['regexes'], text)
-            if matches:              
-                new_items = {"company_id":[company["company_id"]]*len(company['regexes']), "matches":matches, "not_matches":not_matches}
-                text_results.append(new_items)
+        all_matches = []
+        for company_id_name_regexes in self.companies_library:
+            matches = self.matcher.match(company_id_name_regexes['regexes'], text)
+            if matches:
+                # new_items = {"company_id":[company["company_id"]]*len(company['regexes']), "matches":matches, "not_matches":not_matches}
+                new_matches = {"company_id": str(company_id_name_regexes['company_id']), "matches": matches}
+                all_matches.append(new_matches)
         
-        return text_results
+        return all_matches
 
     def transform_regexes(self):
         for enum, company in enumerate(self.companies_library):
@@ -164,7 +163,7 @@ class Segmenter:
         self.augment_library_with_training_data(company_id_company_name_and_regexes)
         
     def get_company_id_and_regexes_from_annotations(self, df:pd.DataFrame) -> pd.DataFrame:
-        new_regexes = df["annotations"].apply(lambda row: [(x.get('value'), x.get('text')) for x in row.get("PAST_CLIENT") if x.get('value') and "http" not in x.get('text')])
+        new_regexes = df["annotations"].apply(lambda row: row.get("PAST_CLIENT") ).dropna().apply(lambda row: [(x.get('value'), x.get('text')) for x in row if x.get('value') and "http" not in x.get('text')])
         new_regexes = new_regexes.dropna().explode()
         new_regexes = pd.DataFrame(list(new_regexes.dropna()), columns=["company_id", "regexes"])
         new_regexes["company_name"] = new_regexes["company_id"].apply(lambda x:uri_to_company_name_map.get(x))
@@ -190,6 +189,7 @@ class Segmenter:
         if not save_path.parents[0].exists():
             print(save_path.parents[0].mkdir())
         pd.to_pickle(self.companies_library, save_path)
+        return save_path
 
     def load_model(self, model_name="segmenter_trained"):
         load_path = f"models/segmenter/{model_name}.pkl"

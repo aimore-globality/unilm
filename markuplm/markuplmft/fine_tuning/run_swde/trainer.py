@@ -392,4 +392,4 @@ if __name__ == "__main__":
 
     trainer.train(accelerator)
     accelerator.end_training()
-    # trainer.infer(accelerator)
+    trainer.infer(accelerator)

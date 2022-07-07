@@ -34,7 +34,7 @@ run = wandb.init(project="LanguageModel", resume=False, tags=["compare_with_prod
 
 
 # %%
-segmenter_trained =["trained", "untrained", "extreme_untrained"][1]
+segmenter_trained =["trained", "untrained", "extreme_untrained"][2]
 predict_and_segment = True
 
 tag="PAST_CLIENT"
@@ -57,7 +57,7 @@ if predict_and_segment:
     if dataset == 'develop':
         # data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
         # data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4086)_intermediate.pkl"
-        data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl"
+        data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl" # With the gt_images
         
     df = pd.read_pickle(data_path)
 
