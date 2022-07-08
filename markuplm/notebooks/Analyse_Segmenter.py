@@ -104,8 +104,8 @@ tag = EntityTag.PAST_CLIENT
 overwrite = False
 
 # datasets = ['train', 'develop', 'test']
-# datasets = ['train']
-datasets = ['develop']
+datasets = ['train']
+# datasets = ['develop']
 
 if len(datasets) == 3: 
     dataset_name = 'all'
@@ -146,7 +146,7 @@ print(len(predicted_df))
 
 # %%
 classified_df = predicted_df.copy()
-threshold = 0.5
+threshold = 0.0
 classified_df = classified_df[classified_df["node_prob"] > threshold]
 len(classified_df)
 
@@ -191,6 +191,9 @@ for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 
     matches.append(match)
 print(len(matches))
 classified_df["matches"] = matches
+
+# %%
+classified_df[["node_text_t", "matches"]]
 
 # %%
 classified_df = classified_df[["url", "matches"]]
