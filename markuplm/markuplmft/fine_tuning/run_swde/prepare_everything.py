@@ -178,15 +178,15 @@ if __name__ == "__main__":
     FORMAT = "[ %(asctime)s ] %(filename)20s:%(lineno)5s - %(funcName)35s() : %(message)s"
     logging.basicConfig(format=FORMAT, level=logging.INFO)
     remove_folder_flag = True
-    shortcut = True
+    shortcut = False
     negative_fraction = 0.10  # ? 0.10
     parallel = True
-    with_img = False
+    with_img = True
 
     if with_img:
-        name_root_folder = "delete-img"
+        name_root_folder = "node_classifier_with_imgs"
     else:
-        name_root_folder = "delete-abs"
+        name_root_folder = "delete-abs2"
 
     logging.info(f"name_root_folder: {name_root_folder}")
     featurizer = Featurizer()
@@ -202,7 +202,7 @@ if __name__ == "__main__":
 
         save_path = raw_data_folder / "processed.pkl"
         dedup_save_path = raw_data_folder / "processed_dedup.pkl"
-        if not save_path.exists() and not dedup_save_path.exists():
+        if not save_path.exists() and not dedup_save_path.exists() or remove_folder_flag:
             #! Prepare data for training #TODO: Move into a function
             preparer = PrepareData(
                 parallel=parallel,
@@ -257,10 +257,10 @@ if __name__ == "__main__":
                 for df_domain in df_domains:
                     prepare_domain(df_domain)
 
-            all_df = sorted(all_df)
+            all_df = all_df.sort_values(['domain', 'url'])
             save_processed_data(all_df, save_path)
 
-            all_df_dedup = sorted(all_df_dedup)
+            all_df_dedup = all_df_dedup.sort_values(['domain', 'url'])
             save_processed_data(all_df_dedup, dedup_save_path)
         else:
             load_path = f"/data/GIT/delete-abs/{dataset_name}/processed_dedup.pkl"

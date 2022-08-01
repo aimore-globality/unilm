@@ -25,4 +25,5 @@
         "CustomEditor"
     ],
     "debug.allowBreakpointsEverywhere": true,
+    "jupyter.debugJustMyCode": false,
 }

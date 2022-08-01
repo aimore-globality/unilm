@@ -181,11 +181,15 @@ class Segmenter:
         regexes_to_remove = tp_fp_fn_c_df[tp_fp_fn_c_df["F1"] < f1_min_percentage].index.values
 
         companies_library_df = pd.DataFrame(self.companies_library)
-        companies_library_df['regexes'].explode()
+        companies_library_df = companies_library_df.explode('regexes')
+        print(f"BEFORE - Number of regexes in companies_library_df: {len(companies_library_df)}")
 
-        companies_library_df["regexes"] = companies_library_df["regexes"].apply(lambda row: [x for x in row if x not in regexes_to_remove] )
-        companies_library_df = companies_library_df[companies_library_df["regexes"].apply(len) > 0 ]
-        self.companies_library = companies_library_df.to_dict('records')
+        new_companies_library = companies_library_df[~companies_library_df['regexes'].isin(regexes_to_remove)]
+        print(f"AFTER - Number of regexes in companies_library_df: {len(new_companies_library)}")
+
+        new_companies_library = new_companies_library.groupby(['company_id', 'company_name']).agg(lambda x: sorted(list(set(x))))
+        new_companies_library.reset_index(inplace=True)
+        self.companies_library = new_companies_library.to_dict('records')
 
 
     def augment_company_names_with_training_data(self, df:pd.DataFrame):

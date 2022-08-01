@@ -18,6 +18,73 @@
 # 1. This notebook checks if the format of the data and groundtruth is ok.
 # 2. It does some stats on the 'none' and 'PAST_CLIENT' nodes 
 
+# %%
+import pandas as pd
+df = pd.read_pickle("/data/GIT/node_classifier_with_imgs/develop/processed_dedup.pkl")
+
+# %%
+from markuplmft.fine_tuning.run_swde.prepare_everything import PrepareData
+from markuplmft.fine_tuning.run_swde.prepare_everything import LabelHandler
+dataset_name = 'develop'
+wae_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
+raw_data_folder = Path(f"/data/GIT/node_classifier_with_imgs/{dataset_name}")
+prep_data = PrepareData(parallel=False, remove_folder_flag=False, shortcut=True, raw_data_folder=raw_data_folder)
+all_df = prep_data.load_data(wae_data_path)
+
+
+# %%
+lh = LabelHandler()
+all_df = lh.format_annotation(all_df)
+
+
+# %%
+399 / 429
+
+# %%
+all_df.groupby("domain")['PAST_CLIENT-gt_value'].agg(list).explode().value_counts() # 429
+
+# %%
+pd.set_option('display.max_columns',10, 'display.max_colwidth', 100, 'display.max_rows',10, 'display.min_rows',10)
+
+pd.DataFrame(df[df["PAST_CLIENT-gt_text_count"]>0])
+
+# df[df["PAST_CLIENT-gt_text_count"]>0]["PAST_CLIENT-gt_text"]
+# for enum, x in enumerate(df[df["PAST_CLIENT-gt_text_count"]>0]["PAST_CLIENT-gt_text"].values):
+#     print(enum, x)
+
+# %%
+pd.set_option('display.max_columns',20, 'display.max_colwidth', 50, 'display.max_rows',20, 'display.min_rows',20)
+df.iloc[:10]
+
+# %%
+print(len(df_nodes))
+
+# %%
+
+df.groupby("domain")['PAST_CLIENT-gt_value'].agg(list).explode().value_counts() # 399
+# 399 past clients
+
+# %%
+# df_nodes = df.explode("nodes").reset_index()
+# df_nodes = df_nodes.join(
+#     pd.DataFrame(
+#         df_nodes.pop("nodes").tolist(),
+#         columns=["xpath", "node_text", "node_gt_tag", "node_gt_text"],
+#     )
+# )
+
+pd.set_option('display.max_columns',20, 'display.max_colwidth', 50, 'display.max_rows',20, 'display.min_rows',20)
+
+t = df_nodes[df_nodes["node_gt_tag"] != 'none'].apply(lambda x: [y for y in x["node_gt_text"] if 'http' in y], axis=1)
+df_nodes.loc[t[t.apply(len)==0].index]
+
+# %%
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 200, 'display.max_rows',200, 'display.min_rows',200)
+
+z = df[df["PAST_CLIENT-gt_text_count"]>0].explode('nodes')
+# z[z[2] !='none']
+z
+
 # %% tags=[]
 import pandas as pd
 from pathlib import Path

@@ -223,6 +223,8 @@ class Featurizer:
             node_text_dict = {
                 "node_text": node.text,
                 "node_tail_text": node.tail,
+                "node_attrib.src": node.attrib.get('src'),
+                "node_attrib.alt": node.attrib.get('alt'),
             }
             for text_part_flag, node_text in node_text_dict.items():
                 if node_text:
@@ -234,21 +236,24 @@ class Featurizer:
 
                         # node_attribute = node.attrib.get("type", "")
                         # node_tag = node.tag
+                        if text_part_flag in ["node_text", "node_tail_text"]:
+                            node_text_split = node_text.split("--BRRB--")
+                            len_brs = len(node_text_split)  # The number of the <br>s.
 
-                        node_text_split = node_text.split("--BRRB--")
-                        len_brs = len(node_text_split)  # The number of the <br>s.
+                            for index, etext in enumerate(node_text_split):
+                                if text_part_flag == "node_text":
+                                    xpath = dom_tree.getpath(node)
 
-                        for index, etext in enumerate(node_text_split):
-                            if text_part_flag == "node_text":
-                                xpath = dom_tree.getpath(node)
+                                elif text_part_flag == "node_tail_text":
+                                    xpath = dom_tree.getpath(node) + "/tail"
 
-                            elif text_part_flag == "node_tail_text":
-                                xpath = dom_tree.getpath(node) + "/tail"
+                                if len_brs >= 2:
+                                    xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
 
-                            if len_brs >= 2:
-                                xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
-
-                            page_nodes.append((xpath, etext, "none", []))
+                                page_nodes.append((xpath, etext, "none", []))
+                        else:
+                            xpath = dom_tree.getpath(node)
+                            page_nodes.append((xpath, node_text, "none", []))
         # ? Make sure that it is returning a page with features
         if len(page_nodes) > 0:
             return page_nodes

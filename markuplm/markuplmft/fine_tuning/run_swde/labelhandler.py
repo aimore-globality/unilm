@@ -14,6 +14,7 @@ class LabelHandler:
             [
                 (company.uri, company.name)
                 for company in graph.known_company_taxonomy
+                if company.is_demo_company is False and company.deprecated is False
             ]
         )
 
@@ -55,7 +56,7 @@ class LabelHandler:
                 for annotation in annotations
             ]
         )
-        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values 
+        df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values
 
         logging.info(f" # Annotations (gt_text): {self.count_all_labels(df)}")
         logging.info(f" # Annotations (gt_value): {self.count_all_labels(df, 'value')}")
@@ -65,8 +66,8 @@ class LabelHandler:
         self,
         df: pd.DataFrame,
         negative_fraction: float,
-        wae_data_path:str,
-        with_img:bool=False,
+        wae_data_path: str,
+        with_img: bool = False,
     ) -> pd.DataFrame:
 
         logging.info("Convert_annotated_data...")
@@ -324,7 +325,7 @@ class LabelHandler:
 
             new_node_text = (xpath, node_text, tag, gt_text_in_node)
             nodes_annotated.append(new_node_text)
-            
+
         return nodes_annotated
 
     def add_classification_label_to_nodes(self, df: pd.DataFrame) -> pd.DataFrame:
