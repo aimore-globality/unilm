@@ -21,7 +21,7 @@ from new_segmenter import Segmenter
 from microcosm.api import create_object_graph
 import pandas as pd
 from web_annotation_extractor.evaluations.metric_functions import get_reconciliations_metrics_for_all_domains, calculate_metrics_for_dataset
-
+import multiprocessing as mp
 # from web_annotation_extractor.common.utils.general_utils import deserialize_annotations
 
 from tqdm import tqdm
@@ -186,7 +186,7 @@ s = Segmenter()
 # ## Train Model
 
 # %%
-# s.augment_company_names_with_training_data(df)
+s.augment_company_names_with_training_data(df)
 # s.transform_regexes()
 # # saved_path = s.save_model()
 
@@ -213,15 +213,16 @@ len(classified_df)
 # # Transform
 
 # %%
-# import multiprocessing as mp
-# p = mp.Pool(mp.cpu_count())
-# transformed_texts = []
-# for transformed_text in p.imap(s.transform_texts, classified_df["node_text"], chunksize = 50):
-#     transformed_texts.append(transformed_text)
-# print(len(transformed_texts))
-# classified_df["node_text_t"] = transformed_texts
+# # #? Transform all nodes
+p = mp.Pool(mp.cpu_count())
+transformed_texts = []
+for transformed_text in p.imap(s.transform_texts, classified_df["node_text"], chunksize = 50):
+    transformed_texts.append(transformed_text)
+print(len(transformed_texts))
+classified_df["node_text_t"] = transformed_texts
+# # #? In case I want to remove the duplicates after the transformation
 # original_len = len(classified_df)
-# # classified_df = classified_df.drop_duplicates("node_text_t")
+# classified_df = classified_df.drop_duplicates("node_text_t")
 # print(f"Removed duplicates: {original_len} -> {len(classified_df)} ({100*(len(classified_df)-original_len)/original_len:.1f} %)")
 
 # %%
@@ -235,9 +236,6 @@ len(classified_df)
 # print(len(transformed_texts))
 # classified_df.loc[img_indices, "node_text_t_img"] = transformed_texts
 
-# %%
-# transformed_texts
-
 # %% [markdown]
 # # Match
 
@@ -245,82 +243,34 @@ len(classified_df)
 # ## REL
 
 # %%
-# classified_df = classified_df[classified_df['domain'].isin(['1820productions.com', 'olivehorse.com', 'walkerhamill.com'])]
+# # #? Find mentions in each node
+mentions = rel_seg.get_mentions_dataset(classified_df['node_text'])
+classified_df["mentions"] = pd.Series(mentions)
+classified_df["mentions"] = classified_df["mentions"].fillna('').apply(list)
 
-mentions_dataset = {}
-domains = set(classified_df['domain'])
-for domain in tqdm(domains):
-    mentions_dataset[domain] = rel_seg.get_mentions_dataset(classified_df[classified_df['domain'] == domain]['node_text'])
-    classified_df.loc[classified_df['domain'] == domain, 'mentions_dataset'] = classified_df[classified_df['domain'] == domain]['node_text'].apply(lambda node_text: mentions_dataset[domain].get(node_text))
-classified_df = classified_df.assign(mentions= rel_seg.get_only_org_mentions(classified_df["mentions_dataset"].values))
+# # #? Disambiguate each mentiions
+disambiguations = rel_seg.disambiguate(classified_df["mentions"])
+classified_df["disambiguations"] = pd.Series(disambiguations)
+classified_df["disambiguations"] = classified_df["disambiguations"].fillna('').apply(list)
 
-# %%
-# pd.set_option('display.max_columns',200, 'display.max_colwidth', 100, 'display.max_rows',200, 'display.min_rows',200)
+# # #? Get predictions for each disambiguation
+classified_df["predictions"] = classified_df["disambiguations"].apply(lambda disambiguations: [item['prediction'] for item in disambiguations] )
+# classified_df["predictions"] = classified_df["predictions"].apply(lambda disambiguations: [disambiguations[0]] if len(disambiguations) > 0 else disambiguations) #? By getting only the first item in the disambiguation there is a 3% abs variation 
 
-# test_data[["url", "node_gt_text", "mentions", "node_text", "mentions_dataset"]]
+# # #? Convert predictions to company_id
+classified_df['rel_predictions'] = classified_df['predictions'].apply(lambda row: [rel_seg.wiki_title_to_kc_mappings.get(x) for x in row])
 
-# %%
-classified_df["mentions_to_predict"] = classified_df["mentions"].apply(lambda x: [k for y in x for k in x][0] if x else '')
+# # #? Convert rel_predictions to matches
+classified_df['rel_matches'] = classified_df.apply(lambda row: [{'company_id': row['rel_predictions'][x], 'matches':row["mentions"][x]['ngram']} for x in range(len(row['rel_predictions']))], axis=1)
 
-# %%
-import multiprocessing as mp
-p = mp.Pool(mp.cpu_count())
-transformed_texts = []
-for transformed_text in p.imap(s.transform_texts, classified_df["mentions_to_predict"], chunksize = 50):
-    transformed_texts.append(transformed_text)
-print(len(transformed_texts))
-classified_df["node_text_t"] = transformed_texts
-
-# %%
-# pd.set_option('display.max_columns',20, 'display.max_colwidth', 200, 'display.max_rows',20, 'display.min_rows',20)
-
-# classified_df
-
-# %%
-# #? Faster than one node at a time
-r = {}
-domains = set(classified_df['domain'])
-for domain in tqdm(domains):
-    r[domain] = rel_seg.predict_companies(classified_df[classified_df['domain'] == domain]['node_text']).dropna().values
-
-# %%
-classified_df['rel_predictions'] = classified_df['domain'].apply(lambda x: list(r.get(x)))
-
-
-# %%
-# #? In case the module doesn't produce matches
-def convert_predicted_urls_to_matches(predictions):
-    matches = []
-    # matches.append({'company_id': predictions, 'matches':['']})
-    for prediction in set(predictions):
-        matches.append({'company_id': prediction, 'matches':['']})
-    return matches
-    
-classified_df['rel_matches'] = classified_df['rel_predictions'].apply(convert_predicted_urls_to_matches)
-
-# %%
-classified_df["node_text_t"]
-
-# %%
-# #? It doesn't work because it removes the nodes that couldn't find information
-# node_texts = classified_df['node_text_t']
-# r = rel_seg.predict_companies(node_texts)
-# print(len(node_texts))
-# len(r.dropna())
-
-# %%
-# r = []
-# node_texts = classified_df[classified_df['domain'] == 'hitt.com']['node_text_t']
-# for node_text in node_texts:
-#     r.append(rel_seg.predict_companies([node_text]))
-# print(len(node_texts))
-# len(pd.Series([x[0] for x in r]).dropna())
+# # #? Remove empty company_id (companies that are not in our taxonomy) 
+classified_df['rel_matches'] = classified_df['rel_matches'].apply(lambda row:[x for x in row if x['company_id']])
 
 # %% [markdown]
 # ## Gazetteer
 
 # %%
-# Original
+# # #? Match all transformed nodes
 p = mp.Pool(mp.cpu_count())
 matches = []
 for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 50):
@@ -328,7 +278,7 @@ for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 
 print(len(matches))
 classified_df["gaz_matches"] = matches
 
-# Match only on Images
+# # #? Match only on Images
 # p = mp.Pool(mp.cpu_count())
 # matches = []
 # classified_df["node_text_t_img"] = classified_df["node_text_t_img"].fillna('')
@@ -354,8 +304,8 @@ classified_df["both_matches"] = classified_df.apply(lambda x: x["gaz_matches"] +
 # %%
 predited_df = classified_df.copy()
 
-# predited_df["matches"] = predited_df["rel_matches"]
-predited_df["matches"] = predited_df["gaz_matches"]
+predited_df["matches"] = predited_df["rel_matches"]
+# predited_df["matches"] = predited_df["gaz_matches"]
 # predited_df["matches"] = predited_df["both_matches"]
 
 predited_df = predited_df[["url", "matches"]]
@@ -370,12 +320,23 @@ merge["matches"] = merge["matches"].fillna('').apply(list)
 merge['predicted_tag'] = merge['matches']
 
 # %%
-# #? Get the gt companies
+# # #? Get the gt companies
 merge["gt_tag_with_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get('value')) for x in row if x.get('value')])
 # merge["gt_tag_without_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get('value')) for x in row if x.get('value') and 'http' not in x.get('text')])
 
+# %%
+# # pd.set_option('display.max_columns',200, 'display.max_colwidth', 200, 'display.max_rows',200, 'display.min_rows',200)
+# pd.set_option('display.max_columns',200, 'display.max_colwidth', 100, 'display.max_rows',4, 'display.min_rows',4)
+
+# merge
+
 # %% [markdown]
 # # Evaluate
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
 
 # %%
 print(f"{dataset_name} - REL")
@@ -405,6 +366,13 @@ if dataset_name =='train':
 # %% [markdown]
 # ### Evaluate
 
+# %%
+print(f"{dataset_name} - Gaz")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+domain_metrics.to_csv(f"/data/GIT/unilm/markuplm/notebooks/results_reconciliations/{dataset_name}-Gaz.csv")
+
 # %% [markdown]
 # ## REL
 
@@ -413,10 +381,14 @@ print(f"{dataset_name} - REL")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
 
+domain_metrics.to_csv(f"/data/GIT/unilm/markuplm/notebooks/results_reconciliations/{dataset_name}-REL.csv")
+
 # %%
 print(f"{dataset_name} - REL")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
+
+domain_metrics.to_csv(f"/data/GIT/unilm/markuplm/notebooks/results_reconciliations/{dataset_name}-REL.csv")
 
 # %% [markdown]
 # ## Both (Gazetteer on the images +REL on text) 
@@ -425,6 +397,8 @@ calculate_metrics_for_dataset(domain_metrics)
 print(f"{dataset_name} - Both")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
+
+domain_metrics.to_csv(f"/data/GIT/unilm/markuplm/notebooks/results_reconciliations/{dataset_name}-REL_and_Gaz.csv")
 
 # %%
 pd.set_option('display.max_columns',200, 'display.max_colwidth', 2000, 'display.max_rows',200, 'display.min_rows',200)
