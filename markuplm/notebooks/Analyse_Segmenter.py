@@ -179,20 +179,30 @@ print(len(classified_df))
 rel_seg = RelSegmenter()
 
 # %%
-s = Segmenter()
-# s.transform_regexes()
+conn = rel_seg.mention_detector.wiki_db.db
+c = conn.cursor()
+c.execute('SELECT COUNT(*) FROM wiki')
+c.fetchall()
+
+# %%
+# c.execute("SELECT * FROM sqlite_master WHERE type= 'index';") 
+# c.fetchall()
+
+# %%
+# s = Segmenter()
+# # s.transform_regexes()
 
 # %% [markdown]
 # ## Train Model
 
 # %%
-s.augment_company_names_with_training_data(df)
-# s.transform_regexes()
-# # saved_path = s.save_model()
+# s.augment_company_names_with_training_data(df)
+# # s.transform_regexes()
+# # # saved_path = s.save_model()
 
 # %%
-# s.load_model(str(saved_path).split('/')[-1].split('.pkl')[0])
-s.load_model("segmenter_trained-4971")
+# # s.load_model(str(saved_path).split('/')[-1].split('.pkl')[0])
+# s.load_model("segmenter_trained-4971")
 
 # %% [markdown]
 # # Get the Positives only
@@ -205,25 +215,30 @@ s.load_model("segmenter_trained-4971")
 # len(classified_df)
 
 # %%
-# Get positives
+# # #? Get positives
 classified_df = classified_df[classified_df["node_gt_tag"] != 'none']
+
+# # #? Get positives with all images:
+# positives_with_all_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' in x else None).dropna().index | classified_df[classified_df["node_gt_tag"] != 'none'].index)
+# classified_df = classified_df.loc[positives_with_all_images_indices]
+
 len(classified_df)
 
 # %% [markdown]
 # # Transform
 
 # %%
-# # #? Transform all nodes
-p = mp.Pool(mp.cpu_count())
-transformed_texts = []
-for transformed_text in p.imap(s.transform_texts, classified_df["node_text"], chunksize = 50):
-    transformed_texts.append(transformed_text)
-print(len(transformed_texts))
-classified_df["node_text_t"] = transformed_texts
-# # #? In case I want to remove the duplicates after the transformation
-# original_len = len(classified_df)
-# classified_df = classified_df.drop_duplicates("node_text_t")
-# print(f"Removed duplicates: {original_len} -> {len(classified_df)} ({100*(len(classified_df)-original_len)/original_len:.1f} %)")
+# # # #? Transform all nodes
+# p = mp.Pool(mp.cpu_count())
+# transformed_texts = []
+# for transformed_text in p.imap(s.transform_texts, classified_df["node_text"], chunksize = 50):
+#     transformed_texts.append(transformed_text)
+# print(len(transformed_texts))
+# classified_df["node_text_t"] = transformed_texts
+# # # #? In case I want to remove the duplicates after the transformation
+# # original_len = len(classified_df)
+# # classified_df = classified_df.drop_duplicates("node_text_t")
+# # print(f"Removed duplicates: {original_len} -> {len(classified_df)} ({100*(len(classified_df)-original_len)/original_len:.1f} %)")
 
 # %%
 # # #? Transform and get only text from images
@@ -248,11 +263,13 @@ mentions = rel_seg.get_mentions_dataset(classified_df['node_text'])
 classified_df["mentions"] = pd.Series(mentions)
 classified_df["mentions"] = classified_df["mentions"].fillna('').apply(list)
 
+# %%
 # # #? Disambiguate each mentiions
 disambiguations = rel_seg.disambiguate(classified_df["mentions"])
 classified_df["disambiguations"] = pd.Series(disambiguations)
 classified_df["disambiguations"] = classified_df["disambiguations"].fillna('').apply(list)
 
+# %%
 # # #? Get predictions for each disambiguation
 classified_df["predictions"] = classified_df["disambiguations"].apply(lambda disambiguations: [item['prediction'] for item in disambiguations] )
 # classified_df["predictions"] = classified_df["predictions"].apply(lambda disambiguations: [disambiguations[0]] if len(disambiguations) > 0 else disambiguations) #? By getting only the first item in the disambiguation there is a 3% abs variation 
@@ -267,28 +284,201 @@ classified_df['rel_matches'] = classified_df.apply(lambda row: [{'company_id': r
 classified_df['rel_matches'] = classified_df['rel_matches'].apply(lambda row:[x for x in row if x['company_id']])
 
 # %% [markdown]
+# ## Intermediate Experiment 
+# Check for how many gt_text the mention detection can detect?   
+
+# %%
+# def get_the_matches():
+#     return classified_df['rel_matches'][classified_df['rel_matches'].apply(len) > 0].apply(lambda x: [y['matches'] for y in x])
+
+# classified_df['matches_found_by_rel'] = get_the_matches()
+# matches_found_by_rel = pd.Series(classified_df.explode('matches_found_by_rel')['matches_found_by_rel'].dropna().values).apply(lambda x: x)
+
+
+# print(f"Total number of companies in node_gt_text: {len(set(node_gt_text))}")
+# print(f"Total number of companies in matches_found_by_rel: {len(set(matches_found_by_rel))}")
+# print(f"Difference of node_gt_text and matches_found_by_rel: {len(set(matches_found_by_rel) - set(node_gt_text))}")
+# print(f"Difference of matches_found_by_rel and node_gt_text: {len(set(node_gt_text) - set(matches_found_by_rel))}" )
+# print(f"Intersection of node_gt_text and matches_found_by_rel: {100*len(set(node_gt_text) & set(matches_found_by_rel)) / len(set(node_gt_text)):.1f} %")
+# diff = set(node_gt_text) - set(matches_found_by_rel)
+# print(f"difference: {diff}")
+
+# %%
+# mentions_found_by_rel = set(classified_df["mentions"].apply(lambda row: [x["ngram"] for x in row]).explode().dropna().values)
+# node_gt_text = set(pd.Series(classified_df.explode('node_gt_text')['node_gt_text'].dropna().values).apply(lambda x: x if 'http' not in x else None).dropna())
+
+# print(f"Unique number of companies in node_gt_text: {len(node_gt_text)}")
+# print(f"Unique number of mentions by rel: {len(mentions_found_by_rel)}")
+
+# print(f"Intersection between node_gt_text and mentions_found_by_rel: {len(mentions_found_by_rel & node_gt_text)}")
+# diff = node_gt_text - mentions_found_by_rel
+# print(f"Difference of node_gt_text and mentions_found_by_rel: {len(diff)}" )
+# print(f"Difference of mentions_found_by_rel and node_gt_text: {len(mentions_found_by_rel - node_gt_text)}")
+# # print(f"Intersection of node_gt_text and matches_found_by_rel: {100*len(set(node_gt_text) & set(matches_found_by_rel)) / len(set(node_gt_text)):.1f} %")
+
+# %%
+# diff_df = pd.DataFrame(list(diff)).dropna()
+# diff_df
+
+# %%
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 200, 'display.max_rows',3, 'display.min_rows',3)
+
+# %%
+from new_segmenter import Transform
+import numpy as np
+
+t = Transform(transformations=["decode", "lower", "replace_ampersand", "replace_symbols", "remove_symbols", "normalize_any_space"])
+def clean(string):
+    string = t.transform(string)
+    return string
+
+classified_df['mapping'] = classified_df.apply(lambda row: {x['text']:x['value'] for x in row["PAST_CLIENT-annotations"]}, axis=1) #? Create a mapping from gt_text to gt_value to be used on the nodes
+classified_df['node_gt_value'] = classified_df.apply(lambda row: [row['mapping'].get(x) for x in row["node_gt_text"] if row['mapping'].get(x) and 'http' not in x], axis=1) #? Apply this mapping and get gt_value per node
+
+sub_classified_df = classified_df[classified_df['node_gt_value'].apply(len) > 0] #? Select nodes that only have gt_value 
+
+gt_value_correct_indices = sub_classified_df[sub_classified_df.apply(lambda row: np.any([True if x in row["PAST_CLIENT-gt_value"] else False for x in row["rel_predictions"]]), axis=1)].index #? Get indices where gt_value is correct 
+gt_text_correct_indices = sub_classified_df[sub_classified_df.apply(lambda row: clean(row['node_gt_text'][0]) in [clean(x['ngram']) for x in row['mentions']], axis=1)].index #? Get indices where cleaned gt_text is in cleaned mentions  
+
+correct_indices = list(set(gt_text_correct_indices) | set(gt_value_correct_indices))
+
+gt_text_in_rel_mentions = sub_classified_df[sub_classified_df.index.isin(correct_indices)].apply(lambda row: (row['domain'], row['url'], row['node_text'], row['node_gt_text'][0], [x['ngram'] for x in row['mentions']], [x['candidates'] for x in row['mentions']]), axis=1) #? Get gt_text_in_rel_mentions
+gt_text_in_rel_mentions_df = pd.DataFrame(list(gt_text_in_rel_mentions.values), columns = ['domain', 'url', 'node_text', 'node_gt_text', 'ngram', 'candidates'])
+gt_text_in_rel_mentions_df["ngram_len"] = gt_text_in_rel_mentions_df["ngram"].apply(len)
+
+gt_text_not_in_rel_mentions = sub_classified_df[~sub_classified_df.index.isin(correct_indices)].apply(lambda row: (row['domain'], row['url'], row['node_text'], row['node_gt_text'][0], [x['ngram'] for x in row['mentions']], [x['candidates'] for x in row['mentions']]), axis=1) #? Get gt_text_not_in_rel_mentions
+gt_text_not_in_rel_mentions_df = pd.DataFrame(list(gt_text_not_in_rel_mentions.values), columns = ['domain', 'url', 'node_text', 'node_gt_text', 'ngram', 'candidates'])
+gt_text_not_in_rel_mentions_df["ngram_len"] = gt_text_not_in_rel_mentions_df["ngram"].apply(len)
+
+# %%
+len(set(sub_classified_df["node_gt_text"].explode()))
+
+# %%
+gt_text_not_in_rel_mentions_df
+
+# %%
+gt_text_in_rel_mentions_df
+
+# %%
+print("LARGE NER with company filtered - drop duplicates within a domain")
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+
+gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_coverage_domain_dedup({in_size})_covered_NER_LARGE_with_cand_filtered.html")
+gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_coverage_domain_dedup({not_in_size})_NOT_covered_NER_LARGE_with_cand_filtered.html")
+
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+print("Fast NER with company filtered - drop duplicates within a domain")
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+
+# gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered_NER_LARGE_with_cand_filtered.html")
+# gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered_NER_LARGE_with_cand_filtered.html")
+
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+print("Fast NER WITHOUT company filtered - drop duplicates within a domain")
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']))
+
+# gt_text_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered_NER_LARGE_with_cand_filtered.html")
+# gt_text_not_in_rel_mentions_df.drop_duplicates(['node_gt_text', 'domain']).sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered_NER_LARGE_with_cand_filtered.html")
+
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered_NER_LARGE_with_cand_filtered.html")
+
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered_NER_LARGE_with_cand_filtered.html")
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered_Ontonotes_with_cand_filtered.html")
+
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered_Ontonotes_with_cand_filtered.html")
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered.html")
+
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered.html")
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+in_size = len(gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({in_size})_covered.html")
+
+not_in_size = len(gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text'))
+gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len').to_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered.html")
+total = in_size + not_in_size
+print(f"Unique gt_text: Total: {total} \n REL matched: {in_size} ({100*in_size/total:.2f}%) |  REL couldn't match: {not_in_size} ({100*not_in_size/total:.2f}%)")
+
+# %%
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 1000, 'display.max_rows',50, 'display.min_rows',50)
+gt_text_not_in_rel_mentions_df['ngram_len'] = gt_text_not_in_rel_mentions_df['ngram'].apply(len)
+gt_text_not_in_rel_mentions_df.drop_duplicates('node_gt_text').sort_values('ngram_len')
+
+# %%
+gt_text_not_in_rel_mentions_df
+
+# %%
+df = pd.read_html(f"Analyse_REL_MD_recall_dedup({not_in_size})_NOT_covered.html")
+df[0]
+
+# %%
+# sent = "AMAZON"
+# sent = "Skanska, Costain and STRABAG Joint Venture (SCS JV)"
+sent = "BT"
+t = classified_df[classified_df["node_text"].apply(lambda x: sent in x) ]["node_text"]
+t_df = pd.DataFrame(t)
+t_df['mentions'] = pd.Series(rel_seg.get_mentions_dataset(t))
+t_df
+
+# %%
+t
+rel_seg.get_mentions_dataset(pd.Series('accenture'))
+
+# %% [markdown]
 # ## Gazetteer
 
 # %%
-# # #? Match all transformed nodes
-p = mp.Pool(mp.cpu_count())
-matches = []
-for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 50):
-    matches.append(match)
-print(len(matches))
-classified_df["gaz_matches"] = matches
-
-# # #? Match only on Images
+# # # #? Match all transformed nodes
 # p = mp.Pool(mp.cpu_count())
 # matches = []
-# classified_df["node_text_t_img"] = classified_df["node_text_t_img"].fillna('')
-# for match in p.imap(s.find_companies, classified_df["node_text_t_img"], chunksize = 50):
+# for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 50):
 #     matches.append(match)
 # print(len(matches))
 # classified_df["gaz_matches"] = matches
 
+# # # #? Match only on Images
+# # p = mp.Pool(mp.cpu_count())
+# # matches = []
+# # classified_df["node_text_t_img"] = classified_df["node_text_t_img"].fillna('')
+# # for match in p.imap(s.find_companies, classified_df["node_text_t_img"], chunksize = 50):
+# #     matches.append(match)
+# # print(len(matches))
+# # classified_df["gaz_matches"] = matches
+
+# %% [markdown]
+# # Merge Both
+
 # %%
-classified_df["both_matches"] = classified_df.apply(lambda x: x["gaz_matches"] + x["rel_matches"], axis=1)
+# classified_df["both_matches"] = classified_df.apply(lambda x: x["gaz_matches"] + x["rel_matches"], axis=1)
 
 # %%
 # classified_df["gaz_matches_len"] = classified_df["gaz_matches"].apply(len)
@@ -297,6 +487,10 @@ classified_df["both_matches"] = classified_df.apply(lambda x: x["gaz_matches"] +
 # t = classified_df[["gaz_matches", "rel_matches"]]
 # t['gaz_matches_len'] = t['gaz_matches'].apply(len)
 # t['rel_matches_len'] = t['rel_matches'].apply(len)
+
+# %%
+# classified_df.loc[224856][["disambiguations", "mentions"]]
+# classified_df
 
 # %% [markdown]
 # ## Predictions
@@ -332,6 +526,67 @@ merge["gt_tag_with_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get('va
 
 # %% [markdown]
 # # Evaluate
+
+# %%
+# merge[merge['domain'] == 'palisade.com']['matches'].apply(lambda row: [x for x in row if 'Brasil' in x['matches']])
+# merge.loc[1648:1648]
+
+# for y in predited_df.loc[merge.loc[1648:1648].url.values[0]]:
+#     print([(x['company_id'], x['company_id']) for x in y if x['matches'] == 'Brasil'])
+
+# %%
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 1000, 'display.max_rows',50, 'display.min_rows',50)
+domain_metrics.iloc[-1:][["TP_pred","FP_pred","FP_seg"]]
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL") # Tried again with Fast NER and candidates filtered
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL") # Tried again
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - REL")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
 
 # %%
 print(f"{dataset_name} - REL")

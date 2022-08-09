@@ -15,7 +15,10 @@ class RelSegmenter:
         base_url = "/data/GIT/REL/data/generic/"
         self.mention_detector = MentionDetection(base_url, wiki_version)
 
-        self.tagger_ner = load_flair_ner("ner-fast")
+        # self.tagger_ner = load_flair_ner("ner-fast")
+        self.tagger_ner = load_flair_ner("ner-large")
+        # self.tagger_ner = load_flair_ner("ner-ontonotes-large") #? Ontonotes dataset has more variability in its pages
+        
         # self.tagger_ngram = Cmns(base_url, wiki_version, n=5)
 
         config = {
@@ -101,44 +104,25 @@ if __name__ == "__main__":
     rel_segmenter = RelSegmenter()
 
     # test_text = ["This is the COca Cola company", "Google", "Amazon", "Amazon, Google, and CocaCola"]
-    test_text = ["The first word 1 2  2  4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5  This is the COca Cola company 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 The last word ", "Google", "Amazon", "Amazon, Google, and CocaCola"]
+    # test_text = ["The first word 1 2  2  4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5  This is the COca Cola company 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 1 2 3 4 5 The last word ", "Google", "Amazon", "Amazon, Google, and CocaCola"]
+    test_text = ["Google", "Amazon", "Amazon, Google, and CocaCola", "nasa", "Nasa", "NASA", "nasa space"]
     # test_text = ['3M', 'KT', 'EE', 'Oi', 'BT', '3M', 'EE', '3M', 'HP']
 
     df = pd.DataFrame(test_text)
 
     predictions = rel_segmenter.predict_companies(df[0])
-    df["predictions"] = list(predictions.values())
+    df["predictions"] = pd.Series(predictions.values())
 
     company_ids = rel_segmenter.convert_predictions_to_company_ids(predictions)
     df["company_ids"] = company_ids
 
     mentions = rel_segmenter.get_mentions_dataset(df[0])
-    # df["mentions"] = list(mentions.values())
+    df["mentions"] = pd.Series(mentions.values())
 
     # org_mentions = rel_segmenter.get_only_org_mentions(df["mentions"])
     # df["org_mentions"] = org_mentions
 
     # predictions2 = rel_segmenter.disambiguate(df["org_mentions"])
     # df["predictions2"] = list(predictions2.values())
-
-
-    # test_text = ["Google", "Amazon", "Amazon, Google, and CocaCola"]
-    test_text = ["Google", "Amazon", "Amazon, Google, and CocaCola"]
-    # test_text = ['3M', 'KT', 'EE', 'Oi', 'BT', '3M', 'EE', '3M', 'HP']
-
-    df = pd.DataFrame(test_text)
-
-    predictions = rel_segmenter.predict_companies(df[0])
-    df["predictions"] = list(predictions.values())
-
-    company_ids = rel_segmenter.convert_predictions_to_company_ids(predictions)
-    df["company_ids"] = company_ids
-
-    mentions2 = rel_segmenter.get_mentions_dataset(df[0])
-    # df["mentions"] = list(mentions.values())
-
-    # org_mentions = rel_segmenter.get_only_org_mentions(df["mentions"])
-    # df["org_mentions"] = org_mentions
-    
 
     print(df)
