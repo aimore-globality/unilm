@@ -10,13 +10,15 @@ class RelSegmenter:
     def __init__(
         self,
         kc_wiki_csv_mapping_path="/data/GIT/unilm/markuplm/notebooks/REL_NER/kc_wiki_csv_mapping.csv",
+        tagger_ner = "ner-fast-with-lowercase",
     ):
         wiki_version = "wiki_2019"
         base_url = "/data/GIT/REL/data/generic/"
         self.mention_detector = MentionDetection(base_url, wiki_version)
 
-        # self.tagger_ner = load_flair_ner("ner-fast")
-        self.tagger_ner = load_flair_ner("ner-large")
+        self.tagger_ner = load_flair_ner(tagger_ner)
+        # self.tagger_ner = load_flair_ner("ner-fast-with-lowercase")
+        # self.tagger_ner = load_flair_ner("ner-large")
         # self.tagger_ner = load_flair_ner("ner-ontonotes-large") #? Ontonotes dataset has more variability in its pages
         
         # self.tagger_ngram = Cmns(base_url, wiki_version, n=5)

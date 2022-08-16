@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.13.6
 #   kernelspec:
-#     display_name: Python 3.9.12 ('wae39_wiki')
+#     display_name: Python 3.7.11 ('html_model')
 #     language: python
 #     name: python3
 # ---
@@ -120,38 +120,8 @@ classified_df['rel_matches'] = classified_df['rel_matches'].apply(lambda row:[x 
 # # print(f"AFTER - Number of regexes in companies_library_df: {len(companies_library_df)}")
 # # self.companies_library = companies_library_df.to_dict('records')
 
-# %%
-from array import array
-
-# rel_seg.mention_detector.wiki_db.create_index(table_name='wiki', )
-# rel_seg.mention_detector.wiki_db.db.cursor
-
-# url = ""
-# local_filename = ""
-# rel_seg.mention_detector.wiki_db.db.download_file(url, local_filename)
-
-# rel_seg.mention_detector.wiki_db.lookup_wik
-# word = "Arg"
-# word = "ARG"
-w = ["ARG"]
-
-# word = "arg"
-# rel_seg.mention_detector.wiki_db.wiki(mention=word, table_name="wiki", column_name="p_e_m")
-# rel_seg.mention_detector.wiki_db.lookup_wik(w=word, table_name="wiki", column="p_e_m")
-# rel_seg.mention_detector.wiki_db.lookup(word, table_name="wiki", column="emb")
-DB = rel_seg.mention_detector.wiki_db.db
-
-# c = DB.cursor()
-# table_name="wiki"
-# column="p_e_m"
-# res = []
-# for word in w:
-#     e = c.execute(
-#         f"select {column} from {table_name} where word = :word",
-#         {"word": word},
-#     ).fetchone()
-#     res.append(e if e is None else array("f", e[0]).tolist())
-# c.execute("COMMIT;")
+# %% [markdown]
+# # Create a DB with only Wikipedia pages in the known_companies taxonomy
 
 # %%
 import json
@@ -174,25 +144,20 @@ def dict_to_binary(the_dict):
 
 
 # %%
-rel_seg = RelSegmenter()
-
-# %%
 db_path = "/data/GIT/REL/data/generic/wiki_2019/generated/entity_word_embedding.db"
 db_connection = sqlite3.connect(db_path)
 # df_wiki = pd.read_sql_query('select * from wiki', db_connection)
 df_emb = pd.read_sql_query('select * from embeddings', db_connection)
 
 # %%
-rel_seg = RelSegmenter()
+# #? Load DB
+db_path = "/data/GIT/REL/data/generic/wiki_2019/generated/entity_word_embedding.db"
+db_connection = sqlite3.connect(db_path)
+new_df = pd.read_sql_query('select * from wiki', db_connection)
+print(f"Memory: {sum(new_df.memory_usage(deep=True)/10**6):.2f} Mb")
 
 # %%
-# # #? Load DB
-# db_path = "/data/GIT/REL/data/generic/wiki_2019/generated/AIMORE_entity_word_embedding.db"
-# db_connection = sqlite3.connect(db_path)
-# new_df = pd.read_sql_query('select * from wiki', db_connection)
-# print(f"Memory: {sum(new_df.memory_usage(deep=True)/10**6):.2f} Mb")
-
-# %%
+# #? Convert p_e_m binarty to dict
 new_df["pem"] = new_df.apply(lambda x: binary_to_dict(x["p_e_m"]), axis=1)
 print(f"Memory: {sum(new_df.memory_usage(deep=True)/10**6):.2f} Mb")
 
@@ -200,6 +165,10 @@ new_df["wikipedia_pages"] = new_df["pem"].apply(lambda row: [x[0] for x in row])
 print(f"Memory: {sum(new_df.memory_usage(deep=True)/10**6):.2f} Mb")
 
 # %%
+wiki_title_to_kc_mappings
+
+# %%
+# #? Load out Taxonomy Wikipedia Page titles
 kc_wiki_csv = pd.read_csv("/data/GIT/unilm/markuplm/notebooks/REL_NER/kc_wiki_csv_mapping.csv")
 wiki_title_to_kc_mappings = (
             kc_wiki_csv.dropna(subset=["title"])[["title", "taxonomy_id"]]
@@ -207,48 +176,24 @@ wiki_title_to_kc_mappings = (
             .to_dict()["taxonomy_id"]
         )
 our_taxonomy_wikipages = set(wiki_title_to_kc_mappings.keys())
-# our_taxonomy_wikipages.add("#ENTITY/UNK#")
 
 # %%
-# new_df_exp = new_df.explode("wikipedia_pages")
-# new_df_exp["wikipedia_pages"].value_counts()
-
-# %%
+# #? Filter Databased
 new_df_filtered = new_df[new_df.apply(lambda row: np.any([True for x in row['wikipedia_pages'] if x in our_taxonomy_wikipages]), axis=1)]
 new_df_filtered
 
 # %%
-# 
-
-# %%
-# Temp:
+# #? Temp Cache:
 # new_df.to_pickle("temp_new_df.pkl")
 # new_df_filtered.to_pickle("temp_new_df_filtered.pkl")
 # new_df = pd.read_pickle("temp_new_df.pkl")
-new_df_filtered = pd.read_pickle("temp_new_df_filtered.pkl")
-
-# %%
-# our_taxonomy_wikipages
-
-# %%
-
-# %%
-pd.set_option('display.max_columns',200, 'display.max_colwidth', 1000, 'display.max_rows',500, 'display.min_rows',500)
-new_df_filtered.sort_values('freq', ascending=False)[["word", "freq"]]
-
-# %%
-new_df_filtered[["word", "p_e_m", "lower", "freq"]]
+# new_df_filtered = pd.read_pickle("temp_new_df_filtered.pkl")
 
 # %% [markdown]
 # # Create a new database using filtered values using Pandas
 
 # %% [markdown]
-# ## Load filtered data
-
-# %%
-db_path = "/data/GIT/REL/data/generic/wiki_2019/generated/entity_word_embedding.db"
-db_connection = sqlite3.connect(db_path)
-df_emb = pd.read_sql_query('select * from embeddings', db_connection)
+# ### Wiki Table
 
 # %%
 new_df_filtered = pd.read_pickle("temp_new_df_filtered.pkl")
@@ -256,8 +201,6 @@ new_df_filtered = pd.read_pickle("temp_new_df_filtered.pkl")
 new_df_filtered['pem'] = new_df_filtered.apply(lambda row: [x for x in row['pem'] if x[0] in our_taxonomy_wikipages], axis=1)
 new_df_filtered['p_e_m'] = new_df_filtered['pem'].apply(dict_to_binary)
 new_df_filtered = new_df_filtered[["word", "p_e_m", "lower", "freq"]]
-
-# %%
 new_df_filtered
 
 # %%
@@ -289,6 +232,14 @@ new_df_filtered.to_sql(table_name, conn, if_exists='append', index=False)
 c.execute(f"SELECT * FROM {table_name}")
 pd.DataFrame(c.fetchall(), columns=['word', 'p_e_m', 'lower', 'freq'])
 
+# %% [markdown]
+# ### Embeddings Table
+
+# %%
+db_path = "/data/GIT/REL/data/generic/wiki_2019/generated/entity_word_embedding.db"
+db_connection = sqlite3.connect(db_path)
+df_emb = pd.read_sql_query('select * from embeddings', db_connection)
+
 # %%
 # # #? Create a new table
 table_name = "embeddings"
@@ -302,5 +253,3 @@ df_emb.to_sql(table_name, conn, if_exists='append', index=False)
 # #? Verify
 c.execute(f"SELECT * FROM {table_name}")
 pd.DataFrame(c.fetchall(), columns=['word', 'emb'])
-
-# %%
