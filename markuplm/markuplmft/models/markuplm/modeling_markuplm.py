@@ -43,7 +43,7 @@ from transformers.modeling_utils import (
 )
 from transformers.utils import logging
 from .configuration_markuplm import MarkupLMConfig
-from focal_loss.focal_loss import FocalLoss
+# from focal_loss.focal_loss import FocalLoss
 
 from typing import Optional, Union
 

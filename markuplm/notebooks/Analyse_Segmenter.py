@@ -266,9 +266,6 @@ classified_df = classified_df.loc[positives_with_no_images_indices]
 
 len(classified_df)
 
-# %%
-classified_df
-
 # %% [markdown]
 # # Find Mentions
 

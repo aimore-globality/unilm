@@ -6,7 +6,7 @@ from transformers import (
     TOKENIZER_MAPPING,
 )
 from transformers.convert_slow_tokenizer import SLOW_TO_FAST_CONVERTERS, RobertaConverter
-from transformers.file_utils import PRESET_MIRROR_DICT
+# from transformers.file_utils import PRESET_MIRROR_DICT
 
 from .models.markuplm import (
     MarkupLMConfig,
