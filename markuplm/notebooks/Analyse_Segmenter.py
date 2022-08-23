@@ -109,8 +109,8 @@ tag = EntityTag.PAST_CLIENT
 overwrite = False
 
 # datasets = ['train', 'develop', 'test']
-datasets = ['train']
-# datasets = ['develop']
+# datasets = ['train']
+datasets = ['develop']
 
 if len(datasets) == 3: 
     dataset_name = 'all'
@@ -137,12 +137,14 @@ else:
 predicted = False
 if datasets[0] == 'train':
     predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/train_df_pred_after_training(522031).pkl"
-    not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/train/processed_dedup.pkl"
+    # not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/train/processed_dedup.pkl"
+    not_predicted_nodes_data_path = "/data/GIT/prepared_data/node_classifier_with_imgs/train/processed_dedup.pkl"
     data_path = "/data/GIT/web-annotation-extractor/data/processed/train/dataset_pos(4319)_neg(13732)_intermediate.pkl"
 
 if datasets[0] == 'develop':
     predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_after_training(178346).pkl"
-    not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/develop/processed_dedup.pkl"
+    # not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/develop/processed_dedup.pkl"
+    not_predicted_nodes_data_path = "/data/GIT/prepared_data/node_classifier_with_imgs/develop/processed_dedup.pkl"
     data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl"
 
 df = pd.read_pickle(data_path)
@@ -217,18 +219,18 @@ print(s.number_of_companies(), s.number_of_regexes())
 s.transform_regexes() 
 print(s.number_of_companies(), s.number_of_regexes())
 
-# s.remove_duplicated_regexes_and_sort()
-# print(s.number_of_companies(), s.number_of_regexes())
-
-# %%
-s.augment_company_names_with_prior_wiki_db()
-print(s.number_of_companies(), s.number_of_regexes())
-
-s.transform_regexes()
-print(s.number_of_companies(), s.number_of_regexes())
-
 s.remove_duplicated_regexes_and_sort()
 print(s.number_of_companies(), s.number_of_regexes())
+
+# %%
+# s.augment_company_names_with_prior_wiki_db()
+# print(s.number_of_companies(), s.number_of_regexes())
+
+# s.transform_regexes()
+# print(s.number_of_companies(), s.number_of_regexes())
+
+# s.remove_duplicated_regexes_and_sort()
+# print(s.number_of_companies(), s.number_of_regexes())
 
 # %%
 pd.set_option('display.max_columns',200, 'display.max_colwidth', 200, 'display.max_rows',3, 'display.min_rows',3)
@@ -238,11 +240,12 @@ pd.DataFrame(s.companies_library).explode('regexes')
 # saved_path = s.save_model()
 
 # %%
-# # s.load_model(str(saved_path).split('/')[-1].split('.pkl')[0])
-# # s.load_model("segmenter_trained-5242")
+# s.load_model(str(saved_path).split('/')[-1].split('.pkl')[0])
+s.load_model("segmenter_trained-5234")
 # s.load_model("segmenter_trained-63600")
 
-# print(s.number_of_companies(), s.number_of_regexes())
+
+print(s.number_of_companies(), s.number_of_regexes())
 
 # %% [markdown]
 # # Get the Positives only
@@ -257,12 +260,15 @@ pd.DataFrame(s.companies_library).explode('regexes')
 # %%
 # # #? Get positives that don't contain images:
 # classified_df = classified_df[classified_df["node_gt_tag"] != 'none'].apply(lambda x: x if 'http' not in x else None).dropna().index & classified_df[classified_df["node_gt_tag"] != 'none'].index)
-positives_with_no_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' not in x else None).dropna().index & classified_df[classified_df["node_gt_tag"] != 'none'].index)
-classified_df = classified_df.loc[positives_with_no_images_indices]
+# positives_with_no_images_indices = list(classified_df[classified_df.apply(lambda row: 'http' != row["node_text"][:4], axis=1)].index & classified_df[classified_df["node_gt_tag"] != 'none'].index)
+# classified_df = classified_df.loc[positives_with_no_images_indices]
 
-# # #? Get positives and all nodes that are images:
-# positives_with_all_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' in x else None).dropna().index | classified_df[classified_df["node_gt_tag"] != 'none'].index)
-# classified_df = classified_df.loc[positives_with_all_images_indices]
+# # #? Get positives and all nodes that are images (even negatives):
+positives_with_all_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' in x else None).dropna().index | classified_df[classified_df["node_gt_tag"] != 'none'].index)
+classified_df = classified_df.loc[positives_with_all_images_indices]
+
+# # #? Get positives nodes
+# classified_df = classified_df[classified_df["node_gt_tag"] != 'none']
 
 len(classified_df)
 
@@ -273,31 +279,29 @@ len(classified_df)
 # ## Flair NER
 
 # %%
-flair_ner_sentence = classified_df['node_text'].apply(lambda row: ner.format_sentences(ner.predict([row])))
-classified_df['flair_ner_sentence'] = flair_ner_sentence
+flair_ner_predictions = ner.format_sentences(ner.predict(classified_df['node_text']))
+classified_df['flair_ner_predictions'] = flair_ner_predictions
 
 # %%
 classified_df.reset_index(inplace=True)
 
 # %%
-sentences_p_exploded = classified_df.explode('flair_ner_sentence')
+classified_df_exploded = classified_df.explode('flair_ner_predictions')
 
 # %%
-sentences_p_exploded['flair_ner_sentence'] = sentences_p_exploded['flair_ner_sentence'].fillna('')
-sentences_p_exploded['node_text_flair_ner'] = sentences_p_exploded['flair_ner_sentence'].apply(lambda x: x[0] if x else '').values
+classified_df_exploded['flair_ner_predictions'] = classified_df_exploded['flair_ner_predictions'].fillna('')
 
-# %% [markdown]
-# ## Spacy NER
-
-# %%
-# import spacy
-
-# spacy.prefer_gpu()
-# spacy_ner = spacy.load("en_core_web_trf")
+# #? Get any type of NER tag
+# classified_df_exploded['node_text_flair_ner'] = classified_df_exploded['flair_ner_predictions'].apply(lambda x: x if x else '').values
+# #? Force to be ORG
+classified_df_exploded['node_text_flair_ner'] = classified_df_exploded['flair_ner_predictions'].apply(lambda x: x if x and x[2] == 'ORG' else '').values
 
 # %%
-# spacy_ner_sentence = classified_df['node_text'].apply(lambda row: spacy_ner(row))
-# classified_df['spacy_ner_sentence'] = spacy_ner_sentence
+classified_df_exploded["node_text_flair_ner"].apply(lambda row: row[2] if row else None).value_counts()
+
+# %%
+classified_df_exploded['node_text_flair_ner'] = classified_df_exploded['node_text_flair_ner'].apply(lambda x: x[0] if x else '').values
+classified_df_exploded["node_text_flair_ner"]
 
 # %% [markdown]
 # # Transform
@@ -319,11 +323,11 @@ classified_df["node_text_t"] = transformed_texts
 # # #? Transform all mentions from NER
 p = mp.Pool(mp.cpu_count())
 transformed_texts = []
-for transformed_text in p.imap(s.transform_texts, sentences_p_exploded["node_text_flair_ner"], chunksize = 50):
+for transformed_text in p.imap(s.transform_texts, classified_df_exploded["node_text_flair_ner"], chunksize = 50):
     transformed_texts.append(transformed_text)
 print(len(transformed_texts))
-sentences_p_exploded["node_text_flair_ner_t"] = transformed_texts
-sentences_p_exploded["node_text_flair_ner_t"] = sentences_p_exploded["node_text_flair_ner_t"].fillna('')
+classified_df_exploded["node_text_flair_ner_t"] = transformed_texts
+classified_df_exploded["node_text_flair_ner_t"] = classified_df_exploded["node_text_flair_ner_t"].fillna('')
 
 # %%
 # # #? Transform and get only text from images
@@ -594,12 +598,12 @@ classified_df["gaz_matches"] = matches
 # # #? Match all transformed node_text_ner_t
 p = mp.Pool(mp.cpu_count())
 matches = []
-for match in p.imap(s.find_companies, sentences_p_exploded["node_text_flair_ner_t"], chunksize = 50):
+for match in p.imap(s.find_companies, classified_df_exploded["node_text_flair_ner_t"], chunksize = 50):
     matches.append(match)
 print(len(matches))
-sentences_p_exploded['gaz_matches'] = matches
+classified_df_exploded['gaz_matches'] = matches
 
-classified_df["flair_ner_t_gaz_matches"] = sentences_p_exploded.groupby("level_0")["gaz_matches"].agg(list).apply(lambda row: [x for x in row if len(x) > 0]).reset_index()['gaz_matches'].apply(lambda x: x[0] if len(x) > 0 else x)
+classified_df["flair_ner_t_gaz_matches"] = classified_df_exploded.groupby("level_0")["gaz_matches"].agg(list).apply(lambda row: [x for x in row if len(x) > 0]).reset_index()['gaz_matches'].apply(lambda x: x[0] if len(x) > 0 else x)
 
 # %%
 # [x for x in s.companies_library if x['company_id'] in ["http://graph.globality.io/platform/KnownCompany#enterprise_holdings"]]
@@ -654,13 +658,12 @@ classified_df["flair_ner_t_gaz_matches"] = sentences_p_exploded.groupby("level_0
 predited_df = classified_df.copy()
 
 # predited_df["matches"] = predited_df["rel_matches"]
-predited_df["matches"] = predited_df["gaz_matches"]
-# predited_df["matches"] = predited_df["flair_ner_t_gaz_matches"]
+# predited_df["matches"] = predited_df["gaz_matches"]
+predited_df["matches"] = predited_df["flair_ner_t_gaz_matches"]
 # predited_df["matches"] = predited_df["both_matches"]
 
 predited_df = predited_df[["url", "matches"]]
-predited_df = predited_df.groupby("url").agg(lambda x: x)
-predited_df["matches"] = predited_df["matches"].apply(lambda row: [y for x in row for y in x if type(x) == list])
+predited_df = predited_df.groupby("url").agg({'matches': 'sum'})
 
 # %%
 merge = df.set_index('url').join(predited_df).reset_index()
@@ -683,42 +686,7 @@ domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_t
 calculate_metrics_for_dataset(domain_metrics)
 
 # %%
-print(f"{dataset_name} - GAZ")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_without_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-
-# %%
-print(f"{dataset_name} - GAZ")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-print(f"{dataset_name} - GAZ")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_without_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-GAZ, with training data augmentation
-
-# %%
-print(f"{dataset_name} - GAZ")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-print(f"{dataset_name} - GAZ")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_without_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-print(f"{dataset_name} - NER")
-domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
-calculate_metrics_for_dataset(domain_metrics)
-
-# %%
-print(f"{dataset_name} - NER")
+print(f"{dataset_name} - NER + GAZ")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
 
@@ -728,7 +696,17 @@ domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_t
 calculate_metrics_for_dataset(domain_metrics)
 
 # %%
-print(f"{dataset_name} - GAZ")
+print(f"{dataset_name} - NER + GAZ")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - NER + GAZ")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - NER + GAZ")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
 
@@ -756,10 +734,10 @@ s.number_of_companies(), s.number_of_regexes()
 
 # %%
 if dataset_name =='train':
-    # s.remove_frequent_terms_with_training_metrics(domain_metrics, 0.3)
-    s.remove_frequent_terms_with_training_metrics(domain_metrics, 0.99, save_df=True)
+    s.remove_frequent_terms_with_training_metrics(domain_metrics, 0.3)
+    # s.remove_frequent_terms_with_training_metrics(domain_metrics, 0.99, save_df=True)
     
-    # saved_path = s.save_model()
+    saved_path = s.save_model()
 
 # %% [markdown]
 # ### Evaluate

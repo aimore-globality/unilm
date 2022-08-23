@@ -230,8 +230,8 @@ class Featurizer:
                 if node_text:
                     if (
                         node.tag != "script"
-                        and "javascript" not in node.attrib.get("type", "")
-                        and min_node_text_size <= len(node_text.strip()) < max_node_text_size
+                        and "javascript" not in node.attrib.get("type", "")                        
+                        and min_node_text_size <= len(node_text.strip()) < 10*max_node_text_size
                     ):  #! Remove java/script and min_node_text # TODO (Aimore): Make this comparisons more explicity and descriptive
 
                         # node_attribute = node.attrib.get("type", "")
@@ -241,16 +241,17 @@ class Featurizer:
                             len_brs = len(node_text_split)  # The number of the <br>s.
 
                             for index, etext in enumerate(node_text_split):
-                                if text_part_flag == "node_text":
-                                    xpath = dom_tree.getpath(node)
+                                if min_node_text_size <= len(etext.strip()) < max_node_text_size:
+                                    if text_part_flag == "node_text":
+                                        xpath = dom_tree.getpath(node)
 
-                                elif text_part_flag == "node_tail_text":
-                                    xpath = dom_tree.getpath(node) + "/tail"
+                                    elif text_part_flag == "node_tail_text":
+                                        xpath = dom_tree.getpath(node) + "/tail"
 
-                                if len_brs >= 2:
-                                    xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
+                                    if len_brs >= 2:
+                                        xpath += "/br[%d]" % (index + 1)  # E.g. /div/span/br[1]
 
-                                page_nodes.append((xpath, etext, "none", []))
+                                    page_nodes.append((xpath, etext, "none", []))
                         else:
                             xpath = dom_tree.getpath(node)
                             page_nodes.append((xpath, node_text, "none", []))

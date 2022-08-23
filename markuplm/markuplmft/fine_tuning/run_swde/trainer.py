@@ -320,16 +320,16 @@ class Trainer:
 
 if __name__ == "__main__":
     trainer_config = dict(
-        name_root_folder="delete-abs",
-        dataset_to_use="all",
-        num_epochs=4,
-        train_batch_size=28,
-        evaluate_batch_size=28 * 10,
-        save_model_dir="/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
-        evaluate_during_training=True,
-        overwrite_model=True,
-        with_img=False,
-        method="mean",
+        name_root_folder = "node_classifier_with_imgs",
+        dataset_to_use = "all",
+        num_epochs = 4,
+        train_batch_size = 28,
+        evaluate_batch_size = 28 * 10,
+        save_model_dir = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
+        evaluate_during_training = True,
+        overwrite_model = True,
+        with_img = True,
+        method = "mean",
     )
     infer = False
     
@@ -341,16 +341,16 @@ if __name__ == "__main__":
         trainer_config["train_batch_size"], trainer_config["evaluate_batch_size"] = 28, 28 * 10
 
     if trainer_config["with_img"]:
-        trainer_config["name_root_folder"] = "delete-img"
+        trainer_config["name_root_folder"] = "node_classifier_with_imgs"
         trainer_config["save_model_dir"] = trainer_config["save_model_dir"].replace(
             "models", "models_with_img"
         )
 
     train_data_path = (
-        f"/data/GIT/{trainer_config['name_root_folder']}/train/processed_dedup_feat.pkl"
+        f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/train/processed_dedup_feat.pkl"
     )
     develop_data_path = (
-        f"/data/GIT/{trainer_config['name_root_folder']}/develop/processed_dedup_feat.pkl"
+        f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/develop/processed_dedup_feat.pkl"
     )
 
     df_train = pd.read_pickle(train_data_path)
@@ -376,8 +376,10 @@ if __name__ == "__main__":
 
     classifier_config = dict(decision_threshold=0.5)
     classifier = NodeClassifier(**classifier_config)
+
     if infer:
         df_develop = df_train
+
     trainer = Trainer(
         featurizer=featurizer,
         classifier=classifier,
@@ -394,7 +396,7 @@ if __name__ == "__main__":
     accelerator.print(f"train: {len(df_train)} - {train_data_path}")
     accelerator.print(f"develop: {len(df_develop)} - {develop_data_path}")
 
-    # trainer.train(accelerator)
+    trainer.train(accelerator)
     # accelerator.end_training()
     if infer:
         trainer.infer(accelerator)

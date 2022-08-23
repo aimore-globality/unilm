@@ -3,9 +3,10 @@ from typing import Sequence
 import pandas as pd
 from lxml import html as lxml_html
 from microcosm.api import create_object_graph
+from markuplmft.fine_tuning.run_swde.text_transformer import TextTransformer
+
 
 graph = create_object_graph("test")
-
 
 class LabelHandler:
     def __init__(self, tag: str = "PAST_CLIENT") -> None:
@@ -17,6 +18,7 @@ class LabelHandler:
                 if company.is_demo_company is False and company.deprecated is False
             ]
         )
+        self.transformer = TextTransformer(["decode", "lower", "decode_ampersand", "replace_symbols", "remove_symbols", "normalize_any_space"]) 
 
     def get_annotations(self, annotations: pd.Series, annotation_name: str) -> pd.Series:
 
@@ -317,7 +319,8 @@ class LabelHandler:
         nodes_annotated = []
         for xpath, node_text, tag, gt_text_in_node in nodes:
             for gt_text in node_gt_text:
-                if f" {gt_text.strip()} ".lower() in f" {node_text.strip()} ".lower():
+                if self.transformer.transform(gt_text) in self.transformer.transform(node_text):
+                # if f" {gt_text.strip()} ".lower() in f" {node_text.strip()} ".lower():
                     gt_text_in_node.append(gt_text)
 
             if len(gt_text_in_node) != 0:

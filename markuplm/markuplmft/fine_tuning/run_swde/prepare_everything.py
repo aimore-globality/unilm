@@ -160,6 +160,8 @@ def prepare_domain(domain_name_and_domain_df):
     #! Training
     domain_df = label_handler.add_gt_counts_and_sort(domain_df)
     domain_df = label_handler.add_page_id(domain_df)
+    if domain_name == 'wc.com':
+        print("FOUND")
     domain_df = label_handler.add_classification_label_to_nodes(domain_df)
 
     preparer.save_ground_truth(domain_df, domain_name, raw_data_folder)
@@ -177,18 +179,24 @@ if __name__ == "__main__":
 
     FORMAT = "[ %(asctime)s ] %(filename)20s:%(lineno)5s - %(funcName)35s() : %(message)s"
     logging.basicConfig(format=FORMAT, level=logging.INFO)
-    remove_folder_flag = True
-    shortcut = False
+    remove_folder_flag = False
+    shortcut = True
     negative_fraction = 0.10  # ? 0.10
     parallel = True
     with_img = True
+    root_folder_path = Path(f"/data/GIT/prepared_data")
+
+    debug_flag = False
+    debug_domain = 'wc.com'
 
     if with_img:
-        name_root_folder = "node_classifier_with_imgs"
+        if debug_flag:
+            data_folder_name = "node_classifier_with_imgs_DEBUG"
+        data_folder_name = "node_classifier_with_imgs"
     else:
-        name_root_folder = "delete-abs2"
+        data_folder_name = "delete-abs2"
 
-    logging.info(f"name_root_folder: {name_root_folder}")
+    logging.info(f"name_root_folder: {data_folder_name}")
     featurizer = Featurizer()
     label_handler = LabelHandler()
 
@@ -198,7 +206,7 @@ if __name__ == "__main__":
         wae_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
         logging.info(f"Loaded data from: {wae_data_path}")
 
-        raw_data_folder = Path(f"/data/GIT/{name_root_folder}/{dataset_name}")
+        raw_data_folder = root_folder_path / data_folder_name / dataset_name
 
         save_path = raw_data_folder / "processed.pkl"
         dedup_save_path = raw_data_folder / "processed_dedup.pkl"
@@ -236,8 +244,11 @@ if __name__ == "__main__":
 
             df_domains = list(df_positives_negatives.groupby("domain"))
 
+            if debug_flag:
+                df_domains = [x for x in df_domains if x[0] == debug_domain]
+
             logging.info(f"Number of Domains: {len(df_domains)}")
-            # TODO: Simplify this function - Becareful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
+            # TODO: Simplify this function - Be careful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
 
             if parallel:
                 num_cores = mp.cpu_count()
@@ -263,37 +274,37 @@ if __name__ == "__main__":
             all_df_dedup = all_df_dedup.sort_values(['domain', 'url'])
             save_processed_data(all_df_dedup, dedup_save_path)
         else:
-            load_path = f"/data/GIT/delete-abs/{dataset_name}/processed_dedup.pkl"
+            load_path = str(raw_data_folder / "processed_dedup.pkl")
             save_path = Path(load_path.replace(".pkl", "_feat.pkl"))
-            if not save_path.exists():
-                #! Genereate Features #TODO: Move into a function
-                dfs = pd.read_pickle(load_path)
+            
+            #! Genereate Features #TODO: Move into a function
+            dfs = pd.read_pickle(load_path)
 
-                num_data_points = len(dfs)
-                print(num_data_points)
+            num_data_points = len(dfs)
+            print(num_data_points)
 
-                def return_page_features(url_nodes):
-                    url, nodes = url_nodes
-                    return featurizer.get_page_features(url, nodes)
+            def return_page_features(url_nodes):
+                url, nodes = url_nodes
+                return featurizer.get_page_features(url, nodes)
 
-                if parallel:
-                    num_cores = mp.cpu_count()
-                    with mp.Pool(num_cores) as pool, tqdm(
-                        total=num_data_points, desc="Processing data"
-                    ) as t:
-                        all_page_features = []
-                        # for res in pool.imap_unordered(cache_page_features, all_df.values):
-                        for page_features in pool.imap(
-                            return_page_features, dfs[["url", "nodes"]].values
-                        ):
-                            all_page_features.append(page_features)
-                            t.update()
-                        print(len(all_page_features))
-                        dfs["page_features"] = all_page_features
-                else:
-                    dfs.apply(
-                        lambda page: featurizer.get_page_features(page["url"], page["nodes"]),
-                        axis=1,
-                    )
+            if parallel:
+                num_cores = mp.cpu_count()
+                with mp.Pool(num_cores) as pool, tqdm(
+                    total=num_data_points, desc="Processing data"
+                ) as t:
+                    all_page_features = []
+                    # for res in pool.imap_unordered(cache_page_features, all_df.values):
+                    for page_features in pool.imap(
+                        return_page_features, dfs[["url", "nodes"]].values
+                    ):
+                        all_page_features.append(page_features)
+                        t.update()
+                    print(len(all_page_features))
+                    dfs["page_features"] = all_page_features
+            else:
+                dfs.apply(
+                    lambda page: featurizer.get_page_features(page["url"], page["nodes"]),
+                    axis=1,
+                )
 
-                save_processed_data(dfs, save_path)
+            save_processed_data(dfs, save_path)

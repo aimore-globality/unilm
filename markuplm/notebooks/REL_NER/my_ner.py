@@ -2,18 +2,20 @@ from flair.data import Sentence
 from flair.models import SequenceTagger
 
 class MyNER:
-    def __init__(self, flair_model="flair/ner-english-fast"):
+    def __init__(self, flair_model="flair/ner-english-large"):
+        # flair_model = "flair/ner-english-fast"
+        print(f"flair_model used: {flair_model}")
         self.tagger = SequenceTagger.load(flair_model)
-        # tagger = SequenceTagger.load("flair/ner-english-large")
         
     def predict(self, texts):
         sentences = [Sentence(text) for text in texts]
-        self.tagger.predict(sentences)        
+        self.tagger.predict(sentences)
         return sentences 
 
-    def format_sentences(self, sentences):        
-        formatted_sentences = []
+    def format_sentences(self, sentences):
+        all_sentences = []
         for sentence in sentences:
+            formatted_sentences = []
             for entity in sentence.get_spans('ner'):
                 formatted_sentences.append(
                     (entity.text,
@@ -22,4 +24,5 @@ class MyNER:
                     entity.score,
                     entity.tag,)
                 )
-        return formatted_sentences
+            all_sentences.append(formatted_sentences)
+        return all_sentences
