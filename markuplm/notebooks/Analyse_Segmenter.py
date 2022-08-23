@@ -134,7 +134,7 @@ else:
 # %%
 # data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4086)_intermediate.pkl"
 # classified_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_with_img.pkl"
-predicted = False
+predicted = True
 if datasets[0] == 'train':
     predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/train_df_pred_after_training(522031).pkl"
     # not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/train/processed_dedup.pkl"
@@ -142,7 +142,8 @@ if datasets[0] == 'train':
     data_path = "/data/GIT/web-annotation-extractor/data/processed/train/dataset_pos(4319)_neg(13732)_intermediate.pkl"
 
 if datasets[0] == 'develop':
-    predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_after_training(178346).pkl"
+    # predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/develop_df_pred_after_training(178346).pkl"
+    predicted_nodes_data_path = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models_with_img/develop_df_pred_after_training(225073).pkl"
     # not_predicted_nodes_data_path = "/data/GIT/node_classifier_with_imgs/develop/processed_dedup.pkl"
     not_predicted_nodes_data_path = "/data/GIT/prepared_data/node_classifier_with_imgs/develop/processed_dedup.pkl"
     data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl"
@@ -157,10 +158,16 @@ else:
 print(len(predicted_df))
 
 # %%
+from sklearn.metrics import f1_score, precision_score, recall_score
+predicted_df[["node_pred", "node_gt"]].values
+f1_score(predicted_df["node_gt"].values, predicted_df["node_pred"].values),  precision_score(predicted_df["node_gt"].values, predicted_df["node_pred"].values), recall_score(predicted_df["node_gt"].values, predicted_df["node_pred"].values)
+
+# %%
 if predicted:
     classified_df = predicted_df.copy()
-    threshold = 0.0
+    threshold = 0.5
     classified_df = classified_df[classified_df["node_prob"] > threshold]
+    classified_df = classified_df.reset_index().drop('level_0',axis=1)
     len(classified_df)
     
 else:
@@ -173,6 +180,7 @@ else:
         )
     )
 print(len(classified_df))
+classified_df["node_gt_tag"].value_counts()
 
 # %% [markdown]
 # # Load Model
@@ -264,8 +272,8 @@ print(s.number_of_companies(), s.number_of_regexes())
 # classified_df = classified_df.loc[positives_with_no_images_indices]
 
 # # #? Get positives and all nodes that are images (even negatives):
-positives_with_all_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' in x else None).dropna().index | classified_df[classified_df["node_gt_tag"] != 'none'].index)
-classified_df = classified_df.loc[positives_with_all_images_indices]
+# positives_with_all_images_indices = list(classified_df["node_text"].apply(lambda x: x if 'http' in x else None).dropna().index | classified_df[classified_df["node_gt_tag"] != 'none'].index)
+# classified_df = classified_df.loc[positives_with_all_images_indices]
 
 # # #? Get positives nodes
 # classified_df = classified_df[classified_df["node_gt_tag"] != 'none']
@@ -281,6 +289,9 @@ len(classified_df)
 # %%
 flair_ner_predictions = ner.format_sentences(ner.predict(classified_df['node_text']))
 classified_df['flair_ner_predictions'] = flair_ner_predictions
+
+# %%
+flair_ner_predictions
 
 # %%
 classified_df.reset_index(inplace=True)
@@ -582,7 +593,7 @@ p = mp.Pool(mp.cpu_count())
 matches = []
 for match in p.imap(s.find_companies, classified_df["node_text_t"], chunksize = 50):
     matches.append(match)
-print(len(matches))
+print(len(matches), len(pd.Series(matches).explode().dropna()))
 classified_df["gaz_matches"] = matches
 
 # # # #? Match only on Images
@@ -600,10 +611,18 @@ p = mp.Pool(mp.cpu_count())
 matches = []
 for match in p.imap(s.find_companies, classified_df_exploded["node_text_flair_ner_t"], chunksize = 50):
     matches.append(match)
-print(len(matches))
-classified_df_exploded['gaz_matches'] = matches
+print(len(matches), len(pd.Series(matches).explode().dropna()))
+classified_df_exploded['gaz_matches_on_ner'] = matches
 
-classified_df["flair_ner_t_gaz_matches"] = classified_df_exploded.groupby("level_0")["gaz_matches"].agg(list).apply(lambda row: [x for x in row if len(x) > 0]).reset_index()['gaz_matches'].apply(lambda x: x[0] if len(x) > 0 else x)
+classified_df["flair_ner_t_gaz_matches"] = classified_df_exploded.groupby("level_0")["gaz_matches_on_ner"].agg(list).apply(lambda row: [x for x in row if len(x) > 0]).reset_index()['gaz_matches_on_ner'].apply(lambda x: x[0] if len(x) > 0 else x)
+
+# Debugging:
+# classified_df_exploded.groupby("level_0").agg({'gaz_matches': 'sum'}).reset_index().drop('level_0',axis=1)
+# pd.DataFrame(classified_df["flair_ner_t_gaz_matches"])
+
+# %%
+pd.set_option('display.max_columns',200, 'display.max_colwidth', 1000, 'display.max_rows',50, 'display.min_rows',50)
+classified_df[["flair_ner_t_gaz_matches", "gaz_matches", "node_text_t"]]
 
 # %%
 # [x for x in s.companies_library if x['company_id'] in ["http://graph.globality.io/platform/KnownCompany#enterprise_holdings"]]
@@ -678,10 +697,28 @@ merge["gt_tag_with_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get('va
 merge["gt_tag_without_img"] = merge['PAST_CLIENT'].apply(lambda row: [str(x.get('value')) for x in row if x.get('value') and 'http' not in x.get('text')])
 
 # %% [markdown]
+# ---
+
+# %%
+print(f"{dataset_name} - GAZ")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - NER + GAZ")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %% [markdown]
 # # Evaluate
 
 # %%
 print(f"{dataset_name} - GAZ")
+domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
+calculate_metrics_for_dataset(domain_metrics)
+
+# %%
+print(f"{dataset_name} - NER + GAZ")
 domain_metrics = get_reconciliations_metrics_for_all_domains(merge, gt_col="gt_tag_with_img", predicted_col="predicted_tag", annotations_col='PAST_CLIENT', negative_percentage=0.1)
 calculate_metrics_for_dataset(domain_metrics)
 
