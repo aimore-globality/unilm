@@ -1,4 +1,4 @@
-from typing import Dict, List, Sequence
+from typing import List, Sequence
 from grpc import access_token_call_credentials
 from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 from markuplmft.fine_tuning.run_swde.classifier import NodeClassifier
@@ -15,18 +15,17 @@ from transformers import get_linear_schedule_with_warmup
 from accelerate import Accelerator
 from transformers import AdamW
 import transformers
-
 set_seed(66)
 
 
 class Trainer:
     def __init__(
         self,
-        featurizer,
-        classifier,
-        train_df,
+        featurizer: Featurizer,
+        classifier: NodeClassifier,
+        train_df: pd.DataFrame,
         train_batch_size: int,
-        evaluate_df,
+        evaluate_df: pd.DataFrame,
         evaluate_batch_size: int,
         num_epochs: int,
         save_model_dir: str,
@@ -37,8 +36,8 @@ class Trainer:
         adam_epsilon: float = 1e-8,
         warmup_ratio: float = 0,
     ):
-        self.featurizer: Featurizer = featurizer
-        self.classifier: NodeClassifier = classifier
+        self.featurizer = featurizer
+        self.classifier = classifier
 
         # ? Setting Data
         self.train_df = train_df.copy()
@@ -60,7 +59,7 @@ class Trainer:
         self.training_samples = len(train_df)
         self.evaluation_samples = len(evaluate_df)
 
-    def prepare_data(self, accelerator, df, dataset_name="develop"):
+    def prepare_data(self, accelerator, df, dataset_name="develop") -> DataLoader:
         accelerator.print(f"Converting features to dataset {dataset_name}...")
         dataset_features = self.featurizer.feature_to_dataset(df["page_features"].explode().values)
         shuffle = False
@@ -68,7 +67,7 @@ class Trainer:
         if dataset_name == "train":
             batch_size = self.train_batch_size
             self.train_features = dataset_features
-            shuffle = True    
+            shuffle = True
         else:
             batch_size = self.evaluate_batch_size
             self.evaluate_features = dataset_features
@@ -139,7 +138,7 @@ class Trainer:
             num_training_steps=self.num_training_steps,
         )
 
-    def train_epoch(self, accelerator):
+    def train_epoch(self, accelerator) -> List[torch.Tensor]:
         all_losses = []
         self.classifier.model.train()
         batch_progress_bar = tqdm(
@@ -188,12 +187,12 @@ class Trainer:
         #! Save model
         if self.overwrite_model:
             accelerator.print(f"Overwritting model...")
-            # save_model_path = self.save_model_dir + "/pytorch_model_1.pth"
-            # accelerator.print(f"Saved model at:\n {save_model_path}")
             accelerator.save_state(self.save_model_dir)
             accelerator.print(f"Saved model at:\n {self.save_model_dir}")
 
-            save_pred_data_path = self.save_model_dir + f"develop_df_pred_after_training({len(evaluate_df)}).pkl"
+            save_pred_data_path = (
+                self.save_model_dir + f"develop_df_pred_after_training({len(evaluate_df)}).pkl"
+            )
             accelerator.print(f"Saved predicted data at:\n {save_pred_data_path}")
             evaluate_df.drop(["page_features"], axis=1).to_pickle(save_pred_data_path)
 
@@ -221,7 +220,9 @@ class Trainer:
         urls = self.evaluate_features.urls
         node_ids = self.evaluate_features.node_ids
         all_probs = torch.softmax(torch.cat(all_logits, dim=0), dim=2)[:, :, 0]
-        selected_probs = [np.array(all_probs[e, : len(node_id)]) for e, node_id in enumerate(node_ids)]
+        selected_probs = [
+            np.array(all_probs[e, : len(node_id)]) for e, node_id in enumerate(node_ids)
+        ]
         urls_node_ids_selected_probs = pd.DataFrame(
             zip(urls, node_ids, selected_probs), columns=["urls", "node_ids", "selected_probs"]
         )
@@ -231,7 +232,7 @@ class Trainer:
             .agg(list)
             .sort_values(["urls", "node_ids"])
         )
-        if trainer_config['method'] == 'mean':
+        if trainer_config["method"] == "mean":
             node_probs = sorted_selected_probs.apply(
                 lambda probs: np.mean(probs["selected_probs"]), axis=1
             ).values
@@ -304,8 +305,7 @@ class Trainer:
 
         accelerator.load_state(self.save_model_dir)
 
-        device = accelerator.device
-        accelerator.print(f"device: {device}")
+        accelerator.print(f"device: {accelerator.device}")
 
         accelerator.print(f"Model State - loaded:")
 
@@ -320,19 +320,19 @@ class Trainer:
 
 if __name__ == "__main__":
     trainer_config = dict(
-        name_root_folder = "node_classifier_with_imgs",
-        dataset_to_use = "all",
-        num_epochs = 4,
-        train_batch_size = 28,
-        evaluate_batch_size = 28 * 10,
-        save_model_dir = "/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
-        evaluate_during_training = True,
-        overwrite_model = True,
-        with_img = True,
-        method = "mean",
+        name_root_folder="node_classifier_with_imgs_neg_1",
+        dataset_to_use="all",
+        num_epochs=1,
+        train_batch_size=28,
+        evaluate_batch_size=28 * 10,
+        save_model_dir="/data/GIT/unilm/markuplm/markuplmft/fine_tuning/run_swde/models/",
+        evaluate_during_training=False,
+        overwrite_model=True,
+        with_img=True,
+        method="mean",
     )
     infer = False
-    
+
     if trainer_config["dataset_to_use"] == "mini":
         trainer_config["num_epochs"] = 4
 
@@ -340,18 +340,14 @@ if __name__ == "__main__":
         trainer_config["num_epochs"] = 1
         trainer_config["train_batch_size"], trainer_config["evaluate_batch_size"] = 28, 28 * 10
 
-    if trainer_config["with_img"]:
-        trainer_config["name_root_folder"] = "node_classifier_with_imgs"
-        trainer_config["save_model_dir"] = trainer_config["save_model_dir"].replace(
-            "models", "models_with_img"
-        )
+    # if trainer_config["with_img"]:
+        # trainer_config["name_root_folder"] = "node_classifier_with_imgs_neg_1"
+        # trainer_config["save_model_dir"] = trainer_config["save_model_dir"].replace(
+            # "models", "models_with_img"
+        # )
 
-    train_data_path = (
-        f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/train/processed_dedup_feat.pkl"
-    )
-    develop_data_path = (
-        f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/develop/processed_dedup_feat.pkl"
-    )
+    train_data_path = f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/train/processed_dedup_feat.pkl"
+    develop_data_path = f"/data/GIT/prepared_data/{trainer_config['name_root_folder']}/develop/processed_dedup_feat.pkl"
 
     df_train = pd.read_pickle(train_data_path)
     df_develop = pd.read_pickle(develop_data_path)

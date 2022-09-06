@@ -14,16 +14,17 @@ from markuplmft.fine_tuning.run_swde.featurizer import Featurizer
 from markuplmft.fine_tuning.run_swde.labelhandler import LabelHandler
 import os
 import glob
+from typing import Tuple
 
 
 class PrepareData:
     """
-    - Convert CF data into SWDE format
-    - Create the labels
-    - Remove some data
+    - For each page creates an HTML into a folder separated by domain 
+    - Creates a .csv file with all the labels per page. One .csv file per domain. 
+    - Creates the node_dataset .
     """
 
-    def __init__(self, parallel, remove_folder_flag, shortcut, raw_data_folder):
+    def __init__(self, parallel:bool, remove_folder_flag:bool, shortcut:bool, raw_data_folder):
         self.parallel = parallel
         self.remove_folder_flag = remove_folder_flag
         self.shortcut = shortcut
@@ -41,7 +42,7 @@ class PrepareData:
         logging.info(len(df))
         return df
 
-    def save_ground_truth(self, df, domain_name, root_folder):
+    def save_ground_truth(self, df, domain_name:str, root_folder:Path):
         """
         In domain folder save a single csv file with its pages annotations
         """
@@ -61,9 +62,9 @@ class PrepareData:
             folder_path / f"{domain_name}-{label_handler.tag}.csv", sep="\t", index=False
         )
 
-    def save_htmls(self, df: pd.DataFrame, domain_name: str, root_folder: Path):
+    def save_htmls(self, df, domain_name: str, root_folder: Path):
         """
-        In domain folder save all html pages
+        Create all html pages for the domain in the domain folder 
         """
 
         def save_html(html, save_path):
@@ -77,6 +78,9 @@ class PrepareData:
         df.apply(lambda row: save_html(row["html"], folder_path / f"{row['page_id']}.htm"), axis=1)
 
     def remove_folder(self, raw_data_folder: str):
+        """
+        Remove the dataset folder to start fresh
+        """
         self.raw_data_folder = raw_data_folder
         if os.path.exists(self.raw_data_folder):
             logging.info(f"Overwriting this folder: \n{self.raw_data_folder}")
@@ -89,7 +93,7 @@ class PrepareData:
         groundtruth_folder_path = self.raw_data_folder
         groundtruth_folder_path.mkdir(parents=True, exist_ok=True)
 
-    def create_dedup_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    def create_dedup_data(self, df) -> pd.DataFrame:
         """
         Randomly remove duplicated nodes across the entire domain
         Note: Some urls might have been droped due to the deduplication
@@ -134,16 +138,13 @@ class PrepareData:
         return df
 
 
-def save_processed_data(
-    df: pd.DataFrame,
-    save_path: Path,
-):
+def save_processed_data(df, save_path: Path):
     save_path.parents[0].mkdir(parents=True, exist_ok=True)
     logging.info(f"Saved data ({len(df)}) at: {save_path}")
     df.to_pickle(save_path)
 
 
-def prepare_domain(domain_name_and_domain_df):
+def prepare_domain(domain_name_and_domain_df) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     domain_name, domain_df = domain_name_and_domain_df
     logging.info(f"domain_name: {domain_name}")
 
@@ -154,13 +155,16 @@ def prepare_domain(domain_name_and_domain_df):
 
     domain_df["nodes"] = domain_df["html"].apply(featurizer.get_nodes)
 
-    #! During the inference this can be a problem - check how to deal with it when productionalizing
+    #! During the inference not being able to convert a html to nodes can be a problem - check how to deal with it when productionalizing
+    original_numb_pages = len(domain_df)
     domain_df = domain_df.dropna(subset=["nodes"])
+    final_numb_pages = len(domain_df)
+    logging.info(f"Number of pages before: {original_numb_pages} | after: {final_numb_pages} ({100*final_numb_pages/original_numb_pages:.1f} %)")
 
     #! Training
     domain_df = label_handler.add_gt_counts_and_sort(domain_df)
     domain_df = label_handler.add_page_id(domain_df)
-    if domain_name == 'wc.com':
+    if domain_name in debug_domain_names:
         print("FOUND")
     domain_df = label_handler.add_classification_label_to_nodes(domain_df)
 
@@ -174,33 +178,41 @@ def prepare_domain(domain_name_and_domain_df):
 
 if __name__ == "__main__":
 
-    # wandb.login()
-    # self.run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
+    wandb.login()
+    run = wandb.init(project="LanguageModel", resume=False, tags=["convert_data"])
 
-    FORMAT = "[ %(asctime)s ] %(filename)20s:%(lineno)5s - %(funcName)35s() : %(message)s"
+    FORMAT = "[ %(asctime)s ] %(filename)25s:%(lineno)5s - %(funcName)35s() : %(message)s"
     logging.basicConfig(format=FORMAT, level=logging.INFO)
     remove_folder_flag = False
-    shortcut = True
-    negative_fraction = 0.10  # ? 0.10
+    shortcut = False
+    # negative_fraction = 0.1  # ? 0.10
+    negative_fraction = 1
     parallel = True
     with_img = True
     root_folder_path = Path(f"/data/GIT/prepared_data")
 
     debug_flag = False
-    debug_domain = 'wc.com'
-
+    debug_domain_names = ['1820productions.com', 'wc.com']
+    
     if with_img:
-        if debug_flag:
-            data_folder_name = "node_classifier_with_imgs_DEBUG"
-        data_folder_name = "node_classifier_with_imgs"
+        with_img_str = "with_imgs"
     else:
-        data_folder_name = "delete-abs2"
+        with_img_str = "without_imgs"
+
+    # neg_str = f"neg_{str(negative_fraction)}"
+    neg_str = f"neg_1"
+
+    data_folder_name = f"node_classifier_{with_img_str}_{neg_str}"
+
+    if debug_flag:
+        data_folder_name = data_folder_name + "_DEBUG"
+        parallel = False
 
     logging.info(f"name_root_folder: {data_folder_name}")
     featurizer = Featurizer()
     label_handler = LabelHandler()
 
-    for dataset_name in ["develop", "train"][:]:
+    for dataset_name in ["develop", "train"][:1]:
         logging.info(f"DATASET: {dataset_name}")
 
         wae_data_path = Path(f"/data/GIT/web-annotation-extractor/data/processed/{dataset_name}")
@@ -221,12 +233,10 @@ if __name__ == "__main__":
 
             wae_df = preparer.load_data(wae_data_path)
 
-            # if preparer.remove_folder_flag:
-            #     preparer.remove_folder(raw_data_folder)
-
             #! Shortcut for debugging:
             if not preparer.shortcut:
                 df = label_handler.format_annotation(wae_df)
+                df = label_handler.remove_non_html_pages(df)
                 df_positives_negatives = label_handler.create_postive_negative_data(
                     df,
                     negative_fraction=negative_fraction,
@@ -240,33 +250,34 @@ if __name__ == "__main__":
                     f"{dataset_name}_df_positives_negatives_temp.pkl"
                 )
 
-            logging.info(f"Size of the dataset: {len(df_positives_negatives)}")
+            logging.info(f"# of pages in the dataset: {len(df_positives_negatives)}")
 
-            df_domains = list(df_positives_negatives.groupby("domain"))
+            domains_name_df = list(df_positives_negatives.groupby("domain")) #? Tuple (domain_url, domain_df)
 
             if debug_flag:
-                df_domains = [x for x in df_domains if x[0] == debug_domain]
+                domains_name_df = [name_df for name_df in domains_name_df if name_df[0] in debug_domain_names]
 
-            logging.info(f"Number of Domains: {len(df_domains)}")
+            logging.info(f"Number of Domains: {len(domains_name_df)}")
             # TODO: Simplify this function - Be careful when running in all data with parallelize - struct.error: 'I' format requires 0 <= number <= 4294967295
 
+            all_df, all_df_dedup = pd.DataFrame(), pd.DataFrame()
             if parallel:
                 num_cores = mp.cpu_count()
                 with mp.Pool(num_cores) as pool, tqdm(
-                    total=len(df_domains), desc="Preparing domain data"
-                ) as t:
-                    all_df, all_df_dedup = pd.DataFrame(), pd.DataFrame()
+                    total=len(domains_name_df), desc="Preparing domain data"
+                ) as iteration:
                     for domain_name, domain_df, domain_df_dedup in pool.imap_unordered(
-                        prepare_domain, df_domains
+                        prepare_domain, domains_name_df
                     ):
-                        # for res in pool.imap(prepare_domain, df_domains):
                         all_df = all_df.append(domain_df)
                         all_df_dedup = all_df_dedup.append(domain_df_dedup)
-                        t.set_description(f"Processed {domain_name}")
-                        t.update()
+                        iteration.set_description(f"Processed {domain_name}")
+                        iteration.update()
             else:
-                for df_domain in df_domains:
-                    prepare_domain(df_domain)
+                for df_domain in domains_name_df:
+                    domain_name, domain_df, domain_df_dedup = prepare_domain(df_domain)
+                    all_df = all_df.append(domain_df)
+                    all_df_dedup = all_df_dedup.append(domain_df_dedup)
 
             all_df = all_df.sort_values(['domain', 'url'])
             save_processed_data(all_df, save_path)
@@ -291,14 +302,14 @@ if __name__ == "__main__":
                 num_cores = mp.cpu_count()
                 with mp.Pool(num_cores) as pool, tqdm(
                     total=num_data_points, desc="Processing data"
-                ) as t:
+                ) as iteration:
                     all_page_features = []
                     # for res in pool.imap_unordered(cache_page_features, all_df.values):
                     for page_features in pool.imap(
                         return_page_features, dfs[["url", "nodes"]].values
                     ):
                         all_page_features.append(page_features)
-                        t.update()
+                        iteration.update()
                     print(len(all_page_features))
                     dfs["page_features"] = all_page_features
             else:
@@ -308,3 +319,6 @@ if __name__ == "__main__":
                 )
 
             save_processed_data(dfs, save_path)
+
+    run.save()
+    run.finish()

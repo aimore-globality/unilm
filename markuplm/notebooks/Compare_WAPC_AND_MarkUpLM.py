@@ -28,13 +28,13 @@ from web_annotation_extractor.evaluations.visualization_functions import plot_pe
 from pathlib import Path
 graph = create_object_graph('test')
 # pd.set_option('max_columns',60, 'max_colwidth',80, 'max_rows',5)
-import wandb
+# import wandb
 
-run = wandb.init(project="LanguageModel", resume=False, tags=["compare_with_production"])
+# run = wandb.init(project="LanguageModel", resume=False, tags=["compare_with_production"])
 
 
 # %%
-segmenter_trained =["trained", "untrained", "extreme_untrained"][2]
+segmenter_trained =["trained", "untrained", "extreme_untrained"][0]
 predict_and_segment = True
 
 tag="PAST_CLIENT"
@@ -58,6 +58,7 @@ if predict_and_segment:
         # data_path = f"/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4083)_intermediate.pkl"
         # data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1765)_neg(4086)_intermediate.pkl"
         data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(4587)_intermediate.pkl" # With the gt_images
+        data_path = "/data/GIT/web-annotation-extractor/data/processed/develop/dataset_pos(1830)_neg(45273)_intermediate.pkl"
         
     df = pd.read_pickle(data_path)
 
@@ -120,80 +121,88 @@ domain_metrics = get_reconciliations_metrics_for_all_domains(
     negative_percentage = negative_percentage)
 average_domains_metrics(domain_metrics)
 
+# %%
+df.to_csv("WAPC_full_develop_df.csv")
+domain_metrics.to_csv("WAPC_full_develop_domain_metrics.csv")
+
 # %% [markdown]
 # ### Get new metrics and plots
 
 # %%
-# def get_metrics_and_plots(
-#     df,
-#     gt_col=f"PAST_CLIENT-gt_value_untax",
-#     predicted_col=f"predicted_value_untax",
-#     annotations_col="PAST_CLIENT-annotations",
-#     negative_percentage=0.1,
-# ):
+df
 
-#     metrics_per_domain = dict()
-#     for domain_name, domain_df in df.groupby("domain"):
-#         metrics_per_domain[domain_name] = get_metrics_for_domain(
-#             ground_truth_series=domain_df[gt_col],
-#             prediction_series=domain_df[predicted_col],
-#             annotations_series=domain_df[annotations_col],
-#             negative_percentage=negative_percentage,
-#         )
-#         metrics_per_domain[domain_name][gt_col] = sorted(
-#             list(set([z for y in domain_df[gt_col] for z in y]))
-#         )
-#         metrics_per_domain[domain_name][predicted_col] = sorted(
-#             list(set([z for y in domain_df[predicted_col] for z in y]))
-#         )
 
-#     metrics_per_domain = pd.DataFrame(metrics_per_domain).T.sort_values("num_positives")
-#     len(metrics_per_domain)
+# %%
+def get_metrics_and_plots(
+    df,
+    gt_col=f"PAST_CLIENT-gt_value_untax",
+    predicted_col=f"predicted_value_untax",
+    annotations_col="PAST_CLIENT-annotations",
+    negative_percentage=0.1,
+):
 
-#     # ? Log metrics per domain table
-#     # metrics_per_domain
+    metrics_per_domain = dict()
+    for domain_name, domain_df in df.groupby("domain"):
+        metrics_per_domain[domain_name] = get_metrics_for_domain(
+            ground_truth_series=domain_df[gt_col],
+            prediction_series=domain_df[predicted_col],
+            annotations_series=domain_df[annotations_col],
+            negative_percentage=negative_percentage,
+        )
+        metrics_per_domain[domain_name][gt_col] = sorted(
+            list(set([z for y in domain_df[gt_col] for z in y]))
+        )
+        metrics_per_domain[domain_name][predicted_col] = sorted(
+            list(set([z for y in domain_df[predicted_col] for z in y]))
+        )
 
-#     # ? There are some domains with gt_text but not with gt_value
-#     metrics_per_domain = metrics_per_domain[metrics_per_domain["num_positives"] > 0]
-#     len(metrics_per_domain)
+    metrics_per_domain = pd.DataFrame(metrics_per_domain).T.sort_values("num_positives")
+    len(metrics_per_domain)
 
-#     # ? Log metrics per domain table
-#     # metrics_per_domain
+    # # ? Log metrics per domain table
+    # metrics_per_domain
 
-#     fig = plot_performance(
-#         title="WAPC Performance per Domain ",
-#         domain=metrics_per_domain.index,
-#         TP=metrics_per_domain["TP"],
-#         FP=metrics_per_domain["FP"],
-#         FN=metrics_per_domain["FN"],
-#         num_positives=metrics_per_domain["num_positives"],
-#         precision=metrics_per_domain["precision"],
-#         recall=metrics_per_domain["recall"],
-#         f1=metrics_per_domain["f1"],
-#     )
-#     fig_adjusted = plot_performance(
-#         title="WAPC Performance per Domain Adjusted",
-#         domain=metrics_per_domain.index,
-#         TP=metrics_per_domain["TP"],
-#         FP=metrics_per_domain["FP_adjusted"],
-#         FN=metrics_per_domain["FN"],
-#         num_positives=metrics_per_domain["num_positives"],
-#         precision=metrics_per_domain["precision_adjusted"],
-#         recall=metrics_per_domain["recall"],
-#         f1=metrics_per_domain["f1"],
-#     )
+    # # ? There are some domains with gt_text but not with gt_value
+    metrics_per_domain = metrics_per_domain[metrics_per_domain["num_positives"] > 0]
+    len(metrics_per_domain)
 
-#     # ? Log figures
-#     save_path = f"metrics_and_plots/plot_perf_domain.html"
-#     fig.write_html(save_path)
-#     save_path = f"metrics_and_plots/plot_perf_domain_adjusted.html"
-#     fig_adjusted.write_html(save_path)
+    # # ? Log metrics per domain table
+    # metrics_per_domain
 
-#     # ? Compute dataset metrics
-#     metrics_dataset = calculate_metrics_for_dataset(metrics_per_domain)
+    fig = plot_performance(
+        title="WAPC Performance per Domain ",
+        domain=metrics_per_domain.index,
+        TP=metrics_per_domain["TP"],
+        FP=metrics_per_domain["FP"],
+        FN=metrics_per_domain["FN"],
+        num_positives=metrics_per_domain["num_positives"],
+        precision=metrics_per_domain["precision"],
+        recall=metrics_per_domain["recall"],
+        f1=metrics_per_domain["f1"],
+    )
+    fig_adjusted = plot_performance(
+        title="WAPC Performance per Domain Adjusted",
+        domain=metrics_per_domain.index,
+        TP=metrics_per_domain["TP"],
+        FP=metrics_per_domain["FP_adjusted"],
+        FN=metrics_per_domain["FN"],
+        num_positives=metrics_per_domain["num_positives"],
+        precision=metrics_per_domain["precision_adjusted"],
+        recall=metrics_per_domain["recall"],
+        f1=metrics_per_domain["f1"],
+    )
 
-#     # ? Log dataset metrics
-#     return metrics_dataset, metrics_per_domain, fig, fig_adjusted
+    # # ? Log figures
+    save_path = f"metrics_and_plots/plot_perf_domain.html"
+    fig.write_html(save_path)
+    save_path = f"metrics_and_plots/plot_perf_domain_adjusted.html"
+    fig_adjusted.write_html(save_path)
+
+    # # ? Compute dataset metrics
+    metrics_dataset = calculate_metrics_for_dataset(metrics_per_domain)
+
+    # # ? Log dataset metrics
+    return metrics_dataset, metrics_per_domain, fig, fig_adjusted
 
 # %% [markdown]
 # # Load Results from MarkupLM Trained Model and display metrics 

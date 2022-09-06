@@ -8,9 +8,11 @@ from markuplmft.fine_tuning.run_swde.text_transformer import TextTransformer
 
 graph = create_object_graph("test")
 
+
 class LabelHandler:
-    def __init__(self, tag: str = "PAST_CLIENT") -> None:
+    def __init__(self, tag: str = "PAST_CLIENT"):
         self.tag = tag
+        # ? Creates mapping to convert gt_value_taxonomy into gt_value
         self.taxonomy_to_value_mappings = dict(
             [
                 (company.uri, company.name)
@@ -18,7 +20,7 @@ class LabelHandler:
                 if company.is_demo_company is False and company.deprecated is False
             ]
         )
-        self.transformer = TextTransformer(["decode", "lower", "decode_ampersand", "replace_symbols", "remove_symbols", "normalize_any_space"]) 
+        self.transformer = TextTransformer()
 
     def get_annotations(self, annotations: pd.Series, annotation_name: str) -> pd.Series:
 
@@ -30,13 +32,13 @@ class LabelHandler:
             ]
         )
 
-    # ? Create mapping to convert gt_value_taxonomy into gt_value
     def untaxonomize_gt_value(self, gt_value: str) -> str:
+        """Converts gt_value-taxonomy into gt_value-name"""
 
         gt_value_untax = self.taxonomy_to_value_mappings.get(gt_value)
         return gt_value_untax
 
-    def format_annotation(self, df: pd.DataFrame) -> pd.DataFrame:
+    def format_annotation(self, df) -> pd.DataFrame:
 
         logging.info("Format_annotation...")
         df[f"{self.tag}-annotations"] = df["annotations"].apply(
@@ -66,7 +68,7 @@ class LabelHandler:
 
     def create_postive_negative_data(
         self,
-        df: pd.DataFrame,
+        df,
         negative_fraction: float,
         wae_data_path: str,
         with_img: bool = False,
@@ -76,11 +78,11 @@ class LabelHandler:
         df_positives, df_negatives, df_negatives_sample = self.get_negative_fraction(
             df, negative_fraction
         )
-        logging.info("- Positives:")
         # TODO(Aimore): Try to move this out (this also has to happen during inference)
-        df_positives = self.remove_non_html_pages(df_positives)
-        logging.info("- Negatives:")
-        df_negatives_sample = self.remove_non_html_pages(df_negatives_sample)
+        # logging.info("- Positives:")
+        # df_positives = self.remove_non_html_pages(df_positives)
+        # logging.info("- Negatives:")
+        # df_negatives_sample = self.remove_non_html_pages(df_negatives_sample)
 
         if not with_img:
             df_positives = self.remove_annotations_from_images(df_positives)
@@ -130,15 +132,15 @@ class LabelHandler:
         # ? Check the amount of annotations in each domain
         logging.info(
             pd.DataFrame(
-                df_positives_negatives.groupby("domain").sum("PAST_CLIENT-gt_text_count")
-            ).sort_values("PAST_CLIENT-gt_text_count", ascending=False)
+                df_positives_negatives.groupby("domain").sum(f"{self.tag}-gt_text_count")
+            ).sort_values(f"{self.tag}-gt_text_count", ascending=False)
         )
         logging.info("done")
         return df_positives_negatives
 
     def get_negative_fraction(
         self,
-        df: pd.DataFrame,
+        df,
         negative_fraction: float,
     ) -> Sequence[pd.DataFrame]:
 
@@ -177,7 +179,7 @@ class LabelHandler:
     def count_all_labels(self, df, tag_type="text"):
         return df[f"{self.tag}-gt_{tag_type}"].apply(len).sum()
 
-    def remove_non_html_pages(self, df: pd.DataFrame) -> pd.DataFrame:
+    def remove_non_html_pages(self, df) -> pd.DataFrame:
 
         pages_without_html_explicity = df[df["html"] == "PLACEHOLDER_HTML"]
         logging.info(f"# of Pages that are not html explicity: {len(pages_without_html_explicity)}")
@@ -186,13 +188,13 @@ class LabelHandler:
         )
         df = df[df["html"] != "PLACEHOLDER_HTML"]
 
-        def get_only_html(t):
+        def get_only_html(web_text):
             """Deal with XLM cases"""
 
             text = "NOT HTML"
             try:
-                text = lxml_html.fromstring(t)
-                return t
+                text = lxml_html.fromstring(web_text)
+                return web_text
             except:
                 return text
 
@@ -206,7 +208,7 @@ class LabelHandler:
 
         return df
 
-    def remove_annotations_from_images(self, df: pd.DataFrame) -> pd.DataFrame:
+    def remove_annotations_from_images(self, df) -> pd.DataFrame:
 
         logging.info("remove_annotations_from_images")
         logging.info(f"# of Annotations (gt_text) before: {self.count_all_labels(df)}")
@@ -221,7 +223,7 @@ class LabelHandler:
         logging.info("done")
         return df
 
-    def remove_annotations_that_cannot_be_found_on_html(self, df: pd.DataFrame) -> pd.DataFrame:
+    def remove_annotations_that_cannot_be_found_on_html(self, df) -> pd.DataFrame:
 
         logging.info("remove_annotations_that_cannot_be_found_on_html")
         initial_amount_of_label = self.count_all_labels(df)
@@ -284,7 +286,7 @@ class LabelHandler:
         logging.info("done")
         return df
 
-    def add_gt_counts_and_sort(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_gt_counts_and_sort(self, df) -> pd.DataFrame:
         """
         Creates tag-gt_text_count column.
         """
@@ -293,14 +295,14 @@ class LabelHandler:
         df[f"{self.tag}-gt_text_count"] = df[f"{self.tag}-gt_text"].apply(len).values
         return df.sort_values(f"{self.tag}-gt_text_count", ascending=False)
 
-    def add_page_id(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_page_id(self, df, cardinality=4) -> pd.DataFrame:
         """
         Creates page_id column.
         0 -> 0000
         1 -> 0001
         """
 
-        df["page_id"] = [str(index).zfill(4) for index in range(len(df))]
+        df["page_id"] = [str(index).zfill(cardinality) for index in range(len(df))]
         return df
 
     def add_classification_label(
@@ -320,10 +322,9 @@ class LabelHandler:
         for xpath, node_text, tag, gt_text_in_node in nodes:
             for gt_text in node_gt_text:
                 if self.transformer.transform(gt_text) in self.transformer.transform(node_text):
-                # if f" {gt_text.strip()} ".lower() in f" {node_text.strip()} ".lower():
                     gt_text_in_node.append(gt_text)
 
-            if len(gt_text_in_node) != 0:
+            if len(gt_text_in_node) > 0:
                 tag = self.tag
 
             new_node_text = (xpath, node_text, tag, gt_text_in_node)
@@ -331,7 +332,7 @@ class LabelHandler:
 
         return nodes_annotated
 
-    def add_classification_label_to_nodes(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_classification_label_to_nodes(self, df) -> pd.DataFrame:
 
         df["nodes"] = df.apply(
             lambda row: self.add_classification_label(row["nodes"], row[f"{self.tag}-gt_text"]),

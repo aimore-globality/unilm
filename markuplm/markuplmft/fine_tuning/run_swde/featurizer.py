@@ -14,15 +14,15 @@ import pandas as pd
 import numpy as np
 
 
-class WindowFeature(object):
+class WindowFeature:
     def __init__(
         self,
-        input_ids,
-        token_type_ids,
-        attention_mask,
-        url,
-        node_ids,
-        labels=None,
+        input_ids: torch.Tensor,
+        token_type_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        url: str,
+        node_ids: str,
+        labels: str=None,
     ):
         self.input_ids = input_ids
         # node_ids_padded = np.pad(
@@ -86,8 +86,8 @@ class Featurizer:
             token_type_ids=token_type_ids_tensor,
             labels=labels_tensor,
         )
-        urls = [f.url for f in features]
-        node_ids = [f.node_ids for f in features]
+        urls = [feat.url for feat in features]
+        node_ids = [feat.node_ids for feat in features]
 
         return SwdeDataset(
             model_input,
@@ -163,12 +163,12 @@ class Featurizer:
 
             page_features.append(
                 WindowFeature(
-                    input_ids=splited_page_tokens_ids,  # ? len = 384,
-                    token_type_ids=token_type_ids,  # ? Always 0. len = 384,
-                    attention_mask=attention_mask,  # ? Always 1. len = 384,
-                    url=url,
-                    node_ids=node_ids,
-                    labels=splited_labels_seq,
+                    input_ids=splited_page_tokens_ids,  #? len = 384,
+                    token_type_ids=token_type_ids,  #? Always 0. len = 384,
+                    attention_mask=attention_mask,  #? Always 1. len = 384,
+                    url=url, #? str
+                    node_ids=node_ids, #? 
+                    labels=splited_labels_seq, #? str
                 )
             )
         return page_features
@@ -259,7 +259,7 @@ class Featurizer:
         if len(page_nodes) > 0:
             return page_nodes
         else:
-            print(f"No nodes from this html were able to be extracted - html: {html}")
+            print(f"No nodes from this html were able to be extracted - html")
 
 
 def _clean_spaces(text: str) -> str:

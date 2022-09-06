@@ -6,7 +6,7 @@ import numpy as np
 
 
 class NodeClassifier:
-    def __init__(self, decision_threshold:float=0.5, tag:str="PAST_CLIENT") -> None:
+    def __init__(self, decision_threshold: float = 0.5, tag: str = "PAST_CLIENT"):
         self.model = transformers.RobertaForTokenClassification.from_pretrained("roberta-base")
         self.decision_threshold = decision_threshold
         self.tag = tag
